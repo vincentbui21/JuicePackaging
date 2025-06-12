@@ -1,5 +1,7 @@
 import {Stack, Grid, Typography, TextField} from "@mui/material"
-
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 
 function CustomerInfo() {
     return (  
@@ -112,7 +114,9 @@ function CustomerInfo() {
                     </Grid>
 
                     <Grid item size={8} display="flex" alignItems="center" >
-                        
+                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                <DatePicker label="Select or enter date"/>
+                        </LocalizationProvider>
                     </Grid>
 
                 </Grid>
