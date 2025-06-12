@@ -2,10 +2,16 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, Router, RouterProvider } from 'react-router-dom'
 import LoginPage from './pages/LoginPage.jsx'
+import CustomerInfoEntry from './pages/CustomerInfoEntry.jsx'
 
-const router = createBrowserRouter([{
+const router = createBrowserRouter([
+  {
   path: "/", element: <LoginPage/>,
-}])
+},
+{
+  path: "/customer-info-entry", element: <CustomerInfoEntry/>,
+}
+])
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
