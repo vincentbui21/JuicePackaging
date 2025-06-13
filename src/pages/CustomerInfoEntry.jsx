@@ -1,9 +1,8 @@
 import {Typography, Button, Box} from '@mui/material';
-import Divider from '@mui/material/Divider';
 import CustomerInfo from '../components/customerinfo';
 import OrderInfoInput from '../components/orderinfoinput';
 import backgroundomena from "../assets/backgroundomena.jpg"
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 
 function CustomerInfoEntry() {
@@ -25,7 +24,28 @@ function CustomerInfoEntry() {
         };
     }, []);
 
+    const [customerdata, setCustomerData] = useState({
+        full_name: "",
+        address: "",
+        city:"",
+        phone_number:"",
+        email:"",
+        entryDate:""
+    })
 
+    const [orderdata, setorderdata]= useState({
+        total_apple_weight:"",
+        No_of_Crates: "",
+        Juice_quantity:"",
+        No_of_Pouches: "",
+        Notes: ""
+    })
+
+    const handleSubmit = ()=> {
+        console.log("Customer Info: ", customerdata)
+        console.log("Order Info: ", orderdata)
+    }
+    
     return (
         <>  
             <Box display={"flex"} justifyContent={"center"} >
@@ -46,9 +66,9 @@ function CustomerInfoEntry() {
                 </Typography>
             </Box>
 
-            <CustomerInfo />
+            <CustomerInfo data={customerdata} setdata={setCustomerData}/>
             
-            <OrderInfoInput />
+            <OrderInfoInput data={orderdata} setdata ={setorderdata}/>
 
             <Box 
             sx={{ 
@@ -57,7 +77,7 @@ function CustomerInfoEntry() {
                 marginTop: 2,
                 marginBottom: 5,
                 }}>
-                <Button variant='contained' size='large'>Submit New Order</Button>
+                <Button variant='contained' size='large' onClick={handleSubmit}>Submit New Order</Button>
             </Box>
 
         </>

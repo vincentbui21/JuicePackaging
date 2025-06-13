@@ -1,6 +1,11 @@
 import {Stack, Grid, Typography, TextField, InputAdornment, Divider} from "@mui/material"
 
-function OrderInfoInput() {
+function OrderInfoInput({data, setdata}) {
+
+    const handleCustomerInfoUpdate = (e)=>{
+        setdata({... data, [e.target.name]:e.target.value})
+    }
+
     return ( 
         <Stack direction = "column" sx={
                 {
@@ -34,7 +39,9 @@ function OrderInfoInput() {
                     </Grid>
 
                     <Grid item size={8} display="flex" alignItems="center" >
-                        <TextField required type="number" variant='filled' label="Enter weight in kilograms" sx={
+                        <TextField required name={"total_apple_weight"} type="number" variant='filled' label="Enter weight in kilograms" 
+                        onChange={handleCustomerInfoUpdate}
+                        sx={
                             {
                                 width: "min(600px, 90%)"
                             }
@@ -61,7 +68,9 @@ function OrderInfoInput() {
                     </Grid>
 
                     <Grid item size={8} display="flex" alignItems="center" >
-                        <TextField type="number" variant='filled' label="Enter crate count" sx={
+                        <TextField name="No_of_Crates" type="number" variant='filled' label="Enter crate count" 
+                        onChange={handleCustomerInfoUpdate}
+                        sx={
                             {
                                 width: "min(600px, 90%)"
                             }
@@ -88,7 +97,9 @@ function OrderInfoInput() {
                     </Grid>
 
                     <Grid item size={8} display="flex" alignItems="center" >
-                        <TextField type="number" variant='filled' label="Enter juice volume" sx={
+                        <TextField type="number" variant='filled' label="Enter juice volume" name="Juice_quantity"
+                        onChange={handleCustomerInfoUpdate}
+                        sx={
                             {
                                 width: "min(600px, 90%)"
                             }
@@ -115,7 +126,9 @@ function OrderInfoInput() {
                     </Grid>
 
                     <Grid item size={8} display="flex" alignItems="center" >
-                        <TextField type="number" variant='filled' label="Enter pouch count" sx={
+                        <TextField type="number" variant='filled' label="Enter pouch count" name="No_of_Pouches"
+                        onChange={handleCustomerInfoUpdate}
+                        sx={
                             {
                                 width: "min(600px, 90%)"
                             }
@@ -152,6 +165,8 @@ function OrderInfoInput() {
                     }>
                         <TextField
                             label="Remarks / Observations"
+                            name = "Notes"
+                            onChange={handleCustomerInfoUpdate}
                             placeholder="Enter any special instructions, observations, or remarks here..."
                             multiline
                             rows={4}
