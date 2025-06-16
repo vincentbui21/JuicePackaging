@@ -94,7 +94,7 @@ function CustomerInfo({data, setdata}) {
 
                     <Grid item size={8} display="flex" alignItems="center" >
                         <TextField 
-                            select label="City" value={data.city} name={"city"} onChange={handleCustomerInfoUpdate}
+                            select required label="City" value={data.city} name={"city"} onChange={handleCustomerInfoUpdate}
                         sx={
                             {
                                 width: "min(600px, 90%)",
@@ -171,7 +171,7 @@ function CustomerInfo({data, setdata}) {
                                 (newValue)=> {
                                     setdata({... data, entryDate:newValue.format("MM/DD/YYYY")})
                                 }} 
-                            value = {data.entryDate ? dayjs(data.entryDate, "DD-MM-YYYY") : null} label="Select or enter date"/>
+                            value = {data.entryDate ? dayjs(data.entryDate, "MM-DD-YYYY") : null} label="Select or enter date"/>
                         </LocalizationProvider>
                     </Grid>
 

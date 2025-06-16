@@ -1,6 +1,8 @@
 import {Typography, Button, Box} from '@mui/material';
 import CustomerInfo from '../components/customerinfo';
 import OrderInfoInput from '../components/orderinfoinput';
+import RequiredInputReminder from '../components/required_input_reminder';
+import QRCodeDialog from '../components/qrcodeDialog';
 import backgroundomena from "../assets/backgroundomena.jpg"
 import { useEffect, useState } from 'react';
 import api from '../services/axios'
@@ -43,6 +45,9 @@ function CustomerInfoEntry() {
 
     const [customerdata, setCustomerData] = useState(initialCustomerData)
     const [orderdata, setorderdata]= useState(initialOrderData)
+    const [open_reminder, set_Openreminder] = useState(false)
+    const [open_QrDialog, set_OpenQrDialog] = useState(false)
+    const [qrcodes, setQrcodes] = useState("")
 
     function resetData(){
         setCustomerData(initialCustomerData)
@@ -52,16 +57,25 @@ function CustomerInfoEntry() {
     const handleSubmit = async ()=> {
         // console.log("Customer Info: ", customerdata.entryDate)
         // console.log("Order Info: ", orderdata)
-
-        try{
-            const response = await api.post('/new-entry', [customerdata, orderdata])
-            console.log(response);
+        if(customerdata.full_name == "" || customerdata.city == "" || customerdata.phone_number =="" || orderdata.total_apple_weight ==""){
+            console.log("hi");
+            set_Openreminder(true)
         }
-        catch (error){
-            console.log(error);
+        else{
+
+            try{
+                const response = await api.post('/new-entry', [customerdata, orderdata])
+                console.log(response.data);
+                setQrcodes(response.data)
+                set_OpenQrDialog(true)
+            }
+            catch (error){
+                console.log(error);
+            }
+    
+            resetData()
         }
 
-        resetData()
     }
     
     return (
@@ -97,7 +111,11 @@ function CustomerInfoEntry() {
                 }}>
                 <Button variant='contained' size='large' onClick={handleSubmit}>Submit New Order</Button>
             </Box>
+            
+            <RequiredInputReminder open={open_reminder} setOpen={set_Openreminder}></RequiredInputReminder>
 
+            <QRCodeDialog open={open_QrDialog} onClose={()=>{set_OpenQrDialog(false)}} 
+            data={qrcodes}></QRCodeDialog>
         </>
     );
 }
