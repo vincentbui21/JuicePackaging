@@ -1,0 +1,7 @@
+# Ignore node_modules
+node_modules/
+testing/
+.vscode/
+
+# Ignore environment variables
+.env

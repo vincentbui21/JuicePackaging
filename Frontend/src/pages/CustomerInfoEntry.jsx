@@ -3,7 +3,8 @@ import CustomerInfo from '../components/customerinfo';
 import OrderInfoInput from '../components/orderinfoinput';
 import backgroundomena from "../assets/backgroundomena.jpg"
 import { useEffect, useState } from 'react';
-
+import api from '../services/axios'
+import axios from 'axios';
 
 function CustomerInfoEntry() {
     useEffect(() => {
@@ -11,8 +12,6 @@ function CustomerInfoEntry() {
         document.body.style.backgroundSize = "cover";
         document.body.style.backgroundRepeat = "no-repeat";
         document.body.style.backgroundPosition = "center";
-    
-    
     
         return () => {
             // Clean up background when component unmounts
@@ -24,26 +23,45 @@ function CustomerInfoEntry() {
         };
     }, []);
 
-    const [customerdata, setCustomerData] = useState({
+    const initialCustomerData = {
         full_name: "",
         address: "",
         city:"",
         phone_number:"",
         email:"",
         entryDate:""
-    })
+    }
 
-    const [orderdata, setorderdata]= useState({
+    const initialOrderData = {
         total_apple_weight:"",
         No_of_Crates: "",
         Juice_quantity:"",
         No_of_Pouches: "",
         Notes: ""
-    })
+    }
 
-    const handleSubmit = ()=> {
-        console.log("Customer Info: ", customerdata)
-        console.log("Order Info: ", orderdata)
+
+    const [customerdata, setCustomerData] = useState(initialCustomerData)
+    const [orderdata, setorderdata]= useState(initialOrderData)
+
+    function resetData(){
+        setCustomerData(initialCustomerData)
+        setorderdata(initialOrderData)
+    }
+
+    const handleSubmit = async ()=> {
+        // console.log("Customer Info: ", customerdata.entryDate)
+        // console.log("Order Info: ", orderdata)
+
+        try{
+            const response = await api.post('/new-entry', [customerdata, orderdata])
+            console.log(response);
+        }
+        catch (error){
+            console.log(error);
+        }
+
+        resetData()
     }
     
     return (

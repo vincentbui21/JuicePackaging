@@ -169,7 +169,7 @@ function CustomerInfo({data, setdata}) {
                             <DatePicker name={"entryDate"} 
                             onChange={
                                 (newValue)=> {
-                                    setdata({... data, entryDate:newValue.format("DD-MM-YYYY")})
+                                    setdata({... data, entryDate:newValue.format("MM/DD/YYYY")})
                                 }} 
                             value = {data.entryDate ? dayjs(data.entryDate, "DD-MM-YYYY") : null} label="Select or enter date"/>
                         </LocalizationProvider>
