@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, Router, RouterProvider } from 'react-router-dom'
 import LoginPage from './pages/LoginPage.jsx'
 import CustomerInfoEntry from './pages/CustomerInfoEntry.jsx'
+import CrateHandling from './pages/CrateHandling.jsx'
 
 const router = createBrowserRouter([
   {
@@ -10,6 +11,9 @@ const router = createBrowserRouter([
 },
 {
   path: "/customer-info-entry", element: <CustomerInfoEntry/>,
+},
+{
+  path: "/crate-handling", element: <CrateHandling />
 }
 ])
 

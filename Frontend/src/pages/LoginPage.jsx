@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import company_logo from "../assets/company_logo.png"
 import backgroundomena from "../assets/backgroundomena.jpg"
 import { Navigate } from "react-router-dom";
+import CrateHandling from "./CrateHandling";
 
 function LoginPage() {
     useEffect(() => {
@@ -32,6 +33,8 @@ function LoginPage() {
     switch (Redirect){
         case 1:
             return <Navigate to={"/customer-info-entry"}></Navigate>
+        case 2:
+            return <Navigate to={"/crate-handling"} />
         case "":
             break
     }

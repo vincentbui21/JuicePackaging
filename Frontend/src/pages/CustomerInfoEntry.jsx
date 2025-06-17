@@ -1,5 +1,5 @@
 import {Typography, Button, Box} from '@mui/material';
-import CustomerInfo from '../components/customerinfo';
+import CustomerInfo from '../components/customerinfoinput';
 import OrderInfoInput from '../components/orderinfoinput';
 import RequiredInputReminder from '../components/required_input_reminder';
 import QRCodeDialog from '../components/qrcodeDialog';
