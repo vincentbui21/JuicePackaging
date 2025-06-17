@@ -15,7 +15,7 @@ const pool = mysql.createPool({
     queueLimit: 0
 }).promise();
 
-async function update_data(customer_data, order_data) {
+async function update_new_customer_data(customer_data, order_data) {
     const connection = await pool.getConnection();
 
     try {
@@ -85,6 +85,107 @@ async function update_data(customer_data, order_data) {
     }
 }
 
+async function get_crate_data(crate_id) {
+    const connection = await pool.getConnection()
+
+    try{
+        const CustomerData = `
+        SELECT
+        Customers.customer_id, Customers.name, Customers.city,
+        Orders.weight_kg, Orders.crate_count, Orders.created_at,
+        Crates.order_id
+
+        FROM Customers
+        INNER JOIN Orders ON Customers.customer_id = Orders.customer_id
+        INNER JOIN Crates ON Crates.order_id = Orders.order_id
+
+        WHERE Crates.crate_id = ?
+        `
+
+        const CratesGroupData =`
+        SELECT c.crate_id, c.crate_order
+        FROM Crates c
+        INNER JOIN Crates c2 ON c.order_id = c2.order_id
+        WHERE c2.crate_id = ?
+        `
+
+        const customers_data_result = await connection.query(CustomerData, crate_id) 
+        const crates_data_result = await connection.query(CratesGroupData, crate_id) 
 
 
-module.exports = {update_data}
+
+        connection.commit()
+
+
+        connection.release()
+        if (customers_data_result[0].length === 0 || crates_data_result[0].length === 0){
+            return false
+        }
+        return [customers_data_result[0], crates_data_result[0]]
+    }
+    catch(error){
+        console.log(error)
+        connection.rollback()
+        connection.release()
+        return false
+    }
+
+    
+}
+
+async function update_crates_status(crateIds, newStatus) {
+    const connection = await pool.getConnection();
+
+    try {
+        if (!Array.isArray(crateIds) || crateIds.length === 0) {
+            throw new Error('crateIds must be a non-empty array');
+        }
+
+        const placeholders = crateIds.map(() => '?').join(', ');
+        const updateQuery = `
+            UPDATE Crates
+            SET status = ?
+            WHERE crate_id IN (${placeholders})
+        `;
+
+        const params = [newStatus, ...crateIds];
+
+        await connection.query(updateQuery, params);
+        await connection.commit();
+        connection.release();
+
+        return true;
+    } catch (error) {
+        console.log(error);
+        await connection.rollback();
+        connection.release();
+        return false;
+    }
+}
+
+async function update_order_status(order_id, new_status) {
+    const connection = await pool.getConnection();
+
+    try {
+        const updateQuery = 
+        `UPDATE Orders
+        SET status = ?
+        WHERE order_id = ?
+        ;`
+
+        await connection.query(updateQuery, [new_status, order_id]);
+
+        await connection.commit();
+        connection.release();
+
+        return true;
+    } catch (error) {
+        console.log(error);
+        await connection.rollback();
+        connection.release();
+        return false;
+    }
+}
+
+
+module.exports = {update_new_customer_data, get_crate_data, update_crates_status, update_order_status}
