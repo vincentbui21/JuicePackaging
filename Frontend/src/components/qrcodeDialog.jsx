@@ -9,6 +9,7 @@ import {
     Typography
 } from '@mui/material';
 import generateSmallPngQRCode from '../services/qrcodGenerator';
+import printImage from '../services/send_to_printer'
 
 
 function QRCodeDialog({ open, onClose, data }) {
@@ -25,9 +26,9 @@ function QRCodeDialog({ open, onClose, data }) {
         }
     }, [data, open]);
 
-    const handlePrint = (index) => {
-        console.log('Send to printer:', data[index]);
-        // TODO: Add actual printing logic here
+    const handlePrint = (src) => {
+        // console.log('Send to printer:');
+        printImage(src)
     };
 
     return (
@@ -40,8 +41,8 @@ function QRCodeDialog({ open, onClose, data }) {
                 <img src={src} alt={`QR code ${index}`} width={100} height={100} />
                 <Stack spacing={1}>
                     <Typography variant="body2">{`QR Code for Crate ${index+1}`}</Typography>
-                    <Button variant="outlined">
-                    Send to Printer
+                    <Button variant="outlined" onClick={ ()=> handlePrint(qrCodes[index])}>
+                        Send to Printer
                     </Button>
                 </Stack>
                 </Stack>

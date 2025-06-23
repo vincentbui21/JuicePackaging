@@ -58,7 +58,6 @@ function CustomerInfoEntry() {
         // console.log("Customer Info: ", customerdata.entryDate)
         // console.log("Order Info: ", orderdata)
         if(customerdata.full_name == "" || customerdata.city == "" || customerdata.phone_number =="" || orderdata.total_apple_weight ==""){
-            console.log("hi");
             set_Openreminder(true)
         }
         else{
