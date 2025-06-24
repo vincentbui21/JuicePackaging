@@ -15,7 +15,7 @@ function LoginPage() {
 
 
     return () => {
-        // Clean up background when component unmounts
+      
         document.body.style.backgroundImage = "";
         document.body.style.backgroundSize = "";
         document.body.style.backgroundRepeat = "";
