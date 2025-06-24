@@ -32,7 +32,7 @@ async function update_new_customer_data(customer_data, order_data) {
         `;
 
         const insertCrateData = `
-            INSERT INTO Crates (crate_id, order_id, status, updated_at, crate_order)
+            INSERT INTO Crates (crate_id, customer_id, status, updated_at, crate_order)
             VALUES (?, ?, ?, ?, ?)
         `
 
@@ -66,7 +66,7 @@ async function update_new_customer_data(customer_data, order_data) {
             crateID.push(newCrate)
             await connection.query(insertCrateData, [
                 newCrate,
-                orderID, //all crate have same orderID
+                customerID,
                 "Created",
                 logic.formatDateToSQL(customer_data.entryDate),
                 `${i}/${order_data.No_of_Crates}` //crate_order      
@@ -93,11 +93,11 @@ async function get_crate_data(crate_id) {
         SELECT
         Customers.customer_id, Customers.name, Customers.city,
         Orders.weight_kg, Orders.crate_count, Orders.created_at,
-        Crates.order_id
+        Crates.customer_id
 
         FROM Customers
         INNER JOIN Orders ON Customers.customer_id = Orders.customer_id
-        INNER JOIN Crates ON Crates.order_id = Orders.order_id
+        INNER JOIN Crates ON Crates.customer_id = Orders.customer_id
 
         WHERE Crates.crate_id = ?
         `
@@ -105,17 +105,14 @@ async function get_crate_data(crate_id) {
         const CratesGroupData =`
         SELECT c.crate_id, c.crate_order
         FROM Crates c
-        INNER JOIN Crates c2 ON c.order_id = c2.order_id
+        INNER JOIN Crates c2 ON c.customer_id = c2.customer_id
         WHERE c2.crate_id = ?
         `
 
         const customers_data_result = await connection.query(CustomerData, crate_id) 
         const crates_data_result = await connection.query(CratesGroupData, crate_id) 
 
-
-
         connection.commit()
-
 
         connection.release()
         if (customers_data_result[0].length === 0 || crates_data_result[0].length === 0){
@@ -163,17 +160,17 @@ async function update_crates_status(crateIds, newStatus) {
     }
 }
 
-async function update_order_status(order_id, new_status) {
+async function update_order_status(customer_id, new_status) {
     const connection = await pool.getConnection();
 
     try {
         const updateQuery = 
         `UPDATE Orders
         SET status = ?
-        WHERE order_id = ?
+        WHERE customer_id = ?
         ;`
 
-        await connection.query(updateQuery, [new_status, order_id]);
+        await connection.query(updateQuery, [new_status, customer_id]);
 
         await connection.commit();
         connection.release();
@@ -187,5 +184,221 @@ async function update_order_status(order_id, new_status) {
     }
 }
 
+async function getCustomers(customerName, page, limit) {
+    const connection = await pool.getConnection();
 
-module.exports = {update_new_customer_data, get_crate_data, update_crates_status, update_order_status}
+    try {
+        const parsedPage = page != null ? parseInt(page, 10) : 1;
+        const parsedLimit = limit != null ? parseInt(limit, 10) : 10;
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        const where = customerName ? `WHERE c.name LIKE ?` : '';
+        const params = customerName ? [`%${customerName}%`] : [];
+
+        // Get total count
+        const countQuery = `SELECT COUNT(*) AS total FROM Orders AS o LEFT JOIN Customers AS c ON o.customer_id = c.customer_id ${where}`;
+        const [[{ total }]] = await connection.query(countQuery, params);
+
+        // Get paginated rows
+        const dataQuery = `
+            SELECT 
+                o.customer_id, o.created_at, o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes,
+                c.name, c.email, c.phone, c.city
+            FROM Orders AS o
+            LEFT JOIN Customers AS c ON o.customer_id = c.customer_id
+            ${where}
+            ORDER BY o.created_at DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        const rows = await connection.query(
+            dataQuery,
+            [...params, parsedLimit, offset]
+        );
+
+        connection.release();
+
+        return {
+            rows: rows[0],
+            total,
+        };
+    } catch (error) {
+        console.error('Error fetching orders:', error);
+        connection.release();
+        throw error;
+    }
+}
+
+async function delete_customer(customer_id) {
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        const deleteCratesQuery = `DELETE FROM Crates WHERE customer_id = ?`;
+        const deleteBoxesQuery = `DELETE FROM Boxes WHERE customer_id = ?`;
+        const deleteOrdersQuery = `DELETE FROM Orders WHERE customer_id = ?`;
+        const deleteCustomerQuery = `DELETE FROM Customers WHERE customer_id = ?`;
+
+        await connection.query(deleteCratesQuery, [customer_id]);
+        await connection.query(deleteBoxesQuery, [customer_id]);
+        await connection.query(deleteOrdersQuery, [customer_id]);
+        await connection.query(deleteCustomerQuery, [customer_id]);
+
+        await connection.commit();
+        connection.release();
+        return true;
+
+    } catch (error) {
+        await connection.rollback();
+        connection.release();
+        console.error('Error deleting customer:', error);
+        return false;
+    }
+}
+
+async function insertCratesForCustomer(connection, customer_id, crateCount, updatedAt) {
+    const insertQuery = `
+        INSERT INTO Crates (crate_id, customer_id, status, updated_at, crate_order)
+        VALUES (?, ?, 'Created', ?, ?)
+    `;
+
+    for (let i = 1; i <= crateCount; i++) {
+        const crateId = generateUUID();
+        const crateOrder = `${i}/${crateCount}`;
+        await connection.query(insertQuery, [crateId, customer_id, updatedAt, crateOrder]);
+    }
+}
+
+async function updateCustomerData(customer_id, customerInfoChange, orderInfoChange) {
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        // --- Prepare Customers update ---
+        const customerFields = [];
+        const customerValues = [];
+
+        if (customerInfoChange.Name) {
+        customerFields.push('name = ?');
+        customerValues.push(customerInfoChange.Name);
+        }
+        if (customerInfoChange.email) {
+        customerFields.push('email = ?');
+        customerValues.push(customerInfoChange.email);
+        }
+        if (customerInfoChange.phone) {
+        customerFields.push('phone = ?');
+        customerValues.push(customerInfoChange.phone);
+        }
+        if (customerInfoChange.city) {
+        customerFields.push('city = ?');
+        customerValues.push(customerInfoChange.city);
+        }
+
+        if (customerFields.length > 0) {
+        customerValues.push(customer_id);
+        const customerQuery = `UPDATE Customers SET ${customerFields.join(', ')} WHERE customer_id = ?`;
+        await connection.query(customerQuery, customerValues);
+        }
+
+        // --- Prepare Orders update ---
+        const orderFields = [];
+        const orderValues = [];
+
+        if (orderInfoChange.Date) {
+        orderFields.push('created_at = ?');
+        orderValues.push(logic.formatDateToSQL(orderInfoChange.Date));
+        }
+        if (orderInfoChange.weight) {
+        orderFields.push('weight_kg = ?');
+        orderValues.push(Number(parseFloat(orderInfoChange.weight).toFixed(2)));
+
+        // Also update total_cost based on weight if cost is not explicitly set
+        if (!orderInfoChange.cost) {
+            orderFields.push('total_cost = ?');
+            orderValues.push(logic.caculated_price(orderInfoChange.weight));
+        }
+        }
+        if (orderInfoChange.crate) {
+        orderFields.push('crate_count = ?');
+        orderValues.push(parseInt(orderInfoChange.crate));
+        }
+        if (orderInfoChange.cost) {
+        orderFields.push('total_cost = ?');
+        orderValues.push(Number(parseFloat(orderInfoChange.cost).toFixed(2)));
+        }
+        if (orderInfoChange.Status) {
+        orderFields.push('status = ?');
+        orderValues.push(orderInfoChange.Status);
+        }
+        if (orderInfoChange.Notes !== undefined) {
+        orderFields.push('notes = ?');
+        orderValues.push(orderInfoChange.Notes);
+        }
+
+        if (orderFields.length > 0) {
+        orderValues.push(customer_id);
+        const orderQuery = `UPDATE Orders SET ${orderFields.join(', ')} WHERE customer_id = ?`;
+        await connection.query(orderQuery, orderValues);
+        }
+
+        // --- Handle crate updates ---
+        if (orderInfoChange.crate) {
+        // Delete all existing crates for this customer
+        const deleteCratesQuery = `DELETE FROM Crates WHERE customer_id = ?`;
+        await connection.query(deleteCratesQuery, [customer_id]);
+
+        // Insert new crates matching the new crate count
+        // Use updated date or today's date for updated_at
+        const updatedAt = orderInfoChange.Date
+            ? logic.formatDateToSQL(orderInfoChange.Date)
+            : new Date().toISOString().slice(0, 10); // format 'YYYY-MM-DD'
+
+        await insertCratesForCustomer(connection, customer_id, parseInt(orderInfoChange.crate), updatedAt);
+        }
+
+        await connection.commit();
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
+}
+
+async function get_crates_by_customer(customer_id) {
+    const connection = await pool.getConnection();
+
+    try {
+        const query = `
+        SELECT crate_id
+        FROM Crates
+        WHERE customer_id = ?
+        ORDER BY crate_order
+        `;
+
+        const [rows] = await connection.query(query, [customer_id]);
+
+        connection.release();
+
+        return rows;  // Array of objects with crate_id
+    } catch (error) {
+        console.error('get_crates_by_customer error:', error);
+        connection.release();
+        return false;
+    }
+    }
+
+
+module.exports = {
+    update_new_customer_data, 
+    get_crate_data, 
+    update_crates_status, 
+    update_order_status, 
+    getCustomers,
+    delete_customer,
+    updateCustomerData,
+    get_crates_by_customer
+}

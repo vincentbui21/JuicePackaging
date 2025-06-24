@@ -42,9 +42,9 @@ app.get('/crates/:cratesID', async (req, res) => {
 })
 
 app.put('/orders', async (req, res) => {
-    const {order_id, status} = req.body
+    const {customer_id, status} = req.body
 
-    const result = await database.update_order_status(order_id, status)
+    const result = await database.update_order_status(customer_id, status)
 
     if (!result){
         res.status(404).send('cannot update order data')
@@ -67,6 +67,71 @@ app.put('/crates', async (req, res) => {
         res.status(200).send('Updated crate status successfully')
     }
 })
+
+app.get('/customer', async (req, res) => {
+    const customerName = req.query.customerName
+    const page = req.query.page
+    const limit = req.query.limit != null ? parseInt(req.query.limit, 10) : 10;
+
+    const result = await database.getCustomers(customerName, page, limit)
+    if (!result){
+        res.status(400).send("cannot update crate status")
+    }
+    else{
+        res.status(200).send(result)
+    }
+    
+})
+
+app.delete('/customer', async (req, res) => {
+    const { customer_id } = req.body;
+
+    if (!customer_id) {
+        return res.status(400).json({ message: 'Missing customerID in request body.' });
+    }
+
+    const result = await database.delete_customer(customer_id);
+
+    if (result) {
+        res.status(200).json({ message: 'Customer and related data deleted successfully.' });
+    } else {
+        res.status(500).json({ message: 'Failed to delete customer.' });
+    }
+});
+
+app.put('/customer', async (req, res) => {
+    const { customer_id, customerInfoChange = {}, orderInfoChange = {} } = req.body;
+
+    // console.log(orderInfoChange);
+
+    if (!customer_id) {
+        return res.status(400).json({ error: 'customer_id is required.' });
+    }
+
+    try {
+        await database.updateCustomerData(customer_id, customerInfoChange, orderInfoChange);
+        res.json({ message: 'Update successful' });
+    } catch (error) {
+        console.error('Update error:', error);
+        res.status(500).json({ error: 'Update failed' });
+    }
+});
+
+app.get('/crates', async (req, res) => {
+    const { customer_id } = req.query;
+
+    if (!customer_id) {
+        return res.status(400).json({ error: 'Missing customer_id parameter' });
+    }
+
+    const crates = await database.get_crates_by_customer(customer_id);
+
+    if (!crates) {
+        return res.status(500).json({ error: 'Failed to fetch crates' });
+    }
+
+    res.json({ crates });
+    });
 
 app.listen(5000, () => {
     console.log("server is listening at port 5000!!");

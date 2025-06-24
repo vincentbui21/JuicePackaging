@@ -101,7 +101,7 @@ function CustomerInfo({data, setdata}) {
                             }
                         }
                         >
-                            <MenuItem value={"Kupio"}>Kupio</MenuItem>
+                            <MenuItem value={"Kuopio"}>Kuopio</MenuItem>
                             <MenuItem value={"Mikkeli"}>Mikkeli</MenuItem>
                             <MenuItem value={"Varkaus"}>Varkaus</MenuItem>
                             <MenuItem value={"Lapinlahti"}>Lapinlahti</MenuItem>

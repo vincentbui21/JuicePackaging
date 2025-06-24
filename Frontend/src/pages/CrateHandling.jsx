@@ -95,7 +95,7 @@ function CrateHandling() {
 
     const handleSubmitButton = () => {
         api.put('/orders', {
-            order_id: customerInfo.order_id,
+            customer_id: customerInfo.customer_id,
             status: "In Progress"
         })
         .then(response => {

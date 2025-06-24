@@ -61,7 +61,7 @@ function CustomerInfoEntry() {
             set_Openreminder(true)
         }
         else{
-
+            // console.log([customerdata, orderdata]);
             try{
                 const response = await api.post('/new-entry', [customerdata, orderdata])
                 console.log(response.data);
