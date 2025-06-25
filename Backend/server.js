@@ -133,6 +133,70 @@ app.get('/crates', async (req, res) => {
     res.json({ crates });
     });
 
+app.get('/palletes', async (req, res) => {
+    const {location, page, limit} = req.query;
+
+
+    if (!location) {
+        return res.status(400).json({ error: 'Missing location parameter' });
+    }
+
+    const data = await database.getPalletsByLocation(location, page, limit);
+
+    if (!data){
+        res.status(500).json({ error: 'Failed to fetch palletes' });
+    }
+    res.status(200).send(data)
+
+})
+
+app.delete('/palletes', async (req, res) => {
+    const pallete_id = req.body.pallete_id;
+
+    if (!pallete_id) {
+        return res.status(400).json({ error: 'Missing pallete_id parameter' });
+    }
+
+    const data = await database.deletePallet(pallete_id);
+
+    if (!data){
+        res.status(500).json({ error: 'Failed to fetch palletes' });
+    }
+    res.status(200).send(data)
+
+})
+
+app.post('/palletes', async (req, res) => {
+    const {location, capacity} = req.body;
+
+    if (!location) {
+        return res.status(400).json({ error: 'Missing parameters' });
+    }
+
+    const data = await database.createNewPallet(location, capacity);
+
+    if (!data){
+        res.status(500).json({ error: 'Failed to fetch palletes' });
+    }
+
+    res.status(200).send("New Pallete created")
+
+})
+
+app.put('/palletes', async (req, res) => {
+    const { pallete_id, capacity } = req.body;
+
+    const result = await database.updatePalletCapacity(pallete_id, capacity);
+    
+    if (result) {
+        res.status(200).json({ message: 'Capacity updated successfully' });
+    } else {
+        res.status(400).json({ error: 'Failed to update capacity' });
+    }
+})
+
+
+
 app.listen(5000, () => {
     console.log("server is listening at port 5000!!");
 })

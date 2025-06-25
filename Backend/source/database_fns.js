@@ -391,6 +391,151 @@ async function get_crates_by_customer(customer_id) {
     }
     }
 
+async function getPalletsByLocation(location, page, limit) {
+    const connection = await pool.getConnection();
+
+    try {
+        const parsedPage = page != null ? parseInt(page, 10) : 1;
+        const parsedLimit = limit != null ? parseInt(limit, 10) : 10;
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        const whereClause = location ? `WHERE location LIKE ?` : '';
+        const params = location ? [`%${location}%`] : [];
+
+        // Get total count
+        const countQuery = `
+            SELECT COUNT(*) AS total
+            FROM Palletes
+            ${whereClause}
+        `;
+        const [[{ total }]] = await connection.query(countQuery, params);
+
+        // Get paginated rows
+        const dataQuery = `
+            SELECT pallete_id, location, capacity, holding, status
+            FROM Palletes
+            ${whereClause}
+            ORDER BY location ASC
+            LIMIT ? OFFSET ?
+        `;
+        const [rows] = await connection.query(
+            dataQuery,
+            [...params, parsedLimit, offset]
+        );
+
+        connection.release();
+        return {
+            rows,
+            total,
+        };
+    } catch (error) {
+        console.error("Error fetching pallets by location:", error);
+        connection.release();
+        throw error;
+    }
+}
+
+async function deletePallet(pallet_id) {
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        const deleteQuery = `DELETE FROM Palletes WHERE pallete_id = ?`;
+
+        const [result] = await connection.query(deleteQuery, [pallet_id]);
+
+        await connection.commit();
+        connection.release();
+
+        return result.affectedRows > 0;
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error deleting pallet:", error);
+        connection.release();
+        return false;
+    }
+}
+
+async function createNewPallet(location, capacity = 4) {
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        const pallete_id = generateUUID();
+
+        const parsedCapacity = parseInt(capacity, 10) || 4;
+
+        const insertPalletQuery = `
+            INSERT INTO Palletes (pallete_id, location, capacity, holding, status)
+            VALUES (?, ?, ?, ?, ?)
+        `;
+
+        await connection.query(insertPalletQuery, [
+            pallete_id,
+            location,
+            parsedCapacity,
+            0,
+            'Empty'
+        ]);
+
+        await connection.commit();
+        connection.release();
+        return true; // return the new ID if needed
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating pallet:", error);
+        connection.release();
+        return false;
+    }
+}
+
+async function updatePalletCapacity(pallete_id, newCapacity) {
+    const connection = await pool.getConnection();
+
+    try {
+        const parsedCapacity = parseInt(newCapacity, 10);
+
+        if (isNaN(parsedCapacity) || parsedCapacity <= 0) {
+            throw new Error('Invalid capacity input');
+        }
+
+        // Get current holding to ensure capacity >= holding
+        const [[existing]] = await connection.query(
+            'SELECT holding FROM Palletes WHERE pallete_id = ?',
+            [pallete_id]
+        );
+
+        if (!existing) {
+            throw new Error('Pallet not found');
+        }
+
+        if (existing.holding > parsedCapacity) {
+            throw new Error(`New capacity (${parsedCapacity}) cannot be less than current holding (${existing.holding})`);
+        }
+
+        await connection.query(
+        `UPDATE Palletes 
+            SET capacity = ?, 
+                status = CASE 
+                    WHEN ? = holding THEN 'Full'
+                    WHEN holding = 0 THEN 'Empty'
+                    ELSE 'Available'
+                END
+            WHERE pallete_id = ?`,
+            [parsedCapacity, parsedCapacity, pallete_id]
+        );
+
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('Error updating pallet capacity:', error.message);
+        connection.release();
+        return false;
+    }
+}
+
 
 module.exports = {
     update_new_customer_data, 
@@ -400,5 +545,9 @@ module.exports = {
     getCustomers,
     delete_customer,
     updateCustomerData,
-    get_crates_by_customer
+    get_crates_by_customer,
+    getPalletsByLocation,
+    deletePallet,
+    createNewPallet,
+    updatePalletCapacity
 }
