@@ -36,7 +36,7 @@ function CornerMenuButton() {
             open={Boolean(anchorEl)}
             onClose={handleClose}
         >
-            <MenuItem onClick={() => handleSelect('/loading-management')}>Loading management</MenuItem>
+            <MenuItem onClick={() => handleSelect('/palette-management')}>Palette management</MenuItem>
             <MenuItem onClick={() => handleSelect('/customer-management')}>Customer management</MenuItem>
         </Menu>
         </div>

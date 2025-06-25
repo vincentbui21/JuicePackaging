@@ -40,7 +40,7 @@ function QRCodeDialog({ open, onClose, data }) {
                 <Stack direction="row" spacing={2} alignItems="center" key={index}>
                 <img src={src} alt={`QR code ${index}`} width={100} height={100} />
                 <Stack spacing={1}>
-                    <Typography variant="body2">{`QR Code for Crate ${index+1}`}</Typography>
+                    <Typography variant="body2">{`QR Code for Crate/Pallete ${index+1}`}</Typography>
                     <Button variant="outlined" onClick={ ()=> handlePrint(qrCodes[index])}>
                         Send to Printer
                     </Button>

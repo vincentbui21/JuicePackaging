@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage.jsx'
 import CustomerInfoEntry from './pages/CustomerInfoEntry.jsx'
 import CrateHandling from './pages/CrateHandling.jsx'
 import CustomerInfoManagement from './pages/customer_info_management.jsx'
+import PaletteManagement from './pages/paletteManagement.jsx'
 
 const router = createBrowserRouter([
   {
@@ -18,6 +19,9 @@ const router = createBrowserRouter([
 },
 {
   path: "/customer-management", element: <CustomerInfoManagement />
+},
+{
+  path: "/palette-management", element: <PaletteManagement />
 }
 ])
 
