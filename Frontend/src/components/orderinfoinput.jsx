@@ -40,7 +40,7 @@ function OrderInfoInput({data, setdata}) {
 
                     <Grid item size={8} display="flex" alignItems="center" >
                         <TextField required name={"total_apple_weight"} type="number" variant='filled' label="Enter weight in kilograms" 
-                        onChange={handleCustomerInfoUpdate}
+                        onChange={handleCustomerInfoUpdate} value={data.total_apple_weight}
                         sx={
                             {
                                 width: "min(600px, 90%)"
@@ -69,7 +69,7 @@ function OrderInfoInput({data, setdata}) {
 
                     <Grid item size={8} display="flex" alignItems="center" >
                         <TextField name="No_of_Crates" type="number" variant='filled' label="Enter crate count" 
-                        onChange={handleCustomerInfoUpdate}
+                        onChange={handleCustomerInfoUpdate} value={data.No_of_Crates}
                         sx={
                             {
                                 width: "min(600px, 90%)"
@@ -98,7 +98,7 @@ function OrderInfoInput({data, setdata}) {
 
                     <Grid item size={8} display="flex" alignItems="center" >
                         <TextField type="number" variant='filled' label="Enter juice volume" name="Juice_quantity"
-                        onChange={handleCustomerInfoUpdate}
+                        onChange={handleCustomerInfoUpdate} value={data.Juice_quantity}
                         sx={
                             {
                                 width: "min(600px, 90%)"
@@ -127,7 +127,7 @@ function OrderInfoInput({data, setdata}) {
 
                     <Grid item size={8} display="flex" alignItems="center" >
                         <TextField type="number" variant='filled' label="Enter pouch count" name="No_of_Pouches"
-                        onChange={handleCustomerInfoUpdate}
+                        onChange={handleCustomerInfoUpdate} value={data.No_of_Pouches}
                         sx={
                             {
                                 width: "min(600px, 90%)"
@@ -173,6 +173,7 @@ function OrderInfoInput({data, setdata}) {
                             fullWidth
                             variant="outlined"
                             sx={{ mt: 2 }} // adds margin top
+                            value={data.Notes}
                             />
                     </Grid>
                 </Grid>
