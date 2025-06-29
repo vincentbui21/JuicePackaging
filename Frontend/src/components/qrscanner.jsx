@@ -1,48 +1,32 @@
-import { useEffect, useRef } from "react";
-import { Paper } from "@mui/material";
-import PropTypes from "prop-types";
-import { BrowserQRCodeReader } from "@zxing/browser";
+import { useState } from "react";
+import { QrReader } from "react-qr-reader";
 
-const QRScanner = ({ onResult }) => {
-    const videoRef = useRef(null);
+function QrScanner({ onScan, onError }) {
+  const [cameraEnabled, setCameraEnabled] = useState(true);
 
-    useEffect(() => {
-        const codeReader = new BrowserQRCodeReader();
-        let streamController;
+  return (
+    <div style={{ width: "100%", maxWidth: "500px", margin: "auto" }}>
+      {cameraEnabled && (
+        <QrReader
+          constraints={{ facingMode: "environment" }}
+          onResult={(result, error) => {
+            if (!!result) {
+              const text = result?.text;
+              if (text) {
+                onScan(text); // Send scanned text to parent
+                // Camera stays on for continuous scanning
+              }
+            }
+            if (!!error) {
+              onError?.(error); // Log any scan errors
+            }
+          }}
+          style={{ width: "100%" }}
+          videoStyle={{ width: "100%", height: "auto" }}
+        />
+      )}
+    </div>
+  );
+}
 
-        codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
-        if (result) {
-            onResult(result.getText());
-        }
-        }).then(controller => {
-            streamController = controller;
-        }).catch(err => {
-            console.error("Camera error:", err);
-        });
-
-        return () => {
-            streamController?.stop();
-        };
-    }, [onResult]);
-
-    return (
-        <Paper elevation= "24" sx={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            borderRadius: "15px",
-            width: "min(300px, 80%)",
-            height: "auto",
-            padding: "5px",
-            backgroundColor: "#d6d0b1"
-        }}>
-            <video ref={videoRef} style={{ width: "90%", maxHeight: "90%", borderRadius: "10px"}} />
-        </Paper>
-    );
-};
-
-QRScanner.propTypes = {
-    onResult: PropTypes.func.isRequired,
-};
-
-export default QRScanner;
+export default QrScanner;
