@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import company_logo from "../assets/company_logo.png"
 import backgroundomena from "../assets/backgroundomena.jpg"
 import { Navigate } from "react-router-dom";
+import CrateHandling from "./CrateHandling";
+import CornerMenuButton from "../components/connermenu";
 
 function LoginPage() {
     useEffect(() => {
@@ -15,7 +17,7 @@ function LoginPage() {
 
 
     return () => {
-      
+        // Clean up background when component unmounts
         document.body.style.backgroundImage = "";
         document.body.style.backgroundSize = "";
         document.body.style.backgroundRepeat = "";
@@ -32,6 +34,8 @@ function LoginPage() {
     switch (Redirect){
         case 1:
             return <Navigate to={"/customer-info-entry"}></Navigate>
+        case 2:
+            return <Navigate to={"/crate-handling"} />
         case 3:
             return <Navigate to={"/juice-handle"} />
         case 4:
@@ -40,6 +44,8 @@ function LoginPage() {
             return <Navigate to={"/pickup"} />
         default:
             break;
+        case "":
+            break
     }
 
     const handleChangeRole = (e) => {
@@ -64,56 +70,62 @@ function LoginPage() {
     }
 
     return ( 
-        <Box
-            sx={{
-            height: '98vh',
-            backgroundColor: 'transparent',
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            }}
-        >
-        <Paper elevation={24} variant="elevation" sx={
-            {
-                backgroundColor: "#d6d0b1",
-                width: "min(500px, 80%)",
-                height: "70%",
+        <>
+        
+            <Box
+                sx={{
+                height: '98vh',
+                backgroundColor: 'transparent',
                 display: "flex",
-                flexDirection: "column",
                 justifyContent: "center",
-                alignItems:"center",
-                gap: 4,
-                borderRadius: 3,
-                border:2,
-                borderColor:"#c2c2c2"
-            }
-        }>
+                alignItems: "center",
+                }}
+            >
+            <Paper elevation={24} variant="elevation" sx={
+                {
+                    backgroundColor: "#d6d0b1",
+                    width: "min(500px, 80%)",
+                    height: "70%",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems:"center",
+                    gap: 4,
+                    borderRadius: 3,
+                    border:2,
+                    borderColor:"#c2c2c2"
+                }
+            }>
+                
+                <img src={company_logo} alt="company logo" width={150}/>
+
+                <TextField 
+                label="Choose a role" 
+                select value={role} 
+                onChange={handleChangeRole} 
+                error={Role_Error}
+                helperText ={Role_Error ? "Please choose a role" : ""}
+                sx={{
+                    width: "50%"
+                }}>
+                    <MenuItem value= "1">Customer Info Entry</MenuItem>
+                    <MenuItem value= "2">Crate Management</MenuItem>
+                    <MenuItem value= "3">Juice Processing</MenuItem>
+                    <MenuItem value= "4">Box Loading</MenuItem>
+                    <MenuItem value= "5">Pickup Coordination</MenuItem>
+                </TextField>
+
+                <Button variant="contained" onClick={handleButtonClick}>
+                    Confirm
+                </Button>
+
+            </Paper>
+            </Box>
             
-            <img src={company_logo} alt="company logo" width={150}/>
-
-            <TextField 
-            label="Choose a role" 
-            select value={role} 
-            onChange={handleChangeRole} 
-            error={Role_Error}
-            helperText ={Role_Error ? "Please choose a role" : ""}
-            sx={{
-                width: "50%"
-            }}>
-                <MenuItem value= "1">Customer Info Entry</MenuItem>
-                <MenuItem value= "2">Crate Management</MenuItem>
-                <MenuItem value= "3">Juice Processing</MenuItem>
-                <MenuItem value= "4">Box Loading</MenuItem>
-                <MenuItem value= "5">Pickup Coordination</MenuItem>
-            </TextField>
-
-            <Button variant="contained" onClick={handleButtonClick}>
-                Confirm
-            </Button>
-
-        </Paper>
-        </Box>
+            <CornerMenuButton />
+        </>
     );
+
 }
 
 export default LoginPage;

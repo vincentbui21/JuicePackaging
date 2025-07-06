@@ -16,10 +16,8 @@ import { useEffect, useState } from "react";
 import axios from "../services/axios";
 import backgroundomena from "../assets/backgroundomena.jpg";
 import { io } from "socket.io-client";
-import { generateSmallPngQRCode } from "../services/qrcodGenerator";
+import generateSmallPngQRCode from '../services/qrcodGenerator';
 import { TextField } from "@mui/material";
-
-const socket = io("http://localhost:3001");
 
 function JuiceHandlePage() {
   const [orders, setOrders] = useState([]);
