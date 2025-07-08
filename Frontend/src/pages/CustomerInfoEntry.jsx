@@ -57,7 +57,7 @@ function CustomerInfoEntry() {
     const handleSubmit = async ()=> {
         // console.log("Customer Info: ", customerdata.entryDate)
         // console.log("Order Info: ", orderdata)
-        if(customerdata.full_name == "" || customerdata.city == "" || customerdata.phone_number =="" || orderdata.total_apple_weight ==""){
+        if(customerdata.full_name == "" || customerdata.city == "" || customerdata.phone_number =="" ||customerdata.entryDate == ""|| orderdata.total_apple_weight ==""){
             set_Openreminder(true)
         }
         else{

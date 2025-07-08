@@ -1,10 +1,15 @@
 const database = require('./source/database_fns');
 const express = require('express');
-const cors = require('cors')
-const uuid = require('./source/uuid')
-const app = express()
+const cors = require('cors');
+const uuid = require('./source/uuid');
+const app = express();
 
-app.use(cors())
+app.use(cors({
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type'],
+}));
+
 app.use(express.json())
 
 app.get('/', (req, res) => {
@@ -133,6 +138,6 @@ app.get('/crates', async (req, res) => {
     res.json({ crates });
     });
 
-app.listen(5000, () => {
-    console.log("server is listening at port 5000!!");
+app.listen(5001, () => {
+    console.log("server is listening at port 5001!!");
 })
