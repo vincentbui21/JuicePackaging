@@ -29,7 +29,7 @@ function CrateHandling() {
         const fetchDatFunction = async () => {
             console.log(scanResult);
             try{
-                const fetch_data = await api.get(`http://localhost:5000/crates/${scanResult}`)
+                const fetch_data = await api.get(`http://localhost:5001/crates/${scanResult}`)
                 return fetch_data.data;
             }
             catch(error){

@@ -9,15 +9,16 @@ import {
   Stack,
   Box,
   Snackbar,
+  TextField,
 } from "@mui/material";
-
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useEffect, useState } from "react";
-import axios from "../services/axios";
+import api from "../services/axios";
 import backgroundomena from "../assets/backgroundomena.jpg";
 import { io } from "socket.io-client";
 import generateSmallPngQRCode from '../services/qrcodGenerator';
-import { TextField } from "@mui/material";
+
+const socket = io("http://localhost:5001");
 
 function JuiceHandlePage() {
   const [orders, setOrders] = useState([]);
@@ -48,12 +49,13 @@ function JuiceHandlePage() {
 
   const fetchProcessingOrders = async () => {
     try {
-      const res = await axios.get("/api/orders?status=processing");
+      const res = await api.get("/orders?status=In Progress");
       setOrders(res.data);
     } catch (err) {
       console.error("Error fetching orders:", err);
     }
   };
+  
 
   const printPouchLabels = (order) => {
     const expiryDate = new Date();
@@ -71,13 +73,16 @@ function JuiceHandlePage() {
   };
 
   const generateQRCodes = async (order) => {
-    const count = Math.ceil(order.total_pouches / 8);
+    const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);
+    const count = Math.ceil(estimatedPouches / 8);
     const codes = [];
+
     for (let i = 0; i < count; i++) {
       const text = `CRATE_${order.order_id}_${i + 1}`;
       const png = await generateSmallPngQRCode(text);
       codes.push({ index: i + 1, url: png });
     }
+
     setQrCodes((prev) => ({ ...prev, [order.order_id]: codes }));
     setSnackbarMsg("QR Codes Generated");
   };
@@ -97,20 +102,28 @@ function JuiceHandlePage() {
   const markOrderDone = async (orderId) => {
     try {
       const comment = comments[orderId] || "";
-      await axios.post(`/api/orders/${orderId}/done`, { comment });
+
+      await api.post(`/orders/${orderId}/done`, { comment });
+
+      socket.emit("order-completed", {
+        order_id: orderId,
+        status: "Loading"
+      });
+
       setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
-      setSnackbarMsg("Order marked as done");
       setComments((prev) => {
         const updated = { ...prev };
         delete updated[orderId];
         return updated;
       });
+
+      setSnackbarMsg("Order marked as done");
     } catch (err) {
       console.error("Failed to update status", err);
       setSnackbarMsg("Failed to update order status");
     }
   };
-  
+
   return (
     <Box display="flex" flexDirection="column" alignItems="center" p={2}>
       <Typography
@@ -122,7 +135,8 @@ function JuiceHandlePage() {
 
       <Box sx={{ width: "100%", maxWidth: 800, mt: 3 }}>
         {orders.map((order) => {
-          const qrCount = Math.ceil(order.total_pouches / 8);
+          const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);
+          const qrCount = Math.ceil(estimatedPouches / 8);
           const expiryDate = new Date();
           expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
@@ -130,7 +144,7 @@ function JuiceHandlePage() {
             <Accordion key={order.order_id}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Typography sx={{ fontWeight: "bold" }}>
-                  {order.name} - {order.total_pouches} pouches
+                  {order.name} - Est. {estimatedPouches} pouches
                 </Typography>
               </AccordionSummary>
               <AccordionDetails>
@@ -139,11 +153,10 @@ function JuiceHandlePage() {
                     <Stack spacing={2}>
                       <Typography><strong>Order ID:</strong> {order.order_id}</Typography>
                       <Typography><strong>Customer:</strong> {order.name}</Typography>
-                      <Typography><strong>Total Pouches:</strong> {order.total_pouches}</Typography>
+                      <Typography><strong>Apple Weight:</strong> {order.weight_kg} kg</Typography>
+                      <Typography><strong>Estimated Pouches:</strong> {estimatedPouches}</Typography>
                       <Typography><strong>QR Codes to Print:</strong> {qrCount}</Typography>
                       <Typography><strong>Expiry Date:</strong> {expiryDate.toISOString().split("T")[0]}</Typography>
-
-                      <Stack direction="row" spacing={2}>
 
                       <TextField
                         label="Comments"
@@ -159,28 +172,10 @@ function JuiceHandlePage() {
                         }
                       />
 
-                        <Button
-                          variant="contained"
-                          onClick={() => printPouchLabels(order)}
-                        >
-                          Print Pouch Info
-                        </Button>
-
-                        <Button
-                          variant="contained"
-                          color="success"
-                          onClick={() => generateQRCodes(order)}
-                        >
-                          Generate QR Codes
-                        </Button>
-
-                        <Button
-                          variant="contained"
-                          color="error"
-                          onClick={() => markOrderDone(order.order_id)}
-                        >
-                          Mark as Done
-                        </Button>
+                      <Stack direction="row" spacing={2}>
+                        <Button variant="contained" onClick={() => printPouchLabels(order)}>Print Pouch Info</Button>
+                        <Button variant="contained" color="success" onClick={() => generateQRCodes(order)}>Generate QR Codes</Button>
+                        <Button variant="contained" color="error" onClick={() => markOrderDone(order.order_id)}>Mark as Done</Button>
                       </Stack>
 
                       {qrCodes[order.order_id] && (

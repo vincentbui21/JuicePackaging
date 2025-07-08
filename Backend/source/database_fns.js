@@ -391,7 +391,21 @@ async function get_crates_by_customer(customer_id) {
     }
     }
 
-
+    async function getOrdersByStatus(status) {
+        const [rows] = await pool.query(`
+            SELECT 
+                o.order_id,
+                o.weight_kg,
+                o.status,
+                c.name
+            FROM Orders o
+            JOIN Customers c ON o.customer_id = c.customer_id
+            WHERE o.status = ?
+        `, [status]);
+    
+        return rows;
+    }
+    
 module.exports = {
     update_new_customer_data, 
     get_crate_data, 
@@ -400,5 +414,6 @@ module.exports = {
     getCustomers,
     delete_customer,
     updateCustomerData,
-    get_crates_by_customer
+    get_crates_by_customer,
+    getOrdersByStatus
 }
