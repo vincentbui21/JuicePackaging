@@ -1,4 +1,3 @@
-// PickupPage.jsx – enhanced full functionality
 import {
   Box,
   Typography,
@@ -58,12 +57,12 @@ function PickupPage() {
     if (!selected) return;
     try {
       await api.post(`/orders/${selected.order_id}/pickup`);
-      setSnackbarMsg("✅ Pickup confirmed!");
+      setSnackbarMsg(" Pickup confirmed!");
       setResults((prev) => prev.filter(r => r.order_id !== selected.order_id));
       setSelected(null);
     } catch (err) {
       console.error("Failed to confirm pickup", err);
-      setSnackbarMsg("❌ Failed to confirm pickup");
+      setSnackbarMsg("Failed to confirm pickup");
     }
   };
 

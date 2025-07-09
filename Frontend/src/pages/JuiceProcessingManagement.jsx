@@ -1,4 +1,3 @@
-// Full JuiceProcessingManagement.jsx with QR pop-up and print option
 import { useEffect, useState } from "react";
 import {
   Box,

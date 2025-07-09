@@ -1,4 +1,3 @@
-// LoadingHandlePage.jsx – polished loading workflow with validation, animations, and tracking
 import { useEffect, useState } from "react";
 import {
   Box,
@@ -183,7 +182,7 @@ function LoadingHandlePage() {
         onClose={() => setNotificationOpen(false)}
       >
         <Alert onClose={() => setNotificationOpen(false)} severity="success" sx={{ width: '100%' }}>
-          ✅ Order is ready for pickup!
+           Order is ready for pickup!
         </Alert>
       </Snackbar>
     </Box>
