@@ -38,6 +38,7 @@ function CornerMenuButton() {
         >
             <MenuItem onClick={() => handleSelect('/loading-management')}>Loading management</MenuItem>
             <MenuItem onClick={() => handleSelect('/customer-management')}>Customer management</MenuItem>
+            <MenuItem onClick={() => navigate('/juice-management')}>Juice Management</MenuItem>
         </Menu>
         </div>
     );

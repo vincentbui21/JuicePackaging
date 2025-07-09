@@ -1,42 +1,143 @@
-import { Box, Typography, TextField, Button, Paper } from "@mui/material";
-import { useState, useEffect } from "react";
+// PickupPage.jsx – enhanced full functionality
+import {
+  Box,
+  Typography,
+  TextField,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  Button,
+  Snackbar,
+  Alert,
+  CircularProgress,
+} from "@mui/material";
+import { useEffect, useState } from "react";
+import api from "../services/axios";
 import backgroundomena from "../assets/backgroundomena.jpg";
-import company_logo from "../assets/company_logo.png";
 
 function PickupPage() {
   const [search, setSearch] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [snackbarMsg, setSnackbarMsg] = useState("");
 
   useEffect(() => {
     document.body.style.backgroundImage = `url(${backgroundomena})`;
     document.body.style.backgroundSize = "cover";
     document.body.style.backgroundRepeat = "no-repeat";
-    document.body.style.backgroundPosition = "center";
-    document.body.style.height = "100vh";
-    document.body.style.margin = "0";
-    document.body.style.overflow = "hidden";
+    document.body.style.backgroundAttachment = "fixed";
     return () => {
-      document.body.style.backgroundImage = "";
-      document.body.style.backgroundSize = "";
-      document.body.style.backgroundRepeat = "";
-      document.body.style.backgroundPosition = "";
-      document.body.style.height = "";
-      document.body.style.margin = "";
-      document.body.style.overflow = "";
+      document.body.style = "";
     };
   }, []);
 
+  const handleSearch = async (e) => {
+    const q = e.target.value;
+    setSearch(q);
+    setSelected(null);
+    if (!q) {
+      setResults([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.get(`/orders/pickup?query=${encodeURIComponent(q)}`);
+      setResults(res.data);
+    } catch (err) {
+      console.error("Search failed", err);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmPickup = async () => {
+    if (!selected) return;
+    try {
+      await api.post(`/orders/${selected.order_id}/pickup`);
+      setSnackbarMsg("✅ Pickup confirmed!");
+      setResults((prev) => prev.filter(r => r.order_id !== selected.order_id));
+      setSelected(null);
+    } catch (err) {
+      console.error("Failed to confirm pickup", err);
+      setSnackbarMsg("❌ Failed to confirm pickup");
+    }
+  };
+
   return (
-    <Box display="flex" flexDirection="column" alignItems="center" p={2}>
-      <img src={company_logo} alt="company logo" width={120} style={{ marginBottom: "10px" }} />
-      <Typography variant="h4" sx={{ background: "#a9987d", p: 2, borderRadius: 2, color: "white" }}>Customer Pickup</Typography>
+    <Box p={2}>
+      <Box display="flex" justifyContent="center">
+        <Typography
+          variant="h6"
+          sx={{
+            fontSize: "clamp(20px, 5vw, 40px)",
+            textAlign: "center",
+            paddingTop: "10px",
+            paddingBottom: "10px",
+            marginBottom: "10px",
+            color: "black",
+            background: "#a9987d",
+            width: "min(1200px, 90%)",
+            borderRadius: "10px",
+          }}
+        >
+          Pickup Confirmation
+        </Typography>
+      </Box>
 
-      <Paper sx={{ mt: 3, p: 3, width: "min(700px, 90%)", bgcolor: "#d6d0b1" }}>
-        <TextField fullWidth label="Search by Name or Phone" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ mb: 2 }} />
+      <Paper elevation={3} sx={{ p: 2, mb: 2, backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(600px, 95%)', mx: 'auto' }}>
+        <TextField
+          label="Search by Name or Phone"
+          value={search}
+          onChange={handleSearch}
+          fullWidth
+          sx={{ backgroundColor: "white", borderRadius: 1 }}
+        />
 
-        <Typography variant="body1" sx={{ my: 2 }}>Results shown here...</Typography>
+        {loading && <Box mt={2} textAlign="center"><CircularProgress /></Box>}
 
-        <Button variant="contained" fullWidth>Confirm Pickup</Button>
+        <List>
+          {results.map((res) => (
+            <ListItem
+              key={res.order_id}
+              button
+              selected={selected?.order_id === res.order_id}
+              onClick={() => setSelected(res)}
+              sx={{ mt: 1, backgroundColor: selected?.order_id === res.order_id ? '#b2dfdb' : '#fff', borderRadius: 1 }}
+            >
+              <ListItemText
+                primary={`${res.name} (${res.phone})`}
+                secondary={`City: ${res.city} | Order ID: ${res.order_id} | Boxes: ${res.box_count}`}
+              />
+            </ListItem>
+          ))}
+        </List>
+
+        {selected && (
+          <Button
+            variant="contained"
+            color="success"
+            fullWidth
+            sx={{ mt: 2 }}
+            onClick={confirmPickup}
+          >
+            Confirm Pickup
+          </Button>
+        )}
       </Paper>
+
+      <Snackbar
+        open={!!snackbarMsg}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarMsg("")}
+      >
+        <Alert severity="info" sx={{ width: '100%' }}>
+          {snackbarMsg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

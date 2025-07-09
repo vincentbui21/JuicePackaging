@@ -25,10 +25,12 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
     "dotenv": "^16.5.0",
+    "papaparse": "^5.5.3",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.2",
+    "recharts": "^3.0.2",
     "socket.io-client": "^4.8.1",
     "styled-components": "^6.1.18"
   },

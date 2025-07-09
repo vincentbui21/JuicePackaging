@@ -405,7 +405,59 @@ async function get_crates_by_customer(customer_id) {
     
         return rows;
     }
+
+    async function markOrderAsDone(order_id, comment = "") {
+        // 1. Update order status
+        await pool.query(
+          `UPDATE Orders SET status = ? WHERE order_id = ?`,
+          ['processing complete', order_id]
+        );
+      
+        // 2. Update crate status (via customer_id)
+        await pool.query(
+          `UPDATE Crates SET status = ? WHERE customer_id = (
+            SELECT customer_id FROM Orders WHERE order_id = ?
+          )`,
+          ['processing complete', order_id]
+        );
+      
+        // 3. Get customer_id and weight
+        const [[order]] = await pool.query(
+          `SELECT weight_kg, customer_id FROM Orders WHERE order_id = ?`,
+          [order_id]
+        );
+      
+        const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);
+        const boxCount = Math.ceil(estimatedPouches / 8);
+      
+        const inserts = [];
+      
+        for (let i = 1; i <= boxCount; i++) {
+          const boxId = `CRATE_${order_id}_${i}`;
+          inserts.push([boxId, order.customer_id]);
+        }
+      
+        // 4. Insert into Boxes table (ignore duplicates)
+        await pool.query(
+          `INSERT IGNORE INTO Boxes (box_id, customer_id) VALUES ?`,
+          [inserts]
+        );
+      }      
     
+    async function updateOrderInfo(order_id, data) {
+        const { weight_kg, estimated_pouches, estimated_boxes } = data;
+      
+        await pool.query(
+          `UPDATE Orders SET weight_kg = ?, estimated_pouches = ?, estimated_boxes = ? WHERE order_id = ?`,
+          [weight_kg, estimated_pouches, estimated_boxes, order_id]
+        );
+      }
+      
+      async function deleteOrder(order_id) {
+        await pool.query("DELETE FROM Orders WHERE order_id = ?", [order_id]);
+      }
+      
+      
 module.exports = {
     update_new_customer_data, 
     get_crate_data, 
@@ -415,5 +467,8 @@ module.exports = {
     delete_customer,
     updateCustomerData,
     get_crates_by_customer,
-    getOrdersByStatus
+    getOrdersByStatus,
+    markOrderAsDone,
+    updateOrderInfo,
+    deleteOrder
 }

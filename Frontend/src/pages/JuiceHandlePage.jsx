@@ -1,3 +1,4 @@
+
 import {
   Accordion,
   AccordionSummary,
@@ -10,6 +11,7 @@ import {
   Box,
   Snackbar,
   TextField,
+  Paper,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useEffect, useState } from "react";
@@ -37,12 +39,15 @@ function JuiceHandlePage() {
 
     fetchProcessingOrders();
 
-    socket.on("order-status-updated", () => {
+    const handleSocketUpdate = () => {
       fetchProcessingOrders();
-    });
+      setSnackbarMsg("Order status updated!");
+    };
+
+    socket.on("order-status-updated", handleSocketUpdate);
 
     return () => {
-      socket.disconnect();
+      socket.off("order-status-updated", handleSocketUpdate);
       document.body.style = "";
     };
   }, []);
@@ -55,7 +60,6 @@ function JuiceHandlePage() {
       console.error("Error fetching orders:", err);
     }
   };
-  
 
   const printPouchLabels = (order) => {
     const expiryDate = new Date();
@@ -102,21 +106,14 @@ function JuiceHandlePage() {
   const markOrderDone = async (orderId) => {
     try {
       const comment = comments[orderId] || "";
-
       await api.post(`/orders/${orderId}/done`, { comment });
-
-      socket.emit("order-completed", {
-        order_id: orderId,
-        status: "Loading"
-      });
-
+      socket.emit("order-completed", { order_id: orderId, status: "Loading" });
       setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
       setComments((prev) => {
         const updated = { ...prev };
         delete updated[orderId];
         return updated;
       });
-
       setSnackbarMsg("Order marked as done");
     } catch (err) {
       console.error("Failed to update status", err);

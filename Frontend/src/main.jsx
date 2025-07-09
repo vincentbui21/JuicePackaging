@@ -8,6 +8,8 @@ import CustomerInfoManagement from './pages/customer_info_management.jsx'
 import JuiceHandlePage from "./pages/JuiceHandlePage.jsx";
 import LoadingHandlePage from "./pages/LoadingHandlePage.jsx";
 import PickupPage from "./pages/PickupPage.jsx";
+import JuiceProcessingManagement from "./pages/JuiceProcessingManagement";
+
 
 const router = createBrowserRouter([
   {
@@ -25,6 +27,10 @@ const router = createBrowserRouter([
 {
 path: "/juice-handle",
 element: <JuiceHandlePage />,
+},
+{
+  path: "/juice-management",
+  element: <JuiceProcessingManagement />
 },
 {
 path: "/loading-handle",

@@ -159,6 +159,60 @@ app.get('/crates', async (req, res) => {
   res.json({ crates });
 });
 
+app.get('/orders', async (req, res) => {
+    const { status } = req.query;
+    const orders = await database.getOrdersByStatus(status);
+    res.status(200).json(orders);
+  });
+  app.post('/orders/:order_id/done', async (req, res) => {
+    const { order_id } = req.params;
+    const { comment } = req.body;
+  
+    try {
+      // Update order status to "processing complete"
+      await database.markOrderAsDone(order_id, comment);
+  
+      // Notify frontend via socket
+      const io = req.app.get('io');
+      io.emit("order-status-updated");
+  
+      res.status(200).json({ message: "Order marked as done" });
+    } catch (error) {
+      console.error("Failed to mark order as done:", error);
+      res.status(500).json({ error: "Failed to mark order as done" });
+    }
+  });
+
+  app.put('/orders/:order_id', async (req, res) => {
+    const { order_id } = req.params;
+    const { weight_kg, estimated_pouches, estimated_boxes } = req.body;
+  
+    try {
+      await database.updateOrderInfo(order_id, {
+        weight_kg,
+        estimated_pouches,
+        estimated_boxes
+      });
+  
+      res.status(200).json({ message: 'Order updated successfully' });
+    } catch (error) {
+      console.error('Failed to update order:', error);
+      res.status(500).json({ error: 'Failed to update order' });
+    }
+  });
+  
+  app.delete("/orders/:order_id", async (req, res) => {
+    try {
+      const { order_id } = req.params;
+      await database.deleteOrder(order_id); // Ensure this method exists
+      res.status(200).send({ message: "Order deleted" });
+    } catch (err) {
+      console.error("Failed to delete order:", err);
+      res.status(500).send("Server error");
+    }
+  });
+  
+
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
   console.log("server is listening at port 5001!!");
