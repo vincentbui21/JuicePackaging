@@ -212,7 +212,60 @@ app.get('/orders', async (req, res) => {
     }
   });
   
-
+  app.get('/pallets', async (req, res) => {
+    const { location } = req.query;
+    if (!location) return res.status(400).json({ error: "Location is required" });
+  
+    try {
+      const pallets = await database.getPalletsByLocation(location);
+      res.json(pallets);
+    } catch (err) {
+      console.error("Failed to fetch pallets:", err);
+      res.status(500).json({ error: "Failed to fetch pallets" });
+    }
+  });
+  
+  app.post('/pallets', async (req, res) => {
+    const { location, capacity } = req.body;
+    if (!location || !capacity) {
+      return res.status(400).json({ error: "Location and capacity are required" });
+    }
+  
+    try {
+      const pallet_id = await database.createPallet(location, capacity);
+      res.status(201).json({ message: "Pallet created", pallet_id });
+    } catch (err) {
+      console.error("Failed to create pallet:", err);
+      res.status(500).json({ error: "Failed to create pallet" });
+    }
+  });
+  
+  app.delete('/pallets/:pallet_id', async (req, res) => {
+    const { pallet_id } = req.params;
+    try {
+      await database.deletePallet(pallet_id);
+      res.status(200).json({ message: "Pallet deleted" });
+    } catch (err) {
+      console.error("Failed to delete pallet:", err);
+      res.status(500).json({ error: "Failed to delete pallet" });
+    }
+  });
+  
+  app.post('/orders/:order_id/ready', async (req, res) => {
+    const { order_id } = req.params;
+  
+    try {
+      await database.markOrderAsReady(order_id);
+      const io = req.app.get('io');
+      io.emit("order-status-updated");
+  
+      res.status(200).json({ message: "Order marked as ready" });
+    } catch (error) {
+      console.error("Failed to mark order as ready:", error);
+      res.status(500).json({ error: "Failed to mark order as ready" });
+    }
+  });
+  
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
   console.log("server is listening at port 5001!!");

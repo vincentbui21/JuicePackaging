@@ -1,3 +1,16 @@
-SELECT * FROM Palletes
+SELECT * FROM Pallets;
 
 RENAME TABLE Palletes TO Pallets;
+
+
+ALTER TABLE Pallets
+CHANGE COLUMN pallete_id pallet_id VARCHAR(36);
+
+
+ALTER TABLE Pallets
+ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP;
+
+CREATE TABLE Cities (
+  city_id VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE
+);

@@ -457,6 +457,28 @@ async function get_crates_by_customer(customer_id) {
         await pool.query("DELETE FROM Orders WHERE order_id = ?", [order_id]);
       }
       
+      async function getPalletsByLocation(location) {
+        const [rows] = await pool.query(
+          `SELECT * FROM Pallets WHERE location = ? ORDER BY created_at DESC`,
+          [location]
+        );
+        return rows;
+      }
+      
+      async function createPallet(location, capacity) {
+        const pallet_id = generateUUID(); // reuse your existing UUID function
+        await pool.query(
+          `INSERT INTO Pallets (pallet_id, location, status, capacity, holding, created_at)
+           VALUES (?, ?, 'available', ?, 0, NOW())`,
+          [pallet_id, location, capacity]
+        );
+        return pallet_id;
+      }
+      
+      async function deletePallet(pallet_id) {
+        await pool.query(`DELETE FROM Pallets WHERE pallet_id = ?`, [pallet_id]);
+      }
+      
       
 module.exports = {
     update_new_customer_data, 
@@ -470,5 +492,8 @@ module.exports = {
     getOrdersByStatus,
     markOrderAsDone,
     updateOrderInfo,
-    deleteOrder
+    deleteOrder,
+    getPalletsByLocation,
+    createPallet,
+    deletePallet
 }

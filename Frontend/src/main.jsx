@@ -9,7 +9,7 @@ import JuiceHandlePage from "./pages/JuiceHandlePage.jsx";
 import LoadingHandlePage from "./pages/LoadingHandlePage.jsx";
 import PickupPage from "./pages/PickupPage.jsx";
 import JuiceProcessingManagement from "./pages/JuiceProcessingManagement";
-
+import PalletManagement from "./pages/PalletManagement.jsx";
 
 const router = createBrowserRouter([
   {
@@ -40,6 +40,10 @@ element: <LoadingHandlePage />,
 path: "/pickup",
 element: <PickupPage />,
 },
+{
+  path: "/pallet-management",
+  element: <PalletManagement />,
+  },
 ])
 
 createRoot(document.getElementById('root')).render(
