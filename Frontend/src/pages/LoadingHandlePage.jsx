@@ -1,190 +1,170 @@
 import { useEffect, useState } from "react";
 import {
   Box,
-  Typography,
   Button,
+  Typography,
   Snackbar,
-  Alert,
   MenuItem,
   Select,
   FormControl,
   InputLabel,
-  Paper,
-  List,
-  ListItem,
-  ListItemText,
-  CircularProgress,
-  Fade,
 } from "@mui/material";
-import QrScanner from "../components/qrscanner";
-import api from "../services/axios";
+import QRScanner from "../components/qrscanner";
 import backgroundomena from "../assets/backgroundomena.jpg";
+import api from "../services/axios";
+
+const LOCATIONS = ["Kuopio", "Mikkeli", "Varkaus", "Lapinlahti", "Joensuu", "Lahti"];
 
 function LoadingHandlePage() {
-  const [scanning, setScanning] = useState(false);
-  const [city, setCity] = useState("");
-  const [expectedBoxes, setExpectedBoxes] = useState(0);
+  const [location, setLocation] = useState("");
+  const [scannerMode, setScannerMode] = useState("box");
   const [scannedBoxes, setScannedBoxes] = useState([]);
-  const [scannedOrder, setScannedOrder] = useState(null);
-  const [palletScanned, setPalletScanned] = useState(false);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  const [mode, setMode] = useState("box");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [expectedBoxes, setExpectedBoxes] = useState(0);
+  const [orderId, setOrderId] = useState(null);
+  const [customer, setCustomer] = useState(null);
+  const [snackbarMsg, setSnackbarMsg] = useState("");
 
   useEffect(() => {
     document.body.style.backgroundImage = `url(${backgroundomena})`;
     document.body.style.backgroundSize = "cover";
     document.body.style.backgroundRepeat = "no-repeat";
-    document.body.style.backgroundAttachment = "fixed";
-    return () => {
-      document.body.style = "";
-    };
+    return () => (document.body.style = "");
   }, []);
 
   const handleScan = async (data) => {
-    if (!data || data === "No QR code found.") return;
-    if (loading) return;
-    setError("");
+    if (!data || !location) return;
 
-    if (mode === "box") {
-      setLoading(true);
+    if (scannerMode === "box") {
+      if (!data.startsWith("CRATE_")) {
+        setSnackbarMsg("Invalid box QR code");
+        return;
+      }
+      const parts = data.split("_");
+      const scannedOrderId = parts[1];
+      const boxNumber = parts[2];
+
+      if (!orderId) {
+        try {
+          const res = await api.get(`/orders/${scannedOrderId}`);
+          const pouches = Math.floor((res.data.weight_kg * 0.65) / 3);
+          const totalBoxes = Math.ceil(pouches / 8);
+          setOrderId(scannedOrderId);
+          setCustomer(res.data.name);
+          setExpectedBoxes(totalBoxes);
+        } catch (err) {
+          setSnackbarMsg("Failed to load order details");
+          return;
+        }
+      }
+
+      const boxKey = `${scannedOrderId}_${boxNumber}`;
+      if (!scannedBoxes.includes(boxKey)) {
+        setScannedBoxes((prev) => [...prev, boxKey]);
+      }
+
+      if (scannedBoxes.length + 1 === expectedBoxes) {
+        setScannerMode("pallet");
+        setSnackbarMsg("All boxes scanned! Now scan the pallet.");
+      }
+    }
+
+    if (scannerMode === "pallet") {
+      if (!data.startsWith("PALLET_")) {
+        setSnackbarMsg("Invalid pallet QR code");
+        return;
+      }
+
+      const palletId = data.replace("PALLET_", "");
       try {
-        const response = await api.get(`/box/${data}`);
-        const box = response.data;
-
-        if (!scannedOrder) {
-          setScannedOrder({
-            order_id: box.order_id,
-            customer_name: box.customer_name,
-          });
-          const countRes = await api.get(`/boxes/count/${box.order_id}`);
-          setExpectedBoxes(countRes.data.count);
-        }
-
-        const alreadyScanned = scannedBoxes.some(b => b.box_id === box.box_id);
-        if (!alreadyScanned) {
-          setScannedBoxes(prev => [...prev, box]);
-        } else {
-          setError("Box already scanned.");
-        }
+        await api.post(`/loading/complete`, {
+          order_id: orderId,
+          location,
+          pallet_id: palletId,
+          boxes: scannedBoxes,
+        });
+        setSnackbarMsg("Order loaded and ready for pickup!");
+        resetState();
       } catch (err) {
         console.error(err);
-        setError("Invalid or unregistered box.");
-      } finally {
-        setLoading(false);
+        setSnackbarMsg("Failed to complete loading");
       }
-    } else if (mode === "pallet") {
-      setPalletScanned(true);
-      setNotificationOpen(true);
     }
   };
 
-  const handleStartScan = () => {
-    if (!city) {
-      setError("Please select a city to continue.");
-      return;
-    }
-    setScanning(true);
-    setMode("box");
-  };
-
-  const handleScanPallet = () => {
-    setMode("pallet");
+  const resetState = () => {
+    setOrderId(null);
+    setCustomer(null);
+    setScannedBoxes([]);
+    setExpectedBoxes(0);
+    setScannerMode("box");
   };
 
   return (
-    <Box p={2}>
-      <Box display="flex" justifyContent="center">
-        <Typography
-          variant="h6"
+    <Box textAlign="center" p={3}>
+      <Typography
+        variant="h4"
+        sx={{
+          background: "#b6a284",
+          color: "white",
+          p: 2,
+          borderRadius: 2,
+          width: "fit-content",
+          margin: "auto",
+        }}
+      >
+        Loading Station
+      </Typography>
+
+      <Box mt={3}>
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel>Select Location</InputLabel>
+          <Select
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            label="Select Location"
+          >
+            {LOCATIONS.map((city) => (
+              <MenuItem key={city} value={city}>
+                {city}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
+
+      <Box mt={4}>
+        <Typography variant="h6">Camera</Typography>
+        <Box
           sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
-            textAlign: "center",
-            paddingTop: "10px",
-            paddingBottom: "10px",
-            marginBottom: "10px",
-            color: "black",
-            background: "#a9987d",
-            width: "min(1200px, 90%)",
-            borderRadius: "10px",
+            width: 300,
+            height: 200,
+            margin: "auto",
+            backgroundColor: "#dcd2ae",
+            borderRadius: 2,
           }}
         >
-          Loading Handle Page
+          <QRScanner onScan={handleScan} continuous={true} />
+        </Box>
+        <Typography mt={1}>
+          {scannerMode === "box"
+            ? "Please scan each box QR code"
+            : "Scan the assigned pallet QR code"}
         </Typography>
       </Box>
 
-      {!scanning ? (
-        <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(600px, 95%)' }}>
-          <FormControl fullWidth>
-            <InputLabel id="city-label">Select City</InputLabel>
-            <Select
-              labelId="city-label"
-              value={city}
-              label="Select City"
-              onChange={(e) => setCity(e.target.value)}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            >
-              <MenuItem value="Kuopio">Kuopio</MenuItem>
-              <MenuItem value="Mikkeli">Mikkeli</MenuItem>
-              <MenuItem value="Varkaus">Varkaus</MenuItem>
-              <MenuItem value="Lapinlahti">Lapinlahti</MenuItem>
-              <MenuItem value="Joensuu">Joensuu</MenuItem>
-              <MenuItem value="Lahti">Lahti</MenuItem>
-            </Select>
-          </FormControl>
-          <Button onClick={handleStartScan} variant="contained" fullWidth sx={{ mt: 2 }}>
-            Start Scan
-          </Button>
-          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-        </Box>
-      ) : (
-        <>
-          <Box display="flex" flexDirection="column" alignItems="center" mt={2}>
-            <Box sx={{ maxWidth: 400, width: '100%' }}>
-              <QrScanner onScan={handleScan} />
-            </Box>
-            <Fade in={true} timeout={800}>
-              <Typography mt={2} sx={{ fontWeight: 'bold', color: 'white', textShadow: '1px 1px 3px black' }}>
-                {mode === "box" ? "Scan all boxes before pallet..." : "Now scan the pallet."}
-              </Typography>
-            </Fade>
-            {loading && <CircularProgress size={32} sx={{ mt: 2 }} />}
-          </Box>
-
-          <Paper sx={{ mt: 2, p: 2, backgroundColor: '#dcd2ae', borderRadius: 2 }}>
-            <Typography variant="subtitle1" fontWeight="bold">
-              Scanned Boxes ({scannedBoxes.length}/{expectedBoxes})
-            </Typography>
-            <List>
-              {scannedBoxes.map((box, idx) => (
-                <ListItem key={idx}>
-                  <ListItemText
-                    primary={`Box ${box.box_number}`}
-                    secondary={`Order: ${box.order_id} | Customer: ${box.customer_name}`}
-                  />
-                </ListItem>
-              ))}
-            </List>
-            {scannedBoxes.length === expectedBoxes && !palletScanned && (
-              <Button onClick={handleScanPallet} fullWidth variant="contained" color="success">
-                Scan Pallet
-              </Button>
-            )}
-            {error && <Alert severity="warning" sx={{ mt: 2 }}>{error}</Alert>}
-          </Paper>
-        </>
-      )}
+      <Box mt={2}>
+        <Typography>
+          Scanned Boxes: {scannedBoxes.length}/{expectedBoxes}
+        </Typography>
+        {customer && <Typography>Customer: {customer}</Typography>}
+      </Box>
 
       <Snackbar
-        open={notificationOpen}
-        autoHideDuration={5000}
-        onClose={() => setNotificationOpen(false)}
-      >
-        <Alert onClose={() => setNotificationOpen(false)} severity="success" sx={{ width: '100%' }}>
-           Order is ready for pickup!
-        </Alert>
-      </Snackbar>
+        open={!!snackbarMsg}
+        autoHideDuration={3000}
+        onClose={() => setSnackbarMsg("")}
+        message={snackbarMsg}
+      />
     </Box>
   );
 }

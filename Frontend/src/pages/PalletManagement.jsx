@@ -25,7 +25,7 @@ function PalletManagement() {
   const [pallets, setPallets] = useState([]);
   const [selectedCity, setSelectedCity] = useState("Lahti");
   const [cities, setCities] = useState([
-    "Lahti", "Helsinki", "Espoo", "Vantaa", "Tampere", "Turku", "Jyväskylä"
+    "Kuopio", "Mikkeli", "Varkaus", "Lapinlahti", "Joensuu", "Lahti",
   ]);
   const [newCity, setNewCity] = useState("");
   const [capacity, setCapacity] = useState(8);
@@ -35,9 +35,17 @@ function PalletManagement() {
 
   // Load saved cities
   useEffect(() => {
-    const savedCities = JSON.parse(localStorage.getItem("cities"));
-    if (savedCities?.length) setCities(savedCities);
+    const fetchCities = async () => {
+      try {
+        const res = await api.get("/cities");
+        setCities(res.data);
+      } catch (err) {
+        console.error("Failed to fetch cities", err);
+      }
+    };
+    fetchCities();
   }, []);
+  
 
   // Initial + re-fetch when selectedCity changes
   useEffect(() => {
@@ -95,13 +103,18 @@ function PalletManagement() {
   };
   
 
-  const handleAddCity = () => {
+  const handleAddCity = async () => {
     if (newCity && !cities.includes(newCity)) {
-      const updated = [...cities, newCity];
-      setCities(updated);
-      localStorage.setItem("cities", JSON.stringify(updated));
-      setNewCity("");
-      setSnackbarMsg("City added");
+      try {
+        await api.post("/cities", { name: newCity });
+        const updated = [...cities, newCity].sort();
+        setCities(updated);
+        setNewCity("");
+        setSnackbarMsg("City added");
+      } catch (err) {
+        console.error("Failed to add city", err);
+        setSnackbarMsg("Failed to add city");
+      }
     } else {
       setSnackbarMsg("City already exists or is empty");
     }
@@ -132,7 +145,15 @@ function PalletManagement() {
   ];
 
   return (
-    <>
+    <div
+  style={{
+    minHeight: '100vh',
+    backgroundImage: `url(${backgroundomena})`,  // or your actual image path
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    padding: '20px',
+  }}
+>
       <Box display="flex" justifyContent="center">
         <Typography
           variant="h6"
@@ -236,7 +257,7 @@ function PalletManagement() {
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-    </>
+   </div>
   );
 }
 
