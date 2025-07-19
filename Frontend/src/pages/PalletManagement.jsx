@@ -150,8 +150,8 @@ function PalletManagement() {
     minHeight: '100vh',
     backgroundImage: `url(${backgroundomena})`,  // or your actual image path
     backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    padding: '20px',
+    backgroundPosition: 'fixed',
+    backgroundRepeat: 'no-repeat',
   }}
 >
       <Box display="flex" justifyContent="center">
