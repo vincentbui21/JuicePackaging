@@ -1,106 +1,132 @@
 import { useEffect, useState } from "react";
 import {
-  Box,
-  Button,
-  Typography,
-  Snackbar,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
+  Box, Button, Typography, Snackbar, Alert, Stack, Paper
 } from "@mui/material";
 import QRScanner from "../components/qrscanner";
-import backgroundomena from "../assets/backgroundomena.jpg";
 import api from "../services/axios";
-
-const LOCATIONS = ["Kuopio", "Mikkeli", "Varkaus", "Lapinlahti", "Joensuu", "Lahti"];
+import backgroundomena from "../assets/backgroundomena.jpg";
 
 function LoadingHandlePage() {
-  const [location, setLocation] = useState("");
-  const [scannerMode, setScannerMode] = useState("box");
-  const [scannedBoxes, setScannedBoxes] = useState([]);
-  const [expectedBoxes, setExpectedBoxes] = useState(0);
+  const [scanResult, setScanResult] = useState(null);
   const [orderId, setOrderId] = useState(null);
-  const [customer, setCustomer] = useState(null);
+  const [customerName, setCustomerName] = useState("");
+  const [expectedBoxIDs, setExpectedBoxIDs] = useState([]);
+  const [scannedBoxIDs, setScannedBoxIDs] = useState([]);
+  const [palletId, setPalletId] = useState(null);
   const [snackbarMsg, setSnackbarMsg] = useState("");
+  const [scanMode, setScanMode] = useState("box");
 
   useEffect(() => {
     document.body.style.backgroundImage = `url(${backgroundomena})`;
     document.body.style.backgroundSize = "cover";
     document.body.style.backgroundRepeat = "no-repeat";
-    return () => (document.body.style = "");
+    return () => {
+      document.body.style = "";
+    };
   }, []);
 
-  const handleScan = async (data) => {
-    if (!data || !location) return;
+  useEffect(() => {
+    const processScan = async () => {
+      console.log("Scanned QR code:", scanResult);
+      if (!scanResult) return;
+     
 
-    if (scannerMode === "box") {
-      if (!data.startsWith("CRATE_")) {
-        setSnackbarMsg("Invalid box QR code");
-        return;
-      }
-      const parts = data.split("_");
-      const scannedOrderId = parts[1];
-      const boxNumber = parts[2];
+      if (scanMode === "box" && scanResult.startsWith("BOX_")) {
+        const parts = scanResult.split("_");
+        const scannedOrderId = parts[1];
+        const boxId = scanResult;
 
-      if (!orderId) {
-        try {
-          const res = await api.get(`/orders/${scannedOrderId}`);
-          const pouches = Math.floor((res.data.weight_kg * 0.65) / 3);
-          const totalBoxes = Math.ceil(pouches / 8);
-          setOrderId(scannedOrderId);
-          setCustomer(res.data.name);
-          setExpectedBoxes(totalBoxes);
-        } catch (err) {
-          setSnackbarMsg("Failed to load order details");
-          return;
+        if (!orderId) {
+          try {
+            const res = await api.get(`/orders/${scannedOrderId}`);
+            const order = res.data;
+            const weight = order.weight_kg;
+            const pouchCount = Math.floor((weight * 0.65) / 3);
+            const totalBoxes = Math.ceil(pouchCount / 8);
+
+            const boxList = Array.from({ length: totalBoxes }, (_, i) =>
+              `CRATE_${scannedOrderId}_${i + 1}`
+            );
+
+            setOrderId(scannedOrderId);
+            setCustomerName(order.name);
+            setExpectedBoxIDs(boxList);
+            setScannedBoxIDs([boxId]);
+          } catch (err) {
+            setSnackbarMsg("Invalid box QR or order not found.");
+          }
+        } else {
+          const isExpected = expectedBoxIDs.includes(boxId);
+          const isScanned = scannedBoxIDs.includes(boxId);
+
+          if (isExpected && !isScanned) {
+            setScannedBoxIDs(prev => [...prev, boxId]);
+          } else {
+            setSnackbarMsg("Box already scanned or invalid.");
+          }
         }
       }
 
-      const boxKey = `${scannedOrderId}_${boxNumber}`;
-      if (!scannedBoxes.includes(boxKey)) {
-        setScannedBoxes((prev) => [...prev, boxKey]);
+      if (scanMode === "pallet" && scanResult.startsWith("PALLET_")) {
+        setPalletId(scanResult.replace("PALLET_", ""));
+        setSnackbarMsg("Pallet scanned successfully.");
       }
 
-      if (scannedBoxes.length + 1 === expectedBoxes) {
-        setScannerMode("pallet");
-        setSnackbarMsg("All boxes scanned! Now scan the pallet.");
-      }
-    }
+      setScanResult(null); // reset after handling
+    };
 
-    if (scannerMode === "pallet") {
-      if (!data.startsWith("PALLET_")) {
-        setSnackbarMsg("Invalid pallet QR code");
-        return;
-      }
+    processScan();
+  }, [scanResult]);
 
-      const palletId = data.replace("PALLET_", "");
-      try {
-        await api.post(`/loading/complete`, {
-          order_id: orderId,
-          location,
-          pallet_id: palletId,
-          boxes: scannedBoxes,
-        });
-        setSnackbarMsg("Order loaded and ready for pickup!");
-        resetState();
-      } catch (err) {
-        console.error(err);
-        setSnackbarMsg("Failed to complete loading");
-      }
+  useEffect(() => {
+    console.log("Current scan mode:", scanMode);
+  }, [scanMode]);
+  
+  useEffect(() => {
+    if (orderId && expectedBoxIDs.length > 0 && scannedBoxIDs.length === expectedBoxIDs.length) {
+      setScanMode("pallet");
+      setSnackbarMsg("All boxes scanned. Now scan the pallet.");
+    } 
+  }, [scannedBoxIDs]);
+
+  const handleSubmit = async () => {
+    try {
+      await api.post(`/loading/complete`, {
+        order_id: orderId,
+        pallet_id: palletId,
+        boxes: scannedBoxIDs
+      });
+
+      await api.post(`/orders/${orderId}/ready`);
+
+      setSnackbarMsg(`Order for ${customerName} is ready for pickup!`);
+
+      // Reset
+      setScanResult(null);
+      setOrderId(null);
+      setCustomerName("");
+      setExpectedBoxIDs([]);
+      setScannedBoxIDs([]);
+      setPalletId(null);
+      setScanMode("box");
+    } catch (err) {
+      console.error(err);
+      setSnackbarMsg("Failed to complete loading.");
     }
   };
 
-  const resetState = () => {
+  const handleCancel = () => {
+    setScanResult(null);
     setOrderId(null);
-    setCustomer(null);
-    setScannedBoxes([]);
-    setExpectedBoxes(0);
-    setScannerMode("box");
+    setCustomerName("");
+    setExpectedBoxIDs([]);
+    setScannedBoxIDs([]);
+    setPalletId(null);
+    setScanMode("box");
   };
 
   return (
-    <Box textAlign="center" p={3}>
+    <Box p={3} textAlign="center">
       <Typography
         variant="h4"
         sx={{
@@ -109,62 +135,58 @@ function LoadingHandlePage() {
           p: 2,
           borderRadius: 2,
           width: "fit-content",
-          margin: "auto",
+          mx: "auto"
         }}
       >
         Loading Station
       </Typography>
 
-      <Box mt={3}>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>Select Location</InputLabel>
-          <Select
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            label="Select Location"
-          >
-            {LOCATIONS.map((city) => (
-              <MenuItem key={city} value={city}>
-                {city}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
+      <Stack spacing={3} alignItems="center" mt={4}>
+        <QRScanner onResult={setScanResult} />
 
-      <Box mt={4}>
-        <Typography variant="h6">Camera</Typography>
-        <Box
-          sx={{
-            width: 300,
-            height: 200,
-            margin: "auto",
-            backgroundColor: "#dcd2ae",
-            borderRadius: 2,
-          }}
-        >
-          <QRScanner onScan={handleScan} continuous={true} />
-        </Box>
-        <Typography mt={1}>
-          {scannerMode === "box"
-            ? "Please scan each box QR code"
-            : "Scan the assigned pallet QR code"}
-        </Typography>
-      </Box>
+        {customerName && (
+          <Typography variant="h6">Customer: {customerName}</Typography>
+        )}
 
-      <Box mt={2}>
-        <Typography>
-          Scanned Boxes: {scannedBoxes.length}/{expectedBoxes}
+        <Typography variant="body1">
+          Scanned Boxes: {scannedBoxIDs.length} / {expectedBoxIDs.length}
         </Typography>
-        {customer && <Typography>Customer: {customer}</Typography>}
-      </Box>
+
+        <Stack spacing={1}>
+          {scannedBoxIDs.map((id, idx) => (
+            <Paper key={id} elevation={2} sx={{ p: 1, width: 250 }}>
+              <Typography variant="body2">Box {idx + 1}: {id}</Typography>
+            </Paper>
+          ))}
+        </Stack>
+
+        {palletId && (
+          <Typography variant="subtitle1" mt={2}>Pallet ID: {palletId}</Typography>
+        )}
+
+        <Stack direction="row" spacing={2} mt={2}>
+          {scannedBoxIDs.length > 0 && (
+            <Button variant="outlined" color="error" onClick={handleCancel}>
+              Cancel
+            </Button>
+          )}
+          {scannedBoxIDs.length === expectedBoxIDs.length && palletId && (
+            <Button variant="contained" color="success" onClick={handleSubmit}>
+              Submit
+            </Button>
+          )}
+        </Stack>
+      </Stack>
 
       <Snackbar
         open={!!snackbarMsg}
-        autoHideDuration={3000}
+        autoHideDuration={4000}
         onClose={() => setSnackbarMsg("")}
-        message={snackbarMsg}
-      />
+      >
+        <Alert severity="info" sx={{ width: '100%' }}>
+          {snackbarMsg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

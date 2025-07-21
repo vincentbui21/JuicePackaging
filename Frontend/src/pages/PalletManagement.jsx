@@ -84,7 +84,7 @@ function PalletManagement() {
   };
 
   const handleShowQR = async (id) => {
-    const img = await generateSmallPngQRCode(id);
+    const img = await generateSmallPngQRCode("PALLET_" + id);
     setQrImage(img);
     setQrDialogOpen(true);
   };

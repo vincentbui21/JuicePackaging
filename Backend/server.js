@@ -266,6 +266,79 @@ app.get('/orders', async (req, res) => {
     }
   });
   
+  app.get("/orders/pickup", async (req, res) => {
+    const { query } = req.query;
+    console.log("Pickup query:", query); 
+    console.log("✅ /orders/pickup route HIT");
+
+    try {
+      const results = await database.searchOrdersForPickup(query);
+      console.log("Results found:", results.length); 
+      console.log("Sample result:", results[0]);
+  
+      if (results.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+      }
+  
+      res.status(200).json(results);
+    } catch (err) {
+      console.error("Pickup search failed:", err);
+      res.status(500).json({ error: "Failed to search pickup orders" });
+    }
+  });
+  
+  
+  app.get("/orders/:order_id", async (req, res) => {
+    try {
+      const result = await database.getOrderById(req.params.order_id);
+      if (!result) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      res.status(200).json(result);
+    } catch (err) {
+      console.error("Failed to fetch order by ID:", err);
+      res.status(500).send("Server error");
+    }
+  });
+
+  app.post('/loading/complete', async (req, res) => {
+    const { order_id, pallet_id, boxes } = req.body;
+  
+    if (!order_id || !pallet_id || !Array.isArray(boxes)) {
+      return res.status(400).json({ error: "Missing required data" });
+    }
+  
+    try {
+      // Update each box with the pallet ID and set city based on pallet
+      const pallet = await database.getPalletById(pallet_id);
+      if (!pallet) return res.status(404).json({ error: "Pallet not found" });
+  
+      const updateResults = await Promise.all(
+        boxes.map(box_id =>
+          database.assignBoxToPallet(box_id, pallet_id, pallet.location)
+        )
+      );
+  
+      res.status(200).json({ message: "Boxes assigned to pallet successfully" });
+    } catch (error) {
+      console.error("Error in /loading/complete:", error);
+      res.status(500).json({ error: "Failed to complete loading" });
+    }
+  });
+  
+  
+  app.post('/orders/:order_id/pickup', async (req, res) => {
+    const { order_id } = req.params;
+  
+    try {
+      await database.markOrderAsPickedUp(order_id);
+      res.status(200).json({ message: "Order marked as picked up" });
+    } catch (err) {
+      console.error("Failed to mark as picked up:", err);
+      res.status(500).json({ error: "Pickup confirmation failed" });
+    }
+  });
+  
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
   console.log("server is listening at port 5001!!");

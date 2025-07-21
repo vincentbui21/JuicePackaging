@@ -10,6 +10,7 @@ import {
   Snackbar,
   Alert,
   CircularProgress,
+  Divider
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import api from "../services/axios";
@@ -57,8 +58,8 @@ function PickupPage() {
     if (!selected) return;
     try {
       await api.post(`/orders/${selected.order_id}/pickup`);
-      setSnackbarMsg(" Pickup confirmed!");
-      setResults((prev) => prev.filter(r => r.order_id !== selected.order_id));
+      setSnackbarMsg(`Order for ${selected.name} marked as picked up.`);
+      setResults(prev => prev.filter(r => r.order_id !== selected.order_id));
       setSelected(null);
     } catch (err) {
       console.error("Failed to confirm pickup", err);
@@ -109,22 +110,41 @@ function PickupPage() {
             >
               <ListItemText
                 primary={`${res.name} (${res.phone})`}
-                secondary={`City: ${res.city} | Order ID: ${res.order_id} | Boxes: ${res.box_count}`}
+                secondary={`Status: ${res.status} | City: ${res.city} | Boxes: ${res.box_count}`}
               />
             </ListItem>
           ))}
         </List>
 
         {selected && (
-          <Button
-            variant="contained"
-            color="success"
-            fullWidth
-            sx={{ mt: 2 }}
-            onClick={confirmPickup}
-          >
-            Confirm Pickup
-          </Button>
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Box sx={{ px: 1 }}>
+              <Typography variant="subtitle1">Order ID:</Typography>
+              <Typography variant="body2" gutterBottom>{selected.order_id}</Typography>
+
+              <Typography variant="subtitle1">Status:</Typography>
+              <Typography variant="body2" gutterBottom>{selected.status}</Typography>
+
+              <Typography variant="subtitle1">City:</Typography>
+              <Typography variant="body2" gutterBottom>{selected.city}</Typography>
+
+              <Typography variant="subtitle1">Boxes:</Typography>
+              <Typography variant="body2" gutterBottom>{selected.box_count}</Typography>
+
+              {selected.status === "Ready for pickup" && (
+                <Button
+                  variant="contained"
+                  color="success"
+                  fullWidth
+                  sx={{ mt: 2 }}
+                  onClick={confirmPickup}
+                >
+                  Mark as Picked Up
+                </Button>
+              )}
+            </Box>
+          </>
         )}
       </Paper>
 

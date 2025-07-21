@@ -550,7 +550,13 @@ async function updatePalletCapacity(pallete_id, newCapacity) {
         return false;
     }
 }
-
+async function markOrderAsReady(order_id) {
+    await pool.query(
+      `UPDATE Orders SET status = 'Ready for pickup' WHERE order_id = ?`,
+      [order_id]
+    );
+  }
+  
 
     async function markOrderAsDone(order_id, comment = "") {
         // 1. Update order status
@@ -624,6 +630,60 @@ async function updatePalletCapacity(pallete_id, newCapacity) {
       async function deletePallet(pallet_id) {
         await pool.query(`DELETE FROM Pallets WHERE pallet_id = ?`, [pallet_id]);
       }
+
+      async function getOrderById(order_id) {
+        const [rows] = await pool.query(`
+          SELECT o.*, c.name
+          FROM Orders o
+          JOIN Customers c ON o.customer_id = c.customer_id
+          WHERE o.order_id = ?
+        `, [order_id]);
+        return rows[0] || null;
+      }
+      
+      async function getPalletById(pallet_id) {
+        const [rows] = await pool.query(`SELECT * FROM Pallets WHERE pallet_id = ?`, [pallet_id]);
+        return rows[0] || null;
+      }
+      
+      async function assignBoxToPallet(box_id, pallet_id, city) {
+        await pool.query(
+          `UPDATE Boxes SET pallet_id = ?, city = ? WHERE box_id = ?`,
+          [pallet_id, city, box_id]
+        );
+      }
+
+      async function searchOrdersForPickup(query) {
+        const [rows] = await pool.query(`
+          SELECT 
+            o.order_id,
+            o.status,
+            o.customer_id,
+            o.created_at,
+            c.name,
+            c.phone,
+            c.city,
+            (
+              SELECT COUNT(*) 
+              FROM Boxes b 
+              WHERE b.customer_id = o.customer_id
+            ) AS box_count
+          FROM Orders o
+          JOIN Customers c ON o.customer_id = c.customer_id
+          WHERE c.name LIKE ? OR c.phone LIKE ?
+          ORDER BY o.created_at DESC
+        `, [`%${query}%`, `%${query}%`]);
+      
+        return rows;
+      }
+      
+      
+      async function markOrderAsPickedUp(order_id) {
+        await pool.query(
+          `UPDATE Orders SET status = 'Picked up' WHERE order_id = ?`,
+          [order_id]
+        );
+      }
       
       
 module.exports = {
@@ -643,5 +703,11 @@ module.exports = {
     createPallet,
     deletePallet,
     createNewPallet,
-    updatePalletCapacity
+    updatePalletCapacity,
+    getOrderById,
+    getPalletById,
+    assignBoxToPallet,
+    markOrderAsReady,
+    searchOrdersForPickup,
+    markOrderAsPickedUp,
 }

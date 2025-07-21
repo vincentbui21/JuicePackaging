@@ -82,7 +82,7 @@ function JuiceHandlePage() {
     const codes = [];
 
     for (let i = 0; i < count; i++) {
-      const text = `CRATE_${order.order_id}_${i + 1}`;
+      const text = `BOX_${order.order_id}_${i + 1}`;
       const png = await generateSmallPngQRCode(text);
       codes.push({ index: i + 1, url: png });
     }
