@@ -9,7 +9,7 @@ import {
   FormControl,
   InputLabel,
 } from "@mui/material";
-import QRScanner from "../components/qrscanner";
+import QRScanner from "../components/qrcamscanner";
 import backgroundomena from "../assets/backgroundomena.jpg";
 import api from "../services/axios";
 

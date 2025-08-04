@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import backgroundomena from "../assets/backgroundomena.jpg"
 import { Paper, Box, Stack, Typography, Button } from '@mui/material';
-import QRScanner from '../components/qrscanner';
+import QRScanner from '../components/qrcamscanner';
 import CustomerInfoCard from '../components/customerinfoshowcard';
 import CrateInfoCard from '../components/CrateInfoCard';
 import api from '../services/axios';
