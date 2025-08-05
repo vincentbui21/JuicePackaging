@@ -126,8 +126,8 @@ export default function CustomerTable() {
 
     return (
         <>
-            <Box sx={{ width: '100%', overflowX: 'auto' }}>
-
+            <Box sx={{ width: 'auto',overflowX: 'auto', ml: "250px" }}>
+                
                 <Stack direction="row" spacing={2}
                     sx={{
                         justifySelf: "center",
@@ -135,7 +135,6 @@ export default function CustomerTable() {
                         justifyContent: "center",
                         alignItems: "center",
                         width: "min(1200px, 90%)",
-                        background: "#d6d0b1",
                         padding: "5px",
                         borderRadius: "10px",
                         marginBottom: "10px"

@@ -8,10 +8,12 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Paper
 } from "@mui/material";
 import QRScanner from "../components/qrcamscanner";
 import backgroundomena from "../assets/backgroundomena.jpg";
 import api from "../services/axios";
+import DrawerComponent from "../components/drawer";
 
 const LOCATIONS = ["Kuopio", "Mikkeli", "Varkaus", "Lapinlahti", "Joensuu", "Lahti"];
 
@@ -23,13 +25,6 @@ function LoadingHandlePage() {
   const [orderId, setOrderId] = useState(null);
   const [customer, setCustomer] = useState(null);
   const [snackbarMsg, setSnackbarMsg] = useState("");
-
-  useEffect(() => {
-    document.body.style.backgroundImage = `url(${backgroundomena})`;
-    document.body.style.backgroundSize = "cover";
-    document.body.style.backgroundRepeat = "no-repeat";
-    return () => (document.body.style = "");
-  }, []);
 
   const handleScan = async (data) => {
     if (!data || !location) return;
@@ -100,72 +95,91 @@ function LoadingHandlePage() {
   };
 
   return (
-    <Box textAlign="center" p={3}>
-      <Typography
-        variant="h4"
-        sx={{
-          background: "#b6a284",
-          color: "white",
-          p: 2,
-          borderRadius: 2,
-          width: "fit-content",
-          margin: "auto",
-        }}
-      >
-        Loading Station
-      </Typography>
+    <>
+      <DrawerComponent> </DrawerComponent>
 
-      <Box mt={3}>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>Select Location</InputLabel>
-          <Select
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            label="Select Location"
-          >
-            {LOCATIONS.map((city) => (
-              <MenuItem key={city} value={city}>
-                {city}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+      <Box
+      sx={
+          {
+              backgroundColor: "#fffff",
+              minHeight: "90vh",
+              paddingTop: 4,
+              paddingBottom: 4,
+              display: "flex",
+              justifyContent: "center"
+          }
+      }>
+          <Paper elevation={3} sx={{
+              width: "min(90%, 800px)",
+              padding: 4,
+              backgroundColor: "#ffffff",
+              borderRadius: 2
+          }}>
+
+            <Typography
+              variant="h4" sx={{ textAlign: "center", fontWeight: 'bold' }}
+            >
+              Loading Station
+            </Typography>
+
+            <Box textAlign="center" p={3}>
+              <Box mt={3}>
+                <FormControl sx={{ minWidth: 200 }}>
+                  <InputLabel>Select Location</InputLabel>
+                  <Select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    label="Select Location"
+                  >
+                    {LOCATIONS.map((city) => (
+                      <MenuItem key={city} value={city}>
+                        {city}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+
+              <Box mt={4} sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center", 
+                justifyContent: "center"
+              }}>
+                {/* <Typography variant="h6">Camera</Typography> */}
+
+                <QRScanner onScan={handleScan} continuous={true} />
+
+                <Typography mt={1} variant="subtitle1"   
+                  sx={{
+                    fontStyle: 'italic',
+                    color: 'text.secondary',
+                    textAlign: 'center'
+                  }}>
+                  {scannerMode === "box"
+                    ? "Please scan each box QR code"
+                    : "Scan the assigned pallet QR code"}
+                </Typography>
+              </Box>
+
+              <Box mt={2}>
+                <Typography>
+                  <b>Scanned Boxes:</b> {scannedBoxes.length}/{expectedBoxes}
+                </Typography>
+                {customer && <Typography><b>Customer:</b> {customer}</Typography>}
+              </Box>
+
+              <Snackbar
+                open={!!snackbarMsg}
+                autoHideDuration={3000}
+                onClose={() => setSnackbarMsg("")}
+                message={snackbarMsg}
+              />
+            </Box>
+          </Paper>
       </Box>
 
-      <Box mt={4}>
-        <Typography variant="h6">Camera</Typography>
-        <Box
-          sx={{
-            width: 300,
-            height: 200,
-            margin: "auto",
-            backgroundColor: "#dcd2ae",
-            borderRadius: 2,
-          }}
-        >
-          <QRScanner onScan={handleScan} continuous={true} />
-        </Box>
-        <Typography mt={1}>
-          {scannerMode === "box"
-            ? "Please scan each box QR code"
-            : "Scan the assigned pallet QR code"}
-        </Typography>
-      </Box>
-
-      <Box mt={2}>
-        <Typography>
-          Scanned Boxes: {scannedBoxes.length}/{expectedBoxes}
-        </Typography>
-        {customer && <Typography>Customer: {customer}</Typography>}
-      </Box>
-
-      <Snackbar
-        open={!!snackbarMsg}
-        autoHideDuration={3000}
-        onClose={() => setSnackbarMsg("")}
-        message={snackbarMsg}
-      />
-    </Box>
+    </>
   );
 }
 

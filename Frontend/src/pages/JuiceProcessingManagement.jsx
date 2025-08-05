@@ -23,6 +23,7 @@ import backgroundomena from "../assets/backgroundomena.jpg";
 import dayjs from "dayjs";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import sendToPrinter from "../services/send_to_printer";
+import DrawerComponent from "../components/drawer";
 
 function JuiceProcessingManagement() {
   const [orders, setOrders] = useState([]);
@@ -37,11 +38,6 @@ function JuiceProcessingManagement() {
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   useEffect(() => {
-    document.body.style.backgroundImage = `url(${backgroundomena})`;
-    document.body.style.backgroundSize = "cover";
-    document.body.style.backgroundRepeat = "no-repeat";
-    document.body.style.backgroundAttachment = "fixed";
-
     fetchCompletedOrders();
 
     return () => {
@@ -145,27 +141,29 @@ function JuiceProcessingManagement() {
 
   return (
     <>
+      <DrawerComponent></DrawerComponent>
+
       <Box display="flex" justifyContent="center">
         <Typography
-          variant="h6"
+          variant="h4"
           sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
             textAlign: "center",
-            paddingTop: "10px",
+            paddingTop: "40px",
             paddingBottom: "10px",
             marginBottom: "10px",
             color: "black",
-            background: "#a9987d",
             width: "min(1200px, 90%)",
             borderRadius: "10px",
+            marginBottom: 3, 
+            fontWeight: 'bold',
           }}
         >
-          Juice Processing Management
+          Order Management
         </Typography>
       </Box>
 
-      <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(1200px, 95%)' }}>
-        <Grid container spacing={2} alignItems="center" justifyContent="center">
+      <Box  sx={{ p: 2, mb: 2, mx: 'auto', borderRadius: 2, width: 'auto' }}>
+        <Grid container spacing={2} alignItems="center" justifyContent="center" >
           <Grid item xs={12} sm={6} md={4}>
             <TextField fullWidth label="Customer name" value={searchName} onChange={(e) => setSearchName(e.target.value)} sx={{ backgroundColor: "white", borderRadius: 1 }} />
           </Grid>
@@ -185,10 +183,9 @@ function JuiceProcessingManagement() {
         <DataGrid
           rows={filteredOrders.map((o, i) => ({ ...o, id: i }))}
           columns={columns}
-          autoHeight
           pageSize={10}
           rowsPerPageOptions={[10, 20, 50]}
-          sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3, mt: 2, width: '100%' }}
+          sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3, mt: 2, width: 'auto', ml: "250px" }}
         />
       )}
 

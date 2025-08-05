@@ -13,7 +13,7 @@ function CrateInfoCard({index, crateID}) {
                 <Grid container>
 
                     <Grid item size={1} display={"flex"} alignItems={"center"}>
-                        <Typography variant='h6'>Crate:</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>Crate:</Typography>
                     </Grid>
 
                     <Grid item size={5} display={"flex"} alignItems={"center"} justifyContent={"center"}>
@@ -21,7 +21,7 @@ function CrateInfoCard({index, crateID}) {
                     </Grid>
 
                     <Grid item size={1} display={"flex"} alignItems={"center"}>
-                        <Typography variant='h6'>ID:</Typography>
+                        <Typography vvariant='body1' fontWeight={"bold"}>ID:</Typography>
                     </Grid>
 
                     <Grid item size={5} display={"flex"} alignItems={"center"}>

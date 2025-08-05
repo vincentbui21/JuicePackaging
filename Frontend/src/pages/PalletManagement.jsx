@@ -20,6 +20,7 @@ import api from "../services/axios";
 import backgroundomena from "../assets/backgroundomena.jpg";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import sendToPrinter from "../services/send_to_printer";
+import DrawerComponent from "../components/drawer";
 
 function PalletManagement() {
   const [pallets, setPallets] = useState([]);
@@ -145,119 +146,133 @@ function PalletManagement() {
   ];
 
   return (
-    <div
-  style={{
-    minHeight: '100vh',
-    backgroundImage: `url(${backgroundomena})`,  // or your actual image path
-    backgroundSize: 'cover',
-    backgroundPosition: 'fixed',
-    backgroundRepeat: 'no-repeat',
-  }}
->
-      <Box display="flex" justifyContent="center">
-        <Typography
-          variant="h6"
-          sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
-            textAlign: "center",
-            paddingTop: "10px",
-            paddingBottom: "10px",
-            marginBottom: "10px",
-            color: "black",
-            background: "#a9987d",
-            width: "min(1200px, 90%)",
-            borderRadius: "10px",
-          }}
-        >
-          Pallet Management
-        </Typography>
-      </Box>
+    <>
 
-      <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(1200px, 95%)' }}>
-        <Grid container spacing={2} alignItems="center" justifyContent="center">
-          <Grid item xs={12} sm={4}>
-            <TextField
-              select
-              label="Select City"
-              fullWidth
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            >
-              {cities.map((city) => (
-                <MenuItem key={city} value={city}>
-                  {city}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid item xs={6} sm={2}>
-            <TextField
-              label="Capacity"
-              fullWidth
-              type="number"
-              value={capacity}
-              onChange={(e) => setCapacity(Number(e.target.value))}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            />
-          </Grid>
-          <Grid item xs={6} sm={3}>
-            <Button fullWidth variant="contained" onClick={handleCreatePallet}>
-              Create Pallet
-            </Button>
-          </Grid>
-          <Grid item xs={12} sm={3}>
-            <TextField
-              label="Add New City"
-              fullWidth
-              value={newCity}
-              onChange={(e) => setNewCity(e.target.value)}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-              InputProps={{
-                endAdornment: (
-                  <IconButton onClick={handleAddCity}>
-                    <Add />
-                  </IconButton>
-                ),
-              }}
-            />
-          </Grid>
-        </Grid>
-      </Box>
+      <DrawerComponent></DrawerComponent>
 
-      <Box sx={{ mx: 'auto', width: 'min(1200px, 95%)', backgroundColor: "white", borderRadius: 2 }}>
-        <DataGrid
-          rows={pallets.map((p, i) => ({ ...p, id: i }))}
-          columns={columns}
-          autoHeight
-          pageSize={10}
-          rowsPerPageOptions={[10, 20, 50]}
-          sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
-        />
-      </Box>
+      <Box
+            sx={
+                {
+                    backgroundColor: "#fffff",
+                    minHeight: "90vh",
+                    paddingTop: 4,
+                    paddingBottom: 4,
+                    display: "flex",
+                    justifyContent: "center"
+                }
+            }>
+                <Paper elevation={3} sx={{
+                    width: "min(90%, 800px)",
+                    padding: 4,
+                    backgroundColor: "#ffffff",
+                    borderRadius: 2
+                }}>
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      textAlign: "center",
+                      paddingTop: "40px",
+                      paddingBottom: "10px",
+                      marginBottom: "10px",
+                      color: "black",
+                      borderRadius: "10px",
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    Pallet Management
+                  </Typography>
 
-      <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
-        <DialogTitle>QR Code</DialogTitle>
-        <DialogContent>
-          <Box display="flex" justifyContent="center">
-            <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
-            Print
-          </Button>
-        </DialogActions>
-      </Dialog>
+                  <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', borderRadius: 2, width: 'min(1200px, 95%)' }}>
+                    <Grid container spacing={2} alignItems="center" justifyContent="center">
+                      <Grid item xs={12} sm={4}>
+                        <TextField
+                          select
+                          label="Select City"
+                          fullWidth
+                          value={selectedCity}
+                          onChange={(e) => setSelectedCity(e.target.value)}
+                          sx={{ backgroundColor: "white", borderRadius: 1 }}
+                        >
+                          {cities.map((city) => (
+                            <MenuItem key={city} value={city}>
+                              {city}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid item xs={6} sm={2}>
+                        <TextField
+                          label="Capacity"
+                          fullWidth
+                          type="number"
+                          value={capacity}
+                          onChange={(e) => setCapacity(Number(e.target.value))}
+                          sx={{ backgroundColor: "white", borderRadius: 1 }}
+                        />
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Button fullWidth variant="contained" onClick={handleCreatePallet}>
+                          Create Pallet
+                        </Button>
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <TextField
+                          label="Add New City"
+                          fullWidth
+                          value={newCity}
+                          onChange={(e) => setNewCity(e.target.value)}
+                          sx={{ backgroundColor: "white", borderRadius: 1 }}
+                          InputProps={{
+                            endAdornment: (
+                              <IconButton onClick={handleAddCity}>
+                                <Add />
+                              </IconButton>
+                            ),
+                          }}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Box>
 
-      <Snackbar
-        open={!!snackbarMsg}
-        autoHideDuration={3000}
-        onClose={() => setSnackbarMsg("")}
-        message={snackbarMsg}
-      />
-   </div>
+
+
+                  <Box sx={{ mx: 'auto', width: 'min(1200px, 95%)', backgroundColor: "white", borderRadius: 2 }}>
+                    <DataGrid
+                      rows={pallets.map((p, i) => ({ ...p, id: i }))}
+                      columns={columns}
+                      autoHeight
+                      pageSize={10}
+                      rowsPerPageOptions={[10, 20, 50]}
+                      sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+                    />
+                  </Box>
+
+                  <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
+                    <DialogTitle>QR Code</DialogTitle>
+                    <DialogContent>
+                      <Box display="flex" justifyContent="center">
+                        <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+                      </Box>
+                    </DialogContent>
+                    <DialogActions>
+                      <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
+                      <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
+                        Print
+                      </Button>
+                    </DialogActions>
+                  </Dialog>
+
+                  <Snackbar
+                    open={!!snackbarMsg}
+                    autoHideDuration={3000}
+                    onClose={() => setSnackbarMsg("")}
+                    message={snackbarMsg}
+                  />
+                </Paper>
+              </Box>
+
+
+  </>
   );
 }
 
