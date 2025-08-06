@@ -92,7 +92,7 @@ function DrawerComponent() {
                                 to={item.to} 
                                 sx={{ mb: 1 }}>
                                 <ListItemIcon>{item.icon}</ListItemIcon>
-                                <ListItemText primary={item.text} />
+                                <ListItemText primary={item.text} primaryTypographyProps={{ color: 'black' }}/>
                             </ListItem>
                         ))}
                     </List>
@@ -106,7 +106,7 @@ function DrawerComponent() {
                                 to={item.to} 
                                 sx={{ mb: 1 }}>
                                 <ListItemIcon>{item.icon}</ListItemIcon>
-                                <ListItemText primary={item.text} />
+                                <ListItemText primary={item.text} primaryTypographyProps={{ color: 'black' }}/>
                             </ListItem>
                         ))}
                     </List>

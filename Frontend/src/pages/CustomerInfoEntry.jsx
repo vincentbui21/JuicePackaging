@@ -33,6 +33,8 @@ function CustomerInfoEntry() {
     const [open_reminder, set_Openreminder] = useState(false)
     const [open_QrDialog, set_OpenQrDialog] = useState(false)
     const [qrcodes, setQrcodes] = useState("")
+    const [customerForwardName, setCustomerForwardName] = useState("")
+
 
     function resetData(){
         setCustomerData(initialCustomerData)
@@ -52,6 +54,7 @@ function CustomerInfoEntry() {
                 console.log(response.data);
                 setQrcodes(response.data)
                 set_OpenQrDialog(true)
+                setCustomerForwardName(customerdata.full_name)
             }
             catch (error){
                 console.log(error);
@@ -113,7 +116,7 @@ function CustomerInfoEntry() {
 
             <RequiredInputReminder open={open_reminder} setOpen={set_Openreminder}></RequiredInputReminder>
             <QRCodeDialog open={open_QrDialog} onClose={()=>{set_OpenQrDialog(false)}} 
-            data={qrcodes}></QRCodeDialog>
+            data={qrcodes} name={customerForwardName}></QRCodeDialog>
         </>
     );
 }

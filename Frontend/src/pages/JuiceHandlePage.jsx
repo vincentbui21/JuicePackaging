@@ -39,6 +39,8 @@ function JuiceHandlePage() {
 
     socket.on("order-status-updated", handleSocketUpdate);
 
+    var a = orders
+
     return () => {
       socket.off("order-status-updated", handleSocketUpdate);
       // document.body.style = "";
@@ -114,6 +116,8 @@ function JuiceHandlePage() {
     }
   };
 
+  // console.log(orders.length);
+
   return (
     <>
       <DrawerComponent></DrawerComponent>
@@ -146,6 +150,7 @@ function JuiceHandlePage() {
                 const qrCount = Math.ceil(estimatedPouches / 8);
                 const expiryDate = new Date();
                 expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+
 
             return (
               <Accordion key={order.order_id}>

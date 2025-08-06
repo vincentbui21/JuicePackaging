@@ -15,7 +15,7 @@ function CustomerInfoManagement() {
                     sx={
                         {
                             paddingTop: "40px",
-                            marginBottom: "10px",
+                            // marginBottom: "10px",
                             color: "black",
                             width: "min(1200px, 90%)",
                             borderRadius: "10px",

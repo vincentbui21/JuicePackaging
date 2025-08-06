@@ -12,7 +12,7 @@ import generateSmallPngQRCode from '../services/qrcodGenerator';
 import printImage from '../services/send_to_printer'
 
 
-function QRCodeDialog({ open, onClose, data }) {
+function QRCodeDialog({ open, onClose, data, name }) {
     const [qrCodes, setQrCodes] = useState([]);
 
     useEffect(() => {
@@ -22,13 +22,13 @@ function QRCodeDialog({ open, onClose, data }) {
         }
 
         if (open) {
-        generateQRCodes();
+            generateQRCodes();
         }
     }, [data, open]);
 
     const handlePrint = (src) => {
         // console.log('Send to printer:');
-        printImage(src)
+        printImage(src, name)
     };
 
     return (

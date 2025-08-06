@@ -94,8 +94,8 @@ function PalletManagement() {
     if (qrImage) {
       const popup = window.open("", "_blank");
       popup.document.write(`
-        <html><head><title>Print QR Code</title></head><body style="text-align:center;padding:20px;">
-        <img src="${qrImage}" style="width:200px;" />
+        <html><head><title>Print QR Code</title></head><body style="text-align:center;">
+        <img src="${qrImage}" style="width: 100px; height: 100px; object-fit: contain;" />
         <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
         </body></html>
       `);

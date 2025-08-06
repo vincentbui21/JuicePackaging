@@ -12,7 +12,7 @@
             "name": "mehustaja_database",
             "username": "admin",
             "database": "myjuicedatabase",
-            "askForPassword": true
+            "password": "M!hustaja-Savonia"
         }
     ]
 }

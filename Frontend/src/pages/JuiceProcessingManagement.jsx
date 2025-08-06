@@ -150,7 +150,7 @@ function JuiceProcessingManagement() {
             textAlign: "center",
             paddingTop: "40px",
             paddingBottom: "10px",
-            marginBottom: "10px",
+            // marginBottom: "10px",
             color: "black",
             width: "min(1200px, 90%)",
             borderRadius: "10px",
