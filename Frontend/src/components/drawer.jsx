@@ -21,6 +21,8 @@ import PlaceIcon from '@mui/icons-material/Place';
 import PeopleIcon from '@mui/icons-material/People';
 import CasesIcon from '@mui/icons-material/Cases';
 import PalletIcon from '@mui/icons-material/Pallet';
+import SettingsIcon from '@mui/icons-material/Settings';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 function DrawerComponent() {
     const [open, setOpen] = useState(true);
@@ -41,6 +43,11 @@ function DrawerComponent() {
         { text: 'Customer Management', icon: <PeopleIcon /> , to: '/customer-management'},
         { text: 'Order Management', icon: <CasesIcon /> , to: '/juice-management'},
         { text: 'Pallet Management', icon: <PalletIcon /> , to: '/pallet-management'},
+    ]
+
+    const settingAndAuthListItems = [
+        { text: 'Setting', icon: <SettingsIcon /> , to: '/setting'},
+        { text: 'Logout', icon: <LogoutIcon /> , to: '/'},
     ]
 
     return (
@@ -110,6 +117,23 @@ function DrawerComponent() {
                             </ListItem>
                         ))}
                     </List>
+
+                    <Divider></Divider>
+                    
+                    <List>
+                        {settingAndAuthListItems.map((item, index) => (
+                            <ListItem 
+                                button 
+                                key={index}
+                                component={Link}
+                                to={item.to} 
+                                sx={{ mb: 1 }}>
+                                <ListItemIcon>{item.icon}</ListItemIcon>
+                                <ListItemText primary={item.text} primaryTypographyProps={{ color: 'black' }}/>
+                            </ListItem>
+                        ))}
+                    </List>
+                    
                 </Box>
             </Drawer>
         </>

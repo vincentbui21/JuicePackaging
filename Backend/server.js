@@ -4,6 +4,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const database = require('./source/database_fns');
 const uuid = require('./source/uuid');
+const fs = require('fs').promises;
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app); // wrap express app in HTTP server
@@ -265,7 +267,42 @@ app.get('/orders', async (req, res) => {
       res.status(500).json({ error: "Failed to mark order as ready" });
     }
   });
-  
+
+  app.get('/default-setting', async (req, res) =>{
+    try{
+      const filePath = path.join(__dirname, 'default-setting.txt');
+      const data = await fs.readFile(filePath, 'utf-8');
+      res.send(data);
+    }
+    catch (err){
+      console.log("Error reading file", err);
+      res.status(500).send("Error")
+    }
+  })
+
+  app.post('/default-setting', (req, res) => {
+    const settings = req.body;
+
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ error: 'Invalid or missing settings object in request body' });
+    }
+
+    const formatted = Object.entries(settings)
+      .map(([key, value]) => `${key}:${value}`)
+      .join(',\n');
+
+    const filePath = path.join(__dirname, 'default-setting.txt');
+
+    fs.writeFile(filePath, formatted, 'utf8')
+      .then(() => {
+        res.json({ message: 'Settings saved successfully' });
+      })
+      .catch((err) => {
+        console.error('Failed to write settings:', err);
+        res.status(500).json({ error: 'Failed to save settings' });
+      });
+  });
+
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
   console.log("server is listening at port 5001!!");

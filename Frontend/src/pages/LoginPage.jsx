@@ -7,24 +7,6 @@ import CrateHandling from "./CrateHandling";
 import CornerMenuButton from "../components/connermenu";
 
 function LoginPage() {
-    useEffect(() => {
-    document.body.style.backgroundImage = `url(${backgroundomena})`;
-    document.body.style.backgroundSize = "cover";
-    document.body.style.backgroundRepeat = "no-repeat";
-    document.body.style.backgroundPosition = "center";
-    document.body.style.overflow = "hidden";
-
-
-
-    return () => {
-        // Clean up background when component unmounts
-        document.body.style.backgroundImage = "";
-        document.body.style.backgroundSize = "";
-        document.body.style.backgroundRepeat = "";
-        document.body.style.backgroundPosition = "";
-        document.body.style.overflow = "";
-    };
-}, []);
 
     const [role, setRole] = useState("")
     const [Role_Error, SetRole_Error] = useState("")
@@ -83,7 +65,7 @@ function LoginPage() {
             >
             <Paper elevation={24} variant="elevation" sx={
                 {
-                    backgroundColor: "#d6d0b1",
+                    backgroundColor: "#fffff",
                     width: "min(500px, 80%)",
                     height: "70%",
                     display: "flex",

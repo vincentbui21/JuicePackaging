@@ -55,7 +55,7 @@ async function update_new_customer_data(customer_data, order_data) {
             "Created", // Status
             Number(parseFloat(order_data.total_apple_weight).toFixed(2)), //total_apple_weight
             parseInt(order_data.No_of_Crates),
-            logic.caculated_price(order_data.total_apple_weight), //will be caculated
+            logic.caculated_price(order_data.Price), 
             order_data.Notes,
             logic.formatDateToSQL(customer_data.entryDate)       
         ]);

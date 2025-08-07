@@ -1,0 +1,4 @@
+juice_quantity:0.65,
+no_pouches:6,
+price:8,
+shipping_fee:1.9

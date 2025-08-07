@@ -24,7 +24,8 @@ function CustomerInfoEntry() {
         No_of_Crates: "",
         Juice_quantity:"",
         No_of_Pouches: "",
-        Notes: ""
+        Notes: "",
+        Price: ""
     }
 
 
@@ -92,7 +93,7 @@ function CustomerInfoEntry() {
 
                     <CustomerInfo data={customerdata} setdata={setCustomerData}/>
                     
-                    <OrderInfoInput data={orderdata} setdata ={setorderdata}/>
+                    <OrderInfoInput data={orderdata} setdata ={setorderdata} city={customerdata.city}/>
 
                     <Box 
                     sx={{ 

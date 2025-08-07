@@ -1,10 +1,52 @@
 import {Stack, Grid, Typography, TextField, InputAdornment, Divider, Paper} from "@mui/material"
+import { useState, useEffect } from "react";
+import api from "../services/axios";
 
-function OrderInfoInput({data, setdata}) {
+function OrderInfoInput({data, setdata, city}) {
+    
+    var default_settings ={
+        juice_quantity : "",
+        no_pouches: "",
+        price:"",
+        shipping_fee:""
+    }
+    
+    const [settings, setSettings] = useState(default_settings)    
+    
+    useEffect(() => {
+    api
+        .get('/default-setting')
+        .then((res) => {
+            const raw = res.data;
+
+            // Convert the response string into an object
+            const parsed = Object.fromEntries(
+                raw
+                    .trim()
+                    .split(',') // split each key-value pair
+                    .map(pair => pair.split(':')) // split key and value
+                    .map(([key, value]) => [key.trim(), parseFloat(value)]) // clean up
+            );
+
+            setSettings(parsed);
+        });
+    }, []);
 
     const handleCustomerInfoUpdate = (e)=>{
         setdata({... data, [e.target.name]:e.target.value})
     }
+
+    const handleWeightInfoInput = (e)=>{
+        setdata({... data, 
+            total_apple_weight:e.target.value, 
+            Juice_quantity:(0.64*e.target.value), 
+            No_of_Pouches:Math.ceil(0.64*e.target.value/3),
+            price:Math.ceil(0.64*e.target.value/3)*(8 + (city == "Kuopio" ? 0 : 1.9))
+        }
+    )
+    }
+
+
 
     return ( 
         <Stack direction = "column" sx={
@@ -40,7 +82,7 @@ function OrderInfoInput({data, setdata}) {
 
                         <Grid item size={8} display="flex" alignItems="center" >
                             <TextField required name={"total_apple_weight"} type="number" variant='filled' label="Enter weight in kilograms" 
-                            onChange={handleCustomerInfoUpdate} value={data.total_apple_weight}
+                            onChange={handleWeightInfoInput} value={data.total_apple_weight}
                             sx={
                                 {
                                     width: "min(600px, 90%)"
@@ -137,6 +179,34 @@ function OrderInfoInput({data, setdata}) {
                                 {
                                     input: {
                                         endAdornment: <InputAdornment>piece(s)</InputAdornment>
+                                    }
+                                }
+                            }
+                            >
+                            </TextField>
+                        </Grid>
+                        <Grid item size={4} display="flex" alignItems="center" sx={{
+                            display: "flex",
+                            paddingLeft: "min(45px, 10%)",
+                            paddingRight: "min(45px, 10%)"
+                        }}>
+                            <Typography variant='body1'>
+                                Price
+                            </Typography>
+                        </Grid>
+
+                        <Grid item size={8} display="flex" alignItems="center" >
+                            <TextField type="number" variant='filled' name="price"
+                            onChange={handleCustomerInfoUpdate} value={data.price}
+                            sx={
+                                {
+                                    width: "min(600px, 90%)"
+                                }
+                            }
+                            slotProps={
+                                {
+                                    input: {
+                                        endAdornment: <InputAdornment>€</InputAdornment>
                                     }
                                 }
                             }
