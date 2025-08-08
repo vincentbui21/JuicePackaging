@@ -5,3 +5,4 @@ testing/
 
 # Ignore environment variables
 .env
+Backend/.env
