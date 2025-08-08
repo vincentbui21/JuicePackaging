@@ -6,10 +6,14 @@ import CustomerInfoEntry from './pages/CustomerInfoEntry.jsx'
 import CrateHandling from './pages/CrateHandling.jsx'
 import CustomerInfoManagement from './pages/customer_info_management.jsx'
 import JuiceHandlePage from "./pages/JuiceHandlePage.jsx";
-import LoadingHandlePage from "./pages/LoadingHandlePage.jsx";
+import PalletToShelfHandlePage from './pages/PalletToShelfHandlePage';
 import PickupPage from "./pages/PickupPage.jsx";
 import JuiceProcessingManagement from "./pages/JuiceProcessingManagement";
-import PalletManagement from "./pages/PalletManagement.jsx";
+import BoxToPalletLoadingPage from './pages/BoxToPalletLoadingPage.jsx'
+import ShelveManagement from './pages/ShelveManagement.jsx'
+import PalletCreationPage from './pages/PalletCreationPage.jsx'
+import PalletsManagementPage from './pages/PalletsManagementPage.jsx'
+import ShelveCreationPage from './pages/ShelveCreationPage.jsx'
 
 const router = createBrowserRouter([
   {
@@ -33,16 +37,32 @@ element: <JuiceHandlePage />,
   element: <JuiceProcessingManagement />
 },
 {
-path: "/loading-handle",
-element: <LoadingHandlePage />,
+  path: "/load-boxes-to-pallet",
+  element: <BoxToPalletLoadingPage />,
+},
+{
+  path: "/load-pallet-to-shelf",
+  element: <PalletToShelfHandlePage />,
 },
 {
 path: "/pickup",
 element: <PickupPage />,
 },
 {
-  path: "/pallet-management",
-  element: <PalletManagement />,
+  path: "/create-pallet",
+  element: <PalletCreationPage />,
+},
+{
+  path: "/create-shelve",
+  element: <ShelveCreationPage />,
+},
+  {
+    path: "/shelve-management",
+    element: <ShelveManagement />,
+  },
+    {
+    path: "/pallets-management",
+      element: <PalletsManagementPage />,
   },
 ])
 

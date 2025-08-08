@@ -7,84 +7,63 @@ import {
   TextField,
   Button,
   IconButton,
+  MenuItem,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Snackbar,
-  MenuItem,
 } from "@mui/material";
-import { QrCode, Print, Delete, Add } from "@mui/icons-material";
+import { QrCode, Print, Delete, Visibility } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
 import api from "../services/axios";
-import backgroundomena from "../assets/backgroundomena.jpg";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
-import sendToPrinter from "../services/send_to_printer";
+import backgroundomena from "../assets/backgroundomena.jpg";
 
-function PalletManagement() {
+function PalletsManagementPage() {
   const [pallets, setPallets] = useState([]);
+  const [cities, setCities] = useState(["Lahti", "Kuopio"]);
   const [selectedCity, setSelectedCity] = useState("Lahti");
-  const [cities, setCities] = useState([
-    "Kuopio", "Mikkeli", "Varkaus", "Lapinlahti", "Joensuu", "Lahti",
-  ]);
-  const [newCity, setNewCity] = useState("");
-  const [capacity, setCapacity] = useState(8);
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
-  // Load saved cities
+  const [boxDialogOpen, setBoxDialogOpen] = useState(false);
+  const [boxList, setBoxList] = useState([]);
+  const [selectedPalletId, setSelectedPalletId] = useState(null);
+
   useEffect(() => {
-    const fetchCities = async () => {
-      try {
-        const res = await api.get("/cities");
-        setCities(res.data);
-      } catch (err) {
-        console.error("Failed to fetch cities", err);
-      }
-    };
     fetchCities();
   }, []);
-  
 
-  // Initial + re-fetch when selectedCity changes
   useEffect(() => {
     fetchPallets();
   }, [selectedCity]);
 
+  const fetchCities = async () => {
+    try {
+      const res = await api.get("/cities");
+      setCities(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch cities", err);
+    }
+  };
+
   const fetchPallets = async () => {
     try {
       const res = await api.get(`/pallets?location=${selectedCity}`);
-      setPallets(res.data || []);
+      setPallets(Array.isArray(res.data) ? res.data : []);
+    if (!res.data || res.data.length === 0) {
+  setSnackbarMsg("No pallets found in this city");
+}
+
     } catch (err) {
       console.error("Failed to fetch pallets", err);
     }
   };
 
-  const handleCreatePallet = async () => {
-    try {
-      await api.post("/pallets", { location: selectedCity, capacity });
-      fetchPallets();
-      setSnackbarMsg("Pallet created");
-    } catch (err) {
-      console.error("Failed to create pallet", err);
-      setSnackbarMsg("Creation failed");
-    }
-  };
-
-  const handleDelete = async (pallet_id) => {
-    try {
-      await api.delete(`/pallets/${pallet_id}`);
-      fetchPallets();
-      setSnackbarMsg("Pallet deleted");
-    } catch (err) {
-      console.error("Failed to delete pallet", err);
-      setSnackbarMsg("Delete failed");
-    }
-  };
-
-  const handleShowQR = async (id) => {
-    const img = await generateSmallPngQRCode("PALLET_" + id);
+  const handleShowQR = async (pallet_id) => {
+    const img = await generateSmallPngQRCode("PALLET_" + pallet_id);
     setQrImage(img);
     setQrDialogOpen(true);
   };
@@ -101,22 +80,27 @@ function PalletManagement() {
       popup.document.close();
     }
   };
-  
 
-  const handleAddCity = async () => {
-    if (newCity && !cities.includes(newCity)) {
-      try {
-        await api.post("/cities", { name: newCity });
-        const updated = [...cities, newCity].sort();
-        setCities(updated);
-        setNewCity("");
-        setSnackbarMsg("City added");
-      } catch (err) {
-        console.error("Failed to add city", err);
-        setSnackbarMsg("Failed to add city");
-      }
-    } else {
-      setSnackbarMsg("City already exists or is empty");
+  const handleDelete = async (pallet_id) => {
+    try {
+      await api.delete(`/pallets/${pallet_id}`);
+      fetchPallets();
+      setSnackbarMsg("Pallet deleted");
+    } catch (err) {
+      console.error("Failed to delete pallet", err);
+      setSnackbarMsg("Failed to delete pallet");
+    }
+  };
+
+  const handleViewBoxes = async (pallet_id) => {
+    try {
+      const res = await api.get(`/pallets/${pallet_id}/boxes`);
+      setBoxList(res.data || []);
+      setSelectedPalletId(pallet_id);
+      setBoxDialogOpen(true);
+    } catch (err) {
+      console.error("Failed to fetch boxes for pallet", err);
+      setSnackbarMsg("Failed to load boxes");
     }
   };
 
@@ -129,12 +113,15 @@ function PalletManagement() {
     {
       field: "actions",
       headerName: "Actions",
-      flex: 1.2,
+      flex: 1.5,
       sortable: false,
       renderCell: (params) => (
         <>
           <IconButton color="primary" onClick={() => handleShowQR(params.row.pallet_id)}>
             <QrCode />
+          </IconButton>
+          <IconButton color="info" onClick={() => handleViewBoxes(params.row.pallet_id)}>
+            <Visibility />
           </IconButton>
           <IconButton color="error" onClick={() => handleDelete(params.row.pallet_id)}>
             <Delete />
@@ -146,14 +133,14 @@ function PalletManagement() {
 
   return (
     <div
-  style={{
-    minHeight: '100vh',
-    backgroundImage: `url(${backgroundomena})`,  // or your actual image path
-    backgroundSize: 'cover',
-    backgroundPosition: 'fixed',
-    backgroundRepeat: 'no-repeat',
-  }}
->
+      style={{
+        minHeight: "100vh",
+        backgroundImage: `url(${backgroundomena})`,
+        backgroundSize: "cover",
+        backgroundPosition: "fixed",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
       <Box display="flex" justifyContent="center">
         <Typography
           variant="h6"
@@ -169,12 +156,12 @@ function PalletManagement() {
             borderRadius: "10px",
           }}
         >
-          Pallet Management
+          Pallets Management
         </Typography>
       </Box>
 
       <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(1200px, 95%)' }}>
-        <Grid container spacing={2} alignItems="center" justifyContent="center">
+        <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} sm={4}>
             <TextField
               select
@@ -191,37 +178,6 @@ function PalletManagement() {
               ))}
             </TextField>
           </Grid>
-          <Grid item xs={6} sm={2}>
-            <TextField
-              label="Capacity"
-              fullWidth
-              type="number"
-              value={capacity}
-              onChange={(e) => setCapacity(Number(e.target.value))}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            />
-          </Grid>
-          <Grid item xs={6} sm={3}>
-            <Button fullWidth variant="contained" onClick={handleCreatePallet}>
-              Create Pallet
-            </Button>
-          </Grid>
-          <Grid item xs={12} sm={3}>
-            <TextField
-              label="Add New City"
-              fullWidth
-              value={newCity}
-              onChange={(e) => setNewCity(e.target.value)}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-              InputProps={{
-                endAdornment: (
-                  <IconButton onClick={handleAddCity}>
-                    <Add />
-                  </IconButton>
-                ),
-              }}
-            />
-          </Grid>
         </Grid>
       </Box>
 
@@ -236,6 +192,7 @@ function PalletManagement() {
         />
       </Box>
 
+      {/* QR Code Dialog */}
       <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
         <DialogTitle>QR Code</DialogTitle>
         <DialogContent>
@@ -251,14 +208,36 @@ function PalletManagement() {
         </DialogActions>
       </Dialog>
 
+      {/* Box Viewer Dialog */}
+      <Dialog open={boxDialogOpen} onClose={() => setBoxDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Boxes on Pallet {selectedPalletId}</DialogTitle>
+        <DialogContent dividers>
+          {boxList.length === 0 ? (
+            <Typography>No boxes assigned to this pallet.</Typography>
+          ) : (
+            boxList.map((box, index) => (
+              <Box key={index} sx={{ mb: 2, p: 1, border: "1px solid #ccc", borderRadius: 1 }}>
+                <Typography><strong>Customer ID:</strong> {box.customer_id}</Typography>
+                <Typography><strong>Customer ID:</strong> {box.city}</Typography>
+                <Typography><strong>Pouch Count:</strong> {box.pouch_count}</Typography>
+                <Typography><strong>Created At:</strong> {new Date(box.created_at).toLocaleDateString()}</Typography>
+              </Box>
+            ))
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBoxDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={!!snackbarMsg}
         autoHideDuration={3000}
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-   </div>
+    </div>
   );
 }
 
-export default PalletManagement;
+export default PalletsManagementPage;

@@ -4,6 +4,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const database = require('./source/database_fns');
 const uuid = require('./source/uuid');
+const { publishDirectSMS } = require('./utils/aws_sns');
+const { pool } = require('./source/database_fns');
 
 const app = express();
 const server = http.createServer(app); // wrap express app in HTTP server
@@ -251,41 +253,54 @@ app.get('/orders', async (req, res) => {
     }
   });
   
+
+
+
+
   app.post('/orders/:order_id/ready', async (req, res) => {
     const { order_id } = req.params;
   
     try {
       await database.markOrderAsReady(order_id);
+  
+      const order = await database.getOrderById(order_id);
+  
+      // Ensure order.phone or order.phone_number exists
+      const phone = order.phone
+  
+      if (phone) {
+        await publishDirectSMS(
+          phone,
+          `Hi ${order.name}, your juice order is ready for pickup.`
+        );
+      }
+  
       const io = req.app.get('io');
       io.emit("order-status-updated");
   
-      res.status(200).json({ message: "Order marked as ready" });
+      res.status(200).json({ message: "Order marked as ready and customer notified." });
     } catch (error) {
       console.error("Failed to mark order as ready:", error);
       res.status(500).json({ error: "Failed to mark order as ready" });
     }
   });
   
+  
   app.get("/orders/pickup", async (req, res) => {
     const { query } = req.query;
     console.log("Pickup query:", query); 
-    console.log("✅ /orders/pickup route HIT");
-
     try {
-      const results = await database.searchOrdersForPickup(query);
-      console.log("Results found:", results.length); 
-      console.log("Sample result:", results[0]);
-  
+      const results = await database.searchOrdersWithShelfInfo(query);
       if (results.length === 0) {
-      return res.status(404).json({ error: "Order not found" });
+        return res.status(404).json({ error: "Order not found" });
       }
-  
       res.status(200).json(results);
     } catch (err) {
       console.error("Pickup search failed:", err);
       res.status(500).json({ error: "Failed to search pickup orders" });
     }
   });
+  
   
   
   app.get("/orders/:order_id", async (req, res) => {
@@ -336,6 +351,135 @@ app.get('/orders', async (req, res) => {
     } catch (err) {
       console.error("Failed to mark as picked up:", err);
       res.status(500).json({ error: "Pickup confirmation failed" });
+    }
+  });
+  
+  app.post('/pallets/:pallet_id/load-boxes', async (req, res) => {
+    const { pallet_id } = req.params;
+    const { boxes } = req.body;
+
+    if (!Array.isArray(boxes) || boxes.length === 0) {
+        return res.status(400).json({ error: "Boxes array is required" });
+    }
+
+    try {
+        for (const box_id of boxes) {
+            const success = await database.assignBoxToPallet(box_id, pallet_id);
+            if (!success) {
+                return res.status(400).json({ error: `Failed to assign box ${box_id}` });
+            }
+        }
+
+        res.status(200).json({ message: "Boxes assigned to pallet successfully" });
+    } catch (err) {
+        console.error("Failed loading boxes to pallet:", err);
+        res.status(500).json({ error: "Loading failed" });
+    }
+});
+
+app.post('/pallets/assign-shelf', async (req, res) => {
+  const { palletId, shelfId } = req.body;
+
+  try {
+    const result = await database.assignPalletToShelf(palletId, shelfId);
+    res.json({ message: "Pallet assigned to shelf successfully", result });
+  } catch (error) {
+    console.error("❌ Assign Shelf Error:", error);
+    res.status(500).json({ error: "Failed to assign pallet to shelf", details: error.message });
+  }
+});
+
+
+app.get("/pallets/:pallet_id/boxes", async (req, res) => {
+  const { pallet_id } = req.params;
+  try {
+    const boxes = await database.getBoxesByPalletId(pallet_id);
+    res.status(200).json(boxes);
+  } catch (err) {
+    console.error("Error fetching boxes for pallet:", err);
+    res.status(500).json({ error: "Failed to fetch boxes" });
+  }
+});
+
+
+
+
+app.get('/locations', async (req, res) => {
+  try {
+    const locations = await database.getAllShelfLocations();
+    res.json(locations);
+  } catch (err) {
+    console.error('Error fetching locations:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/shelves/:location', async (req, res) => {
+  try {
+    const { location } = req.params;
+    const shelves = await database.getShelvesByLocation(location);
+    res.json(shelves);
+  } catch (err) {
+    console.error('Error fetching shelves:', err);
+    res.status(500).json({ message: 'Error fetching shelves' });
+  }
+});
+
+app.post('/api/shelves', async (req, res) => {
+  try {
+    const { location, capacity } = req.body;
+
+    if (!location || capacity == null) {
+      return res.status(400).json({ message: "Location and capacity are required" });
+    }
+
+    const shelf = await database.createShelf(location, capacity);
+    res.status(201).json({ message: 'Shelf created', result: shelf });
+
+  } catch (err) {
+    console.error('❌ Error creating shelf:', err);
+    res.status(500).json({ message: 'Error creating shelf', details: err.message });
+  }
+});
+
+
+app.delete('/shelves/:shelf_id', async (req, res) => {
+  const { shelf_id } = req.params;
+  try {
+    await database.deleteShelf(shelf_id);
+    res.status(200).json({ message: 'Shelf deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting shelf:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/cities', (req, res) => {
+    res.json(["Lahti", "Kuopio", "Joensuu", "Mikkeli", "Varkaus", "Lapinlahti",]);
+  });
+
+app.get('/shelves/:shelf_id/contents', async (req, res) => {
+    const { shelf_id } = req.params;
+    try {
+      const [pallet] = await pool.query(
+        'SELECT * FROM Pallets WHERE shelf_id = ? LIMIT 1',
+        [shelf_id]
+      );
+  
+      if (!pallet.length) return res.status(404).json({ error: "No pallet on this shelf" });
+  
+      const [boxes] = await pool.query(
+        'SELECT * FROM Boxes WHERE pallet_id = ?',
+        [pallet[0].pallet_id]
+      );
+  
+      res.status(200).json({
+        pallet: pallet[0],
+        boxes
+      });
+    } catch (err) {
+      console.error('Error fetching shelf contents:', err);
+      res.status(500).json({ error: 'Server error' });
     }
   });
   

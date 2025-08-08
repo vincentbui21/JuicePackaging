@@ -1,123 +1,193 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   Typography,
-  CircularProgress,
-  TextField,
-  Button,
-  IconButton,
-  Stack,
-  Grid,
   Paper,
+  Snackbar,
+  IconButton,
+  TextField,
+  Stack,
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogContentText,
   DialogActions,
+  Button,
+  Card,
+  CardContent,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Delete, Edit, QrCode, Print } from "@mui/icons-material";
+import { Edit, QrCode, Delete } from "@mui/icons-material";
 import api from "../services/axios";
-import Papa from "papaparse";
 import backgroundomena from "../assets/backgroundomena.jpg";
-import dayjs from "dayjs";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
-import sendToPrinter from "../services/send_to_printer";
 
 function JuiceProcessingManagement() {
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchName, setSearchName] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [snackbarMsg, setSnackbarMsg] = useState("");
+  const [search, setSearch] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [qrImage, setQrImage] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [qrCodes, setQrCodes] = useState({});
+  const [editedFields, setEditedFields] = useState({
+    name: "",
+    status: "",
+    weight_kg: "",
+    estimated_pouches: "",
+    estimated_boxes: "",
+  });
+
+  /** -------- PRINT -------- */
+  const printSingleQRCode = (url, index) => {
+    const popup = window.open("", "_blank");
+    popup.document.write(`
+      <html>
+        <head><title>Print QR Code</title></head>
+        <body style="display:flex;flex-direction:column;align-items:center;font-family:Arial;">
+          <p style="margin:6px 0;">Box ${index}</p>
+          <img src="${url}" style="width:150px;height:150px;" />
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+  };
+  /** -------------------------------- */
 
   useEffect(() => {
     document.body.style.backgroundImage = `url(${backgroundomena})`;
     document.body.style.backgroundSize = "cover";
     document.body.style.backgroundRepeat = "no-repeat";
-    document.body.style.backgroundAttachment = "fixed";
-
-    fetchCompletedOrders();
-
     return () => {
       document.body.style = "";
     };
   }, []);
 
-  const fetchCompletedOrders = async () => {
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const computeFromWeight = (weight_kg) => {
+    const estimatedPouches = Math.floor((weight_kg * 0.65) / 3);
+    const estimatedBoxes = Math.ceil(estimatedPouches / 8);
+    return { estimatedPouches, estimatedBoxes };
+  };
+
+  const fetchOrders = async () => {
     try {
       const res = await api.get("/orders?status=processing complete");
-      setOrders(res.data || []);
-    } catch (error) {
-      console.error("Failed to fetch completed orders", error);
-    } finally {
-      setLoading(false);
+      const enriched = res.data.map((order) => {
+        const { estimatedPouches, estimatedBoxes } = computeFromWeight(order.weight_kg);
+
+        // If API already holds edited values, use them; else fallback to formula
+        const pouches = order.estimated_pouches ?? estimatedPouches;
+        const boxes = order.estimated_boxes ?? estimatedBoxes;
+
+        return {
+          ...order,
+          estimated_pouches: pouches,
+          estimated_boxes: boxes,
+        };
+      });
+      setOrders(enriched);
+    } catch (err) {
+      console.error("Failed to fetch orders", err);
+      setSnackbarMsg("Failed to fetch orders");
     }
   };
 
-  const handleDelete = async () => {
+  const handleShowQR = async (order) => {
     try {
-      await api.delete(`/orders/${selectedOrder.order_id}`);
-      setOrders((prev) => prev.filter((o) => o.order_id !== selectedOrder.order_id));
+      const boxesToUse = order.estimated_boxes; // (manual override respected)
+      const codes = [];
+      for (let i = 0; i < boxesToUse; i++) {
+        const text = `BOX_${order.order_id}_${i + 1}`;
+        const png = await generateSmallPngQRCode(text);
+        codes.push({ index: i + 1, url: png });
+      }
+
+      setQrCodes((prev) => ({
+        ...prev,
+        [order.order_id]: {
+          pouches: order.estimated_pouches,
+          boxes: boxesToUse,
+          codes,
+        },
+      }));
+      setSnackbarMsg("QR Codes generated");
+    } catch (e) {
+      console.error(e);
+      setSnackbarMsg("Failed to generate QR Codes");
+    }
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm("Are you sure you want to delete this order?")) return;
+    try {
+      await api.delete(`/orders/${orderId}`);
+      setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
+      setQrCodes((prev) => {
+        const copy = { ...prev };
+        delete copy[orderId];
+        return copy;
+      });
+      setSnackbarMsg("Order deleted successfully");
     } catch (err) {
       console.error("Failed to delete order", err);
-    } finally {
-      setDeleteDialogOpen(false);
+      setSnackbarMsg("Failed to delete order");
     }
   };
 
-  const handleEdit = async () => {
+  const openEditDialog = (row) => {
+    setSelectedOrder(row);
+    setEditedFields({
+      name: row.name ?? "",
+      status: row.status ?? "",
+      weight_kg: row.weight_kg ?? "",
+      estimated_pouches: row.estimated_pouches ?? "",
+      estimated_boxes: row.estimated_boxes ?? "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!selectedOrder) return;
+
+    const payload = {
+      name: editedFields.name,
+      status: editedFields.status,
+      weight_kg: Number(editedFields.weight_kg),
+      estimated_pouches: Number(editedFields.estimated_pouches),
+      estimated_boxes: Number(editedFields.estimated_boxes),
+    };
+
     try {
-      const { order_id, weight_kg, estimated_pouches, estimated_boxes } = selectedOrder;
-      await api.put(`/orders/${order_id}`, {
-        weight_kg,
-        estimated_pouches,
-        estimated_boxes
-      });
-      fetchCompletedOrders();
+      await api.put(`/orders/${selectedOrder.order_id}`, payload);
+
+      // Update locally so QR generation uses overridden values immediately
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.order_id === selectedOrder.order_id
+            ? { ...o, ...payload }
+            : o
+        )
+      );
+
+      setSnackbarMsg("Order updated successfully");
+      setEditDialogOpen(false);
     } catch (err) {
       console.error("Failed to update order", err);
-    } finally {
-      setEditDialogOpen(false);
+      setSnackbarMsg("Update failed");
     }
-  };
-
-  const handleShowQR = async (orderId) => {
-    const img = await generateSmallPngQRCode(orderId);
-    setQrImage(img);
-    setQrDialogOpen(true);
-  };
-
-  const handlePrint = () => {
-    if (qrImage) sendToPrinter(qrImage);
-  };
-
-  const filteredOrders = orders.filter((order) => {
-    const nameMatch = order?.name?.toLowerCase().includes(searchName.toLowerCase());
-    const dateMatch = (!startDate || dayjs(order.created_at).isAfter(dayjs(startDate).subtract(1, 'day')))
-      && (!endDate || dayjs(order.created_at).isBefore(dayjs(endDate).add(1, 'day')));
-    return nameMatch && dateMatch;
-  });
-
-  const exportToCSV = () => {
-    const csv = Papa.unparse(filteredOrders);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "juice_orders.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const columns = [
     { field: "order_id", headerName: "Order ID", flex: 1 },
-    { field: "name", headerName: "Customer", flex: 1.5 },
+    { field: "name", headerName: "Customer", flex: 1 },
     { field: "weight_kg", headerName: "Weight (kg)", flex: 1 },
     { field: "estimated_pouches", headerName: "Pouches", flex: 1 },
     { field: "estimated_boxes", headerName: "Boxes", flex: 1 },
@@ -126,109 +196,166 @@ function JuiceProcessingManagement() {
       field: "actions",
       headerName: "Actions",
       sortable: false,
+      flex: 1.5,
       renderCell: (params) => (
         <Stack direction="row" spacing={1}>
-          <IconButton color="primary" onClick={() => { setSelectedOrder(params.row); setEditDialogOpen(true); }}>
+          <IconButton
+            color="primary"
+            onClick={() => openEditDialog(params.row)}
+          >
             <Edit fontSize="small" />
           </IconButton>
-          <IconButton color="error" onClick={() => { setSelectedOrder(params.row); setDeleteDialogOpen(true); }}>
-            <Delete fontSize="small" />
-          </IconButton>
-          <IconButton color="secondary" onClick={() => handleShowQR(params.row.order_id)}>
+          <IconButton color="secondary" onClick={() => handleShowQR(params.row)}>
             <QrCode fontSize="small" />
+          </IconButton>
+          <IconButton
+            color="error"
+            onClick={() => handleDeleteOrder(params.row.order_id)}
+          >
+            <Delete fontSize="small" />
           </IconButton>
         </Stack>
       ),
-      flex: 1.2,
     },
   ];
 
   return (
-    <>
-      <Box display="flex" justifyContent="center">
-        <Typography
-          variant="h6"
-          sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
-            textAlign: "center",
-            paddingTop: "10px",
-            paddingBottom: "10px",
-            marginBottom: "10px",
-            color: "black",
-            background: "#a9987d",
-            width: "min(1200px, 90%)",
-            borderRadius: "10px",
-          }}
-        >
-          Juice Processing Management
-        </Typography>
-      </Box>
+    <Box p={3}>
+      <Typography
+        variant="h4"
+        gutterBottom
+        sx={{ background: "#b6a284", color: "white", p: 2, borderRadius: 2 }}
+      >
+        Juice Processing Management
+      </Typography>
 
-      <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(1200px, 95%)' }}>
-        <Grid container spacing={2} alignItems="center" justifyContent="center">
-          <Grid item xs={12} sm={6} md={4}>
-            <TextField fullWidth label="Customer name" value={searchName} onChange={(e) => setSearchName(e.target.value)} sx={{ backgroundColor: "white", borderRadius: 1 }} />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth type="date" label="Start Date" InputLabelProps={{ shrink: true }} value={startDate} onChange={(e) => setStartDate(e.target.value)} sx={{ backgroundColor: "white", borderRadius: 1 }} />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth type="date" label="End Date" InputLabelProps={{ shrink: true }} value={endDate} onChange={(e) => setEndDate(e.target.value)} sx={{ backgroundColor: "white", borderRadius: 1 }} />
-          </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <Button fullWidth variant="contained" onClick={exportToCSV} sx={{ height: '100%' }}>Export</Button>
-          </Grid>
-        </Grid>
-      </Box>
+      <TextField
+        label="Search Orders"
+        variant="outlined"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        fullWidth
+        sx={{ mb: 2, backgroundColor: "white" }}
+      />
 
-      {loading ? <CircularProgress /> : (
+      <Paper elevation={3} sx={{ p: 2, backgroundColor: "#dcd2ae", borderRadius: 2 }}>
         <DataGrid
-          rows={filteredOrders.map((o, i) => ({ ...o, id: i }))}
-          columns={columns}
           autoHeight
-          pageSize={10}
-          rowsPerPageOptions={[10, 20, 50]}
-          sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3, mt: 2, width: '100%' }}
+          rows={orders.filter((o) =>
+            o.name.toLowerCase().includes(search.toLowerCase())
+          )}
+          columns={columns}
+          getRowId={(row) => row.order_id}
+          pageSize={5}
+          rowsPerPageOptions={[5]}
         />
-      )}
+      </Paper>
 
-      <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
-        <DialogTitle>QR Code</DialogTitle>
-        <DialogContent>
-          <Box display="flex" justifyContent="center">
-            <img src={qrImage} alt="QR Code" style={{ width: '200px' }} />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} startIcon={<Print />} variant="contained">Print</Button>
-        </DialogActions>
-      </Dialog>
+      {/* QR sections */}
+      {Object.entries(qrCodes).map(([orderId, data]) => (
+        <Box key={orderId} mt={4} p={2} component={Paper}>
+          <Typography variant="h6">QR Codes for Order: {orderId}</Typography>
+          <Typography>Pouches: {data.pouches}</Typography>
+          <Typography>Boxes: {data.boxes}</Typography>
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Delete Order</DialogTitle>
-        <DialogContent>
-          <DialogContentText>Are you sure you want to delete this order?</DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error">Delete</Button>
-        </DialogActions>
-      </Dialog>
+          <Stack direction="row" spacing={2} flexWrap="wrap" mt={2}>
+            {data.codes.map(({ index, url }) => (
+              <Card key={index} sx={{ p: 1, backgroundColor: "#fff" }}>
+                <CardContent sx={{ textAlign: "center" }}>
+                  <Typography variant="body2">Box {index}</Typography>
+                  <img
+                    src={url}
+                    alt={`QR ${index}`}
+                    style={{ width: 120, height: 120 }}
+                  />
+                  <Button
+                    size="small"
+                    sx={{ mt: 1 }}
+                    variant="outlined"
+                    onClick={() => printSingleQRCode(url, index)}
+                  >
+                    Print
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        </Box>
+      ))}
 
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)}>
+      {/* Edit Dialog */}
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} fullWidth>
         <DialogTitle>Edit Order</DialogTitle>
         <DialogContent>
-          <TextField label="Weight (kg)" fullWidth type="number" value={selectedOrder?.weight_kg || ""} onChange={(e) => setSelectedOrder({ ...selectedOrder, weight_kg: e.target.value })} sx={{ my: 1 }} />
-          <TextField label="Pouches" fullWidth type="number" value={selectedOrder?.estimated_pouches || ""} onChange={(e) => setSelectedOrder({ ...selectedOrder, estimated_pouches: e.target.value })} sx={{ my: 1 }} />
-          <TextField label="Boxes" fullWidth type="number" value={selectedOrder?.estimated_boxes || ""} onChange={(e) => setSelectedOrder({ ...selectedOrder, estimated_boxes: e.target.value })} sx={{ my: 1 }} />
+          <Stack spacing={2} mt={1}>
+            <TextField
+              label="Customer Name"
+              value={editedFields.name}
+              onChange={(e) =>
+                setEditedFields((p) => ({ ...p, name: e.target.value }))
+              }
+              fullWidth
+            />
+            <TextField
+              label="Status"
+              value={editedFields.status}
+              onChange={(e) =>
+                setEditedFields((p) => ({ ...p, status: e.target.value }))
+              }
+              fullWidth
+            />
+            <TextField
+              label="Weight (kg)"
+              type="number"
+              value={editedFields.weight_kg}
+              onChange={(e) =>
+                setEditedFields((p) => ({ ...p, weight_kg: e.target.value }))
+              }
+              fullWidth
+            />
+            <TextField
+              label="Estimated Pouches"
+              type="number"
+              value={editedFields.estimated_pouches}
+              onChange={(e) =>
+                setEditedFields((p) => ({
+                  ...p,
+                  estimated_pouches: e.target.value,
+                }))
+              }
+              fullWidth
+              helperText="Manual override. Will be used instead of the formula."
+            />
+            <TextField
+              label="Estimated Boxes"
+              type="number"
+              value={editedFields.estimated_boxes}
+              onChange={(e) =>
+                setEditedFields((p) => ({
+                  ...p,
+                  estimated_boxes: e.target.value,
+                }))
+              }
+              fullWidth
+              helperText="Manual override. QR generation will use this."
+            />
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleEdit} color="primary">Save</Button>
+          <Button variant="contained" onClick={handleEditSave}>
+            Save
+          </Button>
         </DialogActions>
       </Dialog>
-    </>
+
+      <Snackbar
+        open={!!snackbarMsg}
+        autoHideDuration={3000}
+        onClose={() => setSnackbarMsg("")}
+        message={snackbarMsg}
+      />
+    </Box>
   );
 }
 

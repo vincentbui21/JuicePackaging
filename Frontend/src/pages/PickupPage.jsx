@@ -97,7 +97,11 @@ function PickupPage() {
           sx={{ backgroundColor: "white", borderRadius: 1 }}
         />
 
-        {loading && <Box mt={2} textAlign="center"><CircularProgress /></Box>}
+        {loading && (
+          <Box mt={2} textAlign="center">
+            <CircularProgress />
+          </Box>
+        )}
 
         <List>
           {results.map((res) => (
@@ -110,7 +114,9 @@ function PickupPage() {
             >
               <ListItemText
                 primary={`${res.name} (${res.phone})`}
-                secondary={`Status: ${res.status} | City: ${res.city} | Boxes: ${res.box_count}`}
+                secondary={`Status: ${res.status} | City: ${res.city} | Boxes: ${res.box_count}${
+                  res.shelf_location ? ` | Shelf: ${res.shelf_location}` : ""
+                }`}
               />
             </ListItem>
           ))}
@@ -131,6 +137,15 @@ function PickupPage() {
 
               <Typography variant="subtitle1">Boxes:</Typography>
               <Typography variant="body2" gutterBottom>{selected.box_count}</Typography>
+
+              {selected.shelf_location && (
+                <>
+                  <Typography variant="subtitle1">Shelf Location:</Typography>
+                  <Typography variant="body2" gutterBottom style={{ fontWeight: "bold", color: "green" }}>
+                    {selected.shelf_location}
+                  </Typography>
+                </>
+              )}
 
               {selected.status === "Ready for pickup" && (
                 <Button

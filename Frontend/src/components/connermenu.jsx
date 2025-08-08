@@ -38,7 +38,11 @@ function CornerMenuButton() {
         >
             <MenuItem onClick={() => handleSelect('/customer-management')}>Customer management</MenuItem>
             <MenuItem onClick={() => navigate('/juice-management')}>Juice Management</MenuItem>
-            <MenuItem onClick={() => navigate('/pallet-management')}>Pallet Management</MenuItem>
+            <MenuItem onClick={() => navigate('/create-pallet')}>Create Pallet </MenuItem>
+            <MenuItem onClick={() => navigate('/create-shelve')}>Create Shelf </MenuItem>
+            <MenuItem onClick={() => navigate('/shelve-management')}>Shelves Management</MenuItem>
+            <MenuItem onClick={() => handleSelect('/pallets-management')}>Pallets Management</MenuItem> 
+
         </Menu>
         </div>
     );

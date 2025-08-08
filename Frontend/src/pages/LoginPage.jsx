@@ -39,8 +39,10 @@ function LoginPage() {
         case 3:
             return <Navigate to={"/juice-handle"} />
         case 4:
-            return <Navigate to={"/loading-handle"} />
+            return <Navigate to={"/load-boxes-to-pallet"} />
         case 5:
+            return <Navigate to="/load-pallet-to-shelf" />;
+        case 6:
             return <Navigate to={"/pickup"} />
         default:
             break;
@@ -60,7 +62,7 @@ function LoginPage() {
     const handleButtonClick = (e) => {
         let newrole = parseInt(role)
 
-        if (newrole >= 1 && newrole <=5){
+        if (newrole >= 1 && newrole <=6){
             setRole("")
             SetRedirect(newrole)
         }
@@ -111,8 +113,10 @@ function LoginPage() {
                     <MenuItem value= "1">Customer Info Entry</MenuItem>
                     <MenuItem value= "2">Crate Management</MenuItem>
                     <MenuItem value= "3">Juice Processing</MenuItem>
-                    <MenuItem value= "4">Box Loading</MenuItem>
-                    <MenuItem value= "5">Pickup Coordination</MenuItem>
+                    <MenuItem value= "4">Load Boxes to Pallet</MenuItem>
+                    <MenuItem value="5">Load Pallet to Shelve</MenuItem>
+                    <MenuItem value="6">Pick up Coordination</MenuItem>
+
                 </TextField>
 
                 <Button variant="contained" onClick={handleButtonClick}>

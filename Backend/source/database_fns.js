@@ -472,40 +472,6 @@ async function deletePallet(pallet_id) {
     }
 }
 
-async function createNewPallet(location, capacity = 4) {
-    const connection = await pool.getConnection();
-
-    try {
-        await connection.beginTransaction();
-
-        const pallete_id = generateUUID();
-
-        const parsedCapacity = parseInt(capacity, 10) || 4;
-
-        const insertPalletQuery = `
-            INSERT INTO Palletes (pallete_id, location, capacity, holding, status)
-            VALUES (?, ?, ?, ?, ?)
-        `;
-
-        await connection.query(insertPalletQuery, [
-            pallete_id,
-            location,
-            parsedCapacity,
-            0,
-            'Empty'
-        ]);
-
-        await connection.commit();
-        connection.release();
-        return true; // return the new ID if needed
-    } catch (error) {
-        await connection.rollback();
-        console.error("Error creating pallet:", error);
-        connection.release();
-        return false;
-    }
-}
-
 async function updatePalletCapacity(pallete_id, newCapacity) {
     const connection = await pool.getConnection();
 
@@ -627,31 +593,71 @@ async function markOrderAsReady(order_id) {
         return pallet_id;
       }
       
-      async function deletePallet(pallet_id) {
-        await pool.query(`DELETE FROM Pallets WHERE pallet_id = ?`, [pallet_id]);
+      async function deleteShelf(shelf_id) {
+        await pool.query(`DELETE FROM Shelves WHERE shelf_id = ?`, [shelf_id]);
       }
 
       async function getOrderById(order_id) {
-        const [rows] = await pool.query(`
-          SELECT o.*, c.name
-          FROM Orders o
-          JOIN Customers c ON o.customer_id = c.customer_id
-          WHERE o.order_id = ?
-        `, [order_id]);
-        return rows[0] || null;
+        const [rows] = await pool.query(
+          `SELECT o.*, c.name, c.phone, c.email
+           FROM Orders o
+           JOIN Customers c ON o.customer_id = c.customer_id
+           WHERE o.order_id = ?`,
+          [order_id]
+        );
+      
+        return rows[0]; // single result
       }
+      
       
       async function getPalletById(pallet_id) {
         const [rows] = await pool.query(`SELECT * FROM Pallets WHERE pallet_id = ?`, [pallet_id]);
         return rows[0] || null;
       }
       
-      async function assignBoxToPallet(box_id, pallet_id, city) {
-        await pool.query(
-          `UPDATE Boxes SET pallet_id = ?, city = ? WHERE box_id = ?`,
-          [pallet_id, city, box_id]
-        );
-      }
+      async function assignBoxToPallet(box_id, pallet_id) {
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+    
+            // Get pallet info
+            const [[pallet]] = await connection.query(
+                'SELECT capacity, holding FROM Pallets WHERE pallet_id = ?',
+                [pallet_id]
+            );
+    
+            if (!pallet) throw new Error("Pallet not found");
+    
+            if (pallet.holding >= pallet.capacity) {
+                throw new Error("Pallet is full");
+            }
+    
+            // Update box
+            await connection.query(
+                `UPDATE Boxes SET pallet_id = ? WHERE box_id = ?`,
+                [pallet_id, box_id]
+            );
+    
+            // Update pallet holding and status
+            const newHolding = pallet.holding + 1;
+            const newStatus = newHolding === pallet.capacity ? "full" : "available";
+    
+            await connection.query(
+                `UPDATE Pallets SET holding = ?, status = ? WHERE pallet_id = ?`,
+                [newHolding, newStatus, pallet_id]
+            );
+    
+            await connection.commit();
+            return true;
+        } catch (err) {
+            await connection.rollback();
+            console.error("Error assigning box to pallet:", err.message);
+            return false;
+        } finally {
+            connection.release();
+        }
+    }
+    
 
       async function searchOrdersForPickup(query) {
         const [rows] = await pool.query(`
@@ -684,8 +690,160 @@ async function markOrderAsReady(order_id) {
           [order_id]
         );
       }
+      async function searchOrdersWithShelfInfo(query) {
+        const [rows] = await pool.query(`
+          SELECT 
+            o.order_id,
+            o.status,
+            o.customer_id,
+            o.created_at,
+            c.name,
+            c.phone,
+            c.city,
+            (
+              SELECT COUNT(*) 
+              FROM Boxes b 
+              WHERE b.customer_id = o.customer_id
+            ) AS box_count,
+            (
+              SELECT s.location
+              FROM Boxes b
+              JOIN Pallets p ON b.pallet_id = p.pallet_id
+              JOIN Shelves s ON p.shelf_id = s.shelf_id
+              WHERE b.customer_id = o.customer_id
+              LIMIT 1
+            ) AS shelf_location
+          FROM Orders o
+          JOIN Customers c ON o.customer_id = c.customer_id
+          WHERE c.name LIKE ? OR c.phone LIKE ?
+          ORDER BY o.created_at DESC
+        `, [`%${query}%`, `%${query}%`]);
       
+        return rows;
+      }
       
+      async function getAllCities() {
+        const [rows] = await pool.query("SELECT * FROM cities");
+        return rows;
+      }
+
+      async function getAllShelfLocations() {
+        const connection = await pool.getConnection();
+        try {
+            const [rows] = await connection.query('SELECT DISTINCT location FROM Shelves');
+            return rows;
+        } catch (error) {
+            console.error("Error getting shelf locations:", error);
+            return [];
+        } finally {
+            connection.release();
+        }
+    }
+    
+
+    async function createShelf(location, capacity = 4) {
+        const connection = await pool.getConnection();
+        try {
+            if (!location || !capacity) throw new Error("Missing required parameters");
+    
+            const shelf_id = generateUUID();
+            const status = "Empty";
+            const holding = 0;
+            const created_at = new Date();
+    
+            await connection.query(
+                'INSERT INTO Shelves (shelf_id, location, status, capacity, holding, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [shelf_id, location, status, capacity, holding, created_at]
+            );
+    
+            return { shelf_id };
+        } catch (error) {
+            console.error("❌ Error creating shelf:", error);
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }
+    
+  // Get all unique shelf locations
+  async function getShelvesByLocation(location) {
+    const connection = await pool.getConnection();
+    try {
+        const [rows] = await connection.query(
+            "SELECT * FROM Shelves WHERE location = ?",
+            [location]
+        );
+        return rows;
+    } catch (error) {
+        console.error("Error fetching shelves by location:", error);
+        return [];
+    } finally {
+        connection.release();
+    }
+}
+
+async function getBoxesByPalletId(pallet_id) {
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.query(
+        "SELECT box_id, customer_id, pouch_count, created_at FROM Boxes WHERE pallet_id = ?",
+        [pallet_id]
+      );
+      return rows;
+    } catch (err) {
+      console.error("Error fetching boxes for pallet:", err);
+      return [];
+    } finally {
+      connection.release();
+    }
+  }
+  
+  async function assignPalletToShelf(palletId, shelfId) {
+    const connection = await pool.getConnection();
+  
+    try {
+      await connection.beginTransaction();
+  
+      // Check shelf capacity
+      const [shelfRows] = await connection.query(
+        `SELECT capacity, holding FROM Shelves WHERE shelf_id = ?`,
+        [shelfId]
+      );
+  
+      if (shelfRows.length === 0) {
+        throw new Error("Shelf not found");
+      }
+  
+      const { capacity, holding } = shelfRows[0];
+  
+      if (holding >= capacity) {
+        throw new Error("Shelf is full");
+      }
+  
+      // Assign pallet to shelf
+      await connection.query(
+        `UPDATE Pallets SET shelf_id = ? WHERE pallet_id = ?`,
+        [shelfId, palletId]
+      );
+  
+      // Increment shelf holding count
+      await connection.query(
+        `UPDATE Shelves SET holding = holding + 1 WHERE shelf_id = ?`,
+        [shelfId]
+      );
+  
+      await connection.commit();
+      return { palletId, shelfId };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  
+       
 module.exports = {
     update_new_customer_data, 
     get_crate_data, 
@@ -701,8 +859,7 @@ module.exports = {
     deleteOrder,
     getPalletsByLocation,
     createPallet,
-    deletePallet,
-    createNewPallet,
+    deleteShelf,
     updatePalletCapacity,
     getOrderById,
     getPalletById,
@@ -710,4 +867,11 @@ module.exports = {
     markOrderAsReady,
     searchOrdersForPickup,
     markOrderAsPickedUp,
+    searchOrdersWithShelfInfo,
+    getAllCities,
+    getShelvesByLocation,
+    createShelf,
+    getAllShelfLocations,
+    getBoxesByPalletId,
+    assignPalletToShelf,
 }
