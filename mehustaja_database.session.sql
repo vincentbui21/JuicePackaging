@@ -55,3 +55,21 @@ ADD COLUMN shelf_id VARCHAR(255);
 
 
 ALTER TABLE Pallets ADD COLUMN shelf_id TEXT;
+
+ALTER TABLE Shelves
+  ADD COLUMN shelf_name VARCHAR(64) NOT NULL AFTER location;
+
+SET @loc := NULL; 
+SET @n := 0;
+
+UPDATE Shelves s
+JOIN (
+  SELECT shelf_id, location,
+         (@n := IF(@loc = location, @n + 1, 1)) AS seq,
+         (@loc := location) AS dummy
+  FROM Shelves
+  ORDER BY location, created_at
+) x ON x.shelf_id = s.shelf_id
+SET s.shelf_name = CONCAT('Shelf ', x.seq);
+
+SELECT shelf_id, location, shelf_name FROM Shelves;

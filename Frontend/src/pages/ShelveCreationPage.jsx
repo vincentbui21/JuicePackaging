@@ -24,6 +24,10 @@ function ShelveCreationPage() {
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
+  // NEW: optional shelf name input + display name after create
+  const [shelfName, setShelfName] = useState("");
+  const [createdShelfName, setCreatedShelfName] = useState("");
+
   const handleCreate = async () => {
     const loc = location.trim();
     const cap = Number(capacity);
@@ -34,21 +38,28 @@ function ShelveCreationPage() {
     }
 
     try {
-      // Vincent’s API path
-      const res = await api.post("/api/shelves", { location: loc, capacity: cap });
+      // Send optional shelf_name (backend will auto-name if empty)
+      const res = await api.post("/api/shelves", {
+        location: loc,
+        capacity: cap,
+        shelf_name: shelfName?.trim() || null, // NEW
+      });
 
-      // Support both shapes: { shelf_id } or { result: { shelf_id } }
+      // Support both shapes: { shelf_id, shelf_name } or { result: { shelf_id, shelf_name } }
       const shelf_id = res?.data?.shelf_id ?? res?.data?.result?.shelf_id;
+      const returned_name = res?.data?.shelf_name ?? res?.data?.result?.shelf_name; // NEW
       if (!shelf_id) throw new Error("Missing shelf_id in server response");
 
       const qrData = `SHELF_${shelf_id}`;
       const img = await generateSmallPngQRCode(qrData);
 
       setQrImage(img);
+      setCreatedShelfName(returned_name || shelfName || ""); // NEW
       setQrDialogOpen(true);
       setSnackbarMsg("Shelf created successfully!");
       setLocation("");
       setCapacity(8);
+      setShelfName(""); // NEW
       setError(false);
     } catch (err) {
       console.error("Failed to create shelf:", err);
@@ -62,8 +73,13 @@ function ShelveCreationPage() {
     const popup = window.open("", "_blank");
     popup.document.write(`
       <html><head><title>Print QR Code</title></head>
-      <body style="text-align:center;padding:20px;">
+      <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
         <img src="${qrImage}" style="width:200px;" />
+        ${
+          createdShelfName
+            ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${createdShelfName}</div>`
+            : ""
+        }
         <script>
           window.onload = function() {
             window.print();
@@ -121,6 +137,16 @@ function ShelveCreationPage() {
             onChange={(e) => setCapacity(Number(e.target.value))}
             error={error && Number(capacity) <= 0}
             helperText={error && Number(capacity) <= 0 ? "Capacity must be at least 1" : ""}
+            sx={{ mb: 2 }}
+          />
+
+          {/* NEW: optional name input */}
+          <TextField
+            label="Shelf Name (optional)"
+            variant="filled"
+            fullWidth
+            value={shelfName}
+            onChange={(e) => setShelfName(e.target.value)}
             sx={{ mb: 3 }}
           />
 
@@ -134,8 +160,14 @@ function ShelveCreationPage() {
       <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
         <DialogTitle>Shelf QR Code</DialogTitle>
         <DialogContent>
-          <Box display="flex" justifyContent="center">
+          <Box display="flex" flexDirection="column" alignItems="center" gap={1} mt={1}>
             <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+            {/* NEW: show readable name beneath QR */}
+            {createdShelfName ? (
+              <Typography variant="h6" sx={{ mt: 1, fontWeight: "bold" }}>
+                {createdShelfName}
+              </Typography>
+            ) : null}
           </Box>
         </DialogContent>
         <DialogActions>

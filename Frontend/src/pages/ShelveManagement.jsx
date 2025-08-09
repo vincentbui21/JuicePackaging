@@ -23,6 +23,9 @@ function ShelvesManagementPage() {
 
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
+  // NEW: keep the readable name for the QR dialog/print
+  const [qrShelfName, setQrShelfName] = useState("");
+
   useEffect(() => {
     fetchLocations();
   }, []);
@@ -55,9 +58,11 @@ function ShelvesManagementPage() {
     }
   };
 
-  const handleShowQR = async (shelf_id) => {
-    const img = await generateSmallPngQRCode(`SHELF_${shelf_id}`);
+  // UPDATED: accept entire row so we can grab shelf_name for the dialog/print
+  const handleShowQR = async (shelf) => {
+    const img = await generateSmallPngQRCode(`SHELF_${shelf.shelf_id}`);
     setQrImage(img);
+    setQrShelfName(shelf.shelf_name || ""); // NEW
     setQrDialogOpen(true);
   };
 
@@ -65,9 +70,16 @@ function ShelvesManagementPage() {
     if (!qrImage) return;
     const popup = window.open("", "_blank");
     popup.document.write(`
-      <html><head><title>Print QR Code</title></head><body style="text-align:center;padding:20px;">
-      <img src="${qrImage}" style="width:200px;" />
-      <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
+      <html><head><title>Print QR Code</title></head>
+      <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
+        <img src="${qrImage}" style="width:200px;" />
+        ${qrShelfName ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${qrShelfName}</div>` : ""}
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = () => window.close();
+          }
+        </script>
       </body></html>
     `);
     popup.document.close();
@@ -101,6 +113,8 @@ function ShelvesManagementPage() {
 
   const columns = [
     { field: "shelf_id", headerName: "Shelf ID", flex: 1.5 },
+    // NEW: show the human-readable shelf name
+    { field: "shelf_name", headerName: "Shelf Name", flex: 1 },
     { field: "location", headerName: "Location", flex: 1 },
     { field: "status", headerName: "Status", flex: 1 },
     { field: "capacity", headerName: "Capacity", flex: 0.8 },
@@ -112,7 +126,8 @@ function ShelvesManagementPage() {
       sortable: false,
       renderCell: (params) => (
         <>
-          <IconButton color="primary" onClick={() => handleShowQR(params.row.shelf_id)}>
+          {/* UPDATED: pass the whole row so we can read shelf_name */}
+          <IconButton color="primary" onClick={() => handleShowQR(params.row)}>
             <QrCode />
           </IconButton>
           <IconButton color="info" onClick={() => handleViewContents(params.row.shelf_id)}>
@@ -197,8 +212,14 @@ function ShelvesManagementPage() {
       <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
         <DialogTitle>QR Code</DialogTitle>
         <DialogContent>
-          <Box display="flex" justifyContent="center">
+          <Box display="flex" flexDirection="column" alignItems="center" gap={1} mt={1}>
             <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+            {/* NEW: human-readable shelf name under the QR */}
+            {qrShelfName ? (
+              <Typography variant="h6" sx={{ mt: 1, fontWeight: "bold" }}>
+                {qrShelfName}
+              </Typography>
+            ) : null}
           </Box>
         </DialogContent>
         <DialogActions>

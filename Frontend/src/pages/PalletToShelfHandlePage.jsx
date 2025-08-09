@@ -107,21 +107,50 @@ function PalletToShelfHandlePage() {
           </Typography>
 
           <Stack spacing={3} alignItems="center" mt={2}>
+            {/* STRICTLY positioning changes start */}
             <Box
               sx={{
-                border: "3px solid",
-                borderColor: scanMode === "pallet" ? "primary.main" : "success.main",
-                borderRadius: 2,
-                p: 2,
-                width: "fit-content",
-                backgroundColor: "rgba(255, 255, 255, 0.85)",
+                width: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
               }}
             >
-              <Typography variant="h6" mb={1}>
-                {scanMode === "pallet" ? "Scan Pallet QR Code" : "Scan Shelf QR Code"}
-              </Typography>
-              <QRScanner onResult={setScanResult} />
+              <Box
+                sx={{
+                  border: "3px solid",
+                  borderColor:
+                    scanMode === "pallet" ? "primary.main" : "success.main",
+                  borderRadius: 2,
+                  p: 2,
+                  width: "100%",
+                  maxWidth: 520,
+                  backgroundColor: "rgba(255, 255, 255, 0.85)",
+                  mx: "auto",
+                }}
+              >
+                <Typography variant="h6" mb={1} textAlign="center">
+                  {scanMode === "pallet"
+                    ? "Scan Pallet QR Code"
+                    : "Scan Shelf QR Code"}
+                </Typography>
+
+                {/* This wrapper centers whatever the QRScanner renders (video/canvas/div) */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "center",
+                    "& video, & canvas, & > *": {
+                      display: "block",
+                      margin: "0 auto",
+                    },
+                  }}
+                >
+                  <QRScanner onResult={setScanResult} />
+                </Box>
+              </Box>
             </Box>
+            {/* STRICTLY positioning changes end */}
 
             <Grow in={!!(scannedPalletIDs.length || shelfId)}>
               <Paper
@@ -138,7 +167,11 @@ function PalletToShelfHandlePage() {
 
                 <Stack spacing={1} mt={2}>
                   {scannedPalletIDs.map((id, idx) => (
-                    <Paper key={id} elevation={0} sx={{ p: 1, border: "1px solid #eee" }}>
+                    <Paper
+                      key={id}
+                      elevation={0}
+                      sx={{ p: 1, border: "1px solid #eee" }}
+                    >
                       <Typography variant="body2">
                         Pallet {idx + 1}: {id}
                       </Typography>

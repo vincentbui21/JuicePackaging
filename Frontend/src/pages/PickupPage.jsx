@@ -109,31 +109,38 @@ function PickupPage() {
             )}
 
             <List>
-              {results.map((res) => (
-                <ListItem
-                  key={res.order_id}
-                  button
-                  selected={selected?.order_id === res.order_id}
-                  onClick={() => setSelected(res)}
-                  sx={{
-                    mt: 1,
-                    backgroundColor: selected?.order_id === res.order_id ? "#b2dfdb" : "#fff",
-                    borderRadius: 1,
-                  }}
-                >
-                  <ListItemText
-                    primary={`${res.name} (${res.phone})`}
-                    secondary={[
-                      `Status: ${res.status}`,
-                      `City: ${res.city}`,
-                      `Boxes: ${res.box_count}`,
-                      res.shelf_location ? `Shelf: ${res.shelf_location}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" | ")}
-                  />
-                </ListItem>
-              ))}
+              {results.map((res) => {
+                // NEW: Compose a friendly shelf display like "Shelf 2 (Helsinki)"
+                const shelfDisplay = res.shelf_name
+                  ? `${res.shelf_name}${res.shelf_location || res.city ? ` (${res.shelf_location || res.city})` : ""}`
+                  : (res.shelf_location || ""); // fallback to location if no name
+
+                return (
+                  <ListItem
+                    key={res.order_id}
+                    button
+                    selected={selected?.order_id === res.order_id}
+                    onClick={() => setSelected(res)}
+                    sx={{
+                      mt: 1,
+                      backgroundColor: selected?.order_id === res.order_id ? "#b2dfdb" : "#fff",
+                      borderRadius: 1,
+                    }}
+                  >
+                    <ListItemText
+                      primary={`${res.name} (${res.phone})`}
+                      secondary={[
+                        `Status: ${res.status}`,
+                        `City: ${res.city}`,
+                        `Boxes: ${res.box_count}`,
+                        shelfDisplay ? `Shelf: ${shelfDisplay}` : null, // NEW
+                      ]
+                        .filter(Boolean)
+                        .join(" | ")}
+                    />
+                  </ListItem>
+                );
+              })}
             </List>
 
             {selected && (
@@ -160,15 +167,18 @@ function PickupPage() {
                     {selected.box_count}
                   </Typography>
 
-                  {selected.shelf_location && (
+                  {/* NEW: show shelf name + city clearly */}
+                  {(selected.shelf_name || selected.shelf_location) && (
                     <>
-                      <Typography variant="subtitle1">Shelf Location:</Typography>
+                      <Typography variant="subtitle1">Shelf:</Typography>
                       <Typography
                         variant="body2"
                         gutterBottom
                         sx={{ fontWeight: "bold", color: "green" }}
                       >
-                        {selected.shelf_location}
+                        {selected.shelf_name
+                          ? `${selected.shelf_name}${selected.shelf_location || selected.city ? ` (${selected.shelf_location || selected.city})` : ""}`
+                          : selected.shelf_location}
                       </Typography>
                     </>
                   )}

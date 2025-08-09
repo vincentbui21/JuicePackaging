@@ -163,11 +163,6 @@ app.get('/crates', async (req, res) => {
   res.json({ crates });
 });
 
-app.get('/orders', async (req, res) => {
-    const { status } = req.query;
-    const orders = await database.getOrdersByStatus(status);
-    res.status(200).json(orders);
-  });
   app.post('/orders/:order_id/done', async (req, res) => {
     const { order_id } = req.params;
     const { comment } = req.body;
@@ -384,12 +379,25 @@ app.post('/pallets/assign-shelf', async (req, res) => {
 
   try {
     const result = await database.assignPalletToShelf(palletId, shelfId);
-    res.json({ message: "Pallet assigned to shelf successfully", result });
+
+    const shelf = await database.getShelfById(shelfId);
+    if (!shelf) throw new Error("Shelf not found");
+
+    const customer = await database.getCustomerByPalletId(palletId);
+    if (customer?.phone) {
+      await publishDirectSMS(
+        customer.phone,
+        `Hi ${customer.name}, your order is ready for pickup at ${shelf.location}.`
+      );
+    }
+
+    res.json({ message: "Pallet assigned to shelf successfully and customer notified", result });
   } catch (error) {
     console.error("❌ Assign Shelf Error:", error);
     res.status(500).json({ error: "Failed to assign pallet to shelf", details: error.message });
   }
 });
+
 
 
 app.get("/pallets/:pallet_id/boxes", async (req, res) => {
@@ -429,20 +437,19 @@ app.get('/api/shelves/:location', async (req, res) => {
 
 app.post('/api/shelves', async (req, res) => {
   try {
-    const { location, capacity } = req.body;
-
+    const { location, capacity, shelf_name } = req.body;
     if (!location || capacity == null) {
       return res.status(400).json({ message: "Location and capacity are required" });
     }
 
-    const shelf = await database.createShelf(location, capacity);
+    const shelf = await database.createShelf(location, capacity, shelf_name);
     res.status(201).json({ message: 'Shelf created', result: shelf });
-
   } catch (err) {
     console.error('❌ Error creating shelf:', err);
     res.status(500).json({ message: 'Error creating shelf', details: err.message });
   }
 });
+
 
 
 app.delete('/shelves/:shelf_id', async (req, res) => {

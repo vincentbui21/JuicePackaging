@@ -14,8 +14,8 @@ import DrawerComponent from "../components/drawer";
 
 function BoxToPalletLoadingPage() {
   const [scanResult, setScanResult] = useState(null);
-  const [scannedBoxes, setScannedBoxes] = useState([]);       // stores full scanned codes (with prefix)
-  const [palletId, setPalletId] = useState(null);             // stores id WITHOUT prefix
+  const [scannedBoxes, setScannedBoxes] = useState([]); // stores full scanned codes (with prefix)
+  const [palletId, setPalletId] = useState(null);       // stores id WITHOUT prefix
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
   const handleScan = (raw) => {
@@ -57,9 +57,10 @@ function BoxToPalletLoadingPage() {
     const boxesPayload = scannedBoxes.map((c) => c.replace(/^BOX_|^CRATE_/, ""));
 
     try {
-      const res = await api.post(`/pallets/${encodeURIComponent(palletId)}/load-boxes`, {
-        boxes: boxesPayload,
-      });
+      const res = await api.post(
+        `/pallets/${encodeURIComponent(palletId)}/load-boxes`,
+        { boxes: boxesPayload }
+      );
       setSnackbarMsg(res?.data?.message || "Boxes loaded successfully.");
       setPalletId(null);
       setScannedBoxes([]);
@@ -99,27 +100,37 @@ function BoxToPalletLoadingPage() {
             textAlign: "center",
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{ fontWeight: "bold", mb: 2 }}
-          >
+          <Typography variant="h4" sx={{ fontWeight: "bold", mb: 2 }}>
             Load Boxes onto Pallet
           </Typography>
 
           <Stack spacing={3} alignItems="center" mt={2}>
+            {/* Centered camera frame like in the CrateHandling page */}
             <Box
               sx={{
-                border: "3px dashed",
-                borderRadius: 2,
-                p: 2,
-                backgroundColor: "rgba(255,255,255,0.9)",
-                width: "fit-content",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                width: "100%",
               }}
             >
-              <Typography variant="h6" mb={1}>
-                Scan {palletId ? "Box" : "Pallet"} QR Code
-              </Typography>
-              <QRScanner onResult={handleScan} />
+              <Box
+                sx={{
+                  border: "3px dashed",
+                  borderRadius: 2,
+                  p: 2,
+                  backgroundColor: "rgba(255,255,255,0.9)",
+                  maxWidth: 520,
+                  width: "100%",
+                }}
+              >
+                <Typography variant="h6" mb={1} textAlign="center">
+                  Scan {palletId ? "Box" : "Pallet"} QR Code
+                </Typography>
+                <Box sx={{ display: "flex", justifyContent: "center" }}>
+                  <QRScanner onResult={handleScan} />
+                </Box>
+              </Box>
             </Box>
 
             <Grow in={scannedBoxes.length > 0 || Boolean(palletId)}>

@@ -690,37 +690,35 @@ async function markOrderAsReady(order_id) {
           [order_id]
         );
       }
+      
       async function searchOrdersWithShelfInfo(query) {
         const [rows] = await pool.query(`
           SELECT 
-            o.order_id,
-            o.status,
-            o.customer_id,
-            o.created_at,
-            c.name,
-            c.phone,
-            c.city,
+            o.order_id, o.status, o.customer_id, o.created_at,
+            c.name, c.phone, c.city,
+            (SELECT COUNT(*) FROM Boxes b WHERE b.customer_id = o.customer_id) AS box_count,
             (
-              SELECT COUNT(*) 
-              FROM Boxes b 
-              WHERE b.customer_id = o.customer_id
-            ) AS box_count,
-            (
-              SELECT s.location
-              FROM Boxes b
+              SELECT s.location FROM Boxes b
               JOIN Pallets p ON b.pallet_id = p.pallet_id
               JOIN Shelves s ON p.shelf_id = s.shelf_id
               WHERE b.customer_id = o.customer_id
               LIMIT 1
-            ) AS shelf_location
+            ) AS shelf_location,
+            (
+              SELECT s.shelf_name FROM Boxes b
+              JOIN Pallets p ON b.pallet_id = p.pallet_id
+              JOIN Shelves s ON p.shelf_id = s.shelf_id
+              WHERE b.customer_id = o.customer_id
+              LIMIT 1
+            ) AS shelf_name
           FROM Orders o
           JOIN Customers c ON o.customer_id = c.customer_id
           WHERE c.name LIKE ? OR c.phone LIKE ?
           ORDER BY o.created_at DESC
         `, [`%${query}%`, `%${query}%`]);
-      
         return rows;
       }
+      
       
       async function getAllCities() {
         const [rows] = await pool.query("SELECT * FROM cities");
@@ -741,46 +739,46 @@ async function markOrderAsReady(order_id) {
     }
     
 
-    async function createShelf(location, capacity = 4) {
-        const connection = await pool.getConnection();
-        try {
-            if (!location || !capacity) throw new Error("Missing required parameters");
+    async function createShelf(location, capacity = 4, shelfName = null) {
+      const connection = await pool.getConnection();
+      try {
+        if (!location || capacity == null) throw new Error("Missing required parameters");
     
-            const shelf_id = generateUUID();
-            const status = "Empty";
-            const holding = 0;
-            const created_at = new Date();
-    
-            await connection.query(
-                'INSERT INTO Shelves (shelf_id, location, status, capacity, holding, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                [shelf_id, location, status, capacity, holding, created_at]
-            );
-    
-            return { shelf_id };
-        } catch (error) {
-            console.error("❌ Error creating shelf:", error);
-            throw error;
-        } finally {
-            connection.release();
-        }
-    }
-    
-  // Get all unique shelf locations
-  async function getShelvesByLocation(location) {
-    const connection = await pool.getConnection();
-    try {
-        const [rows] = await connection.query(
-            "SELECT * FROM Shelves WHERE location = ?",
-            [location]
+        // Auto-number within the same location if no name given
+        const [[{ cnt }]] = await connection.query(
+          'SELECT COUNT(*) AS cnt FROM Shelves WHERE location = ?',
+          [location]
         );
-        return rows;
-    } catch (error) {
-        console.error("Error fetching shelves by location:", error);
-        return [];
-    } finally {
+        const shelf_name = shelfName && shelfName.trim()
+          ? shelfName.trim()
+          : `Shelf ${cnt + 1}`;
+    
+        const shelf_id = generateUUID();
+        await connection.query(
+          'INSERT INTO Shelves (shelf_id, location, shelf_name, status, capacity, holding, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [shelf_id, location, shelf_name, "Empty", capacity, 0, new Date()]
+        );
+        return { shelf_id, shelf_name };
+      } finally {
         connection.release();
+      }
     }
+    
+
+  // Get all unique shelf locations
+async function getShelvesByLocation(location) {
+  const [rows] = await pool.query("SELECT * FROM Shelves WHERE location = ?", [location]);
+  return rows;
 }
+
+async function getShelfById(shelfId) {
+  const [rows] = await pool.query(
+    `SELECT location, shelf_name FROM Shelves WHERE shelf_id = ?`,
+    [shelfId]
+  );
+  return rows[0] || null;
+}
+
 
 async function getBoxesByPalletId(pallet_id) {
     const connection = await pool.getConnection();
@@ -841,6 +839,22 @@ async function getBoxesByPalletId(pallet_id) {
       connection.release();
     }
   }
+  async function getShelfById(shelfId) {
+    const [rows] = await pool.query(`SELECT location FROM Shelves WHERE shelf_id = ?`, [shelfId]);
+    return rows[0] || null;
+  }
+  
+  async function getCustomerByPalletId(palletId) {
+    const [boxes] = await pool.query(
+      `SELECT c.name, c.phone
+       FROM Boxes b
+       JOIN Customers c ON b.customer_id = c.customer_id
+       WHERE b.pallet_id = ?
+       LIMIT 1`,
+      [palletId]
+    );
+    return boxes[0] || null;
+  }
   
   
        
@@ -874,4 +888,6 @@ module.exports = {
     getAllShelfLocations,
     getBoxesByPalletId,
     assignPalletToShelf,
+    getShelfById,
+    getCustomerByPalletId,
 }
