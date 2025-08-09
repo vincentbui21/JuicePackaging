@@ -18,8 +18,8 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import { Edit, QrCode, Delete } from "@mui/icons-material";
 import api from "../services/axios";
-import backgroundomena from "../assets/backgroundomena.jpg";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
+import DrawerComponent from "../components/drawer";
 
 function JuiceProcessingManagement() {
   const [orders, setOrders] = useState([]);
@@ -59,20 +59,12 @@ function JuiceProcessingManagement() {
   /** -------------------------------- */
 
   useEffect(() => {
-    document.body.style.backgroundImage = `url(${backgroundomena})`;
-    document.body.style.backgroundSize = "cover";
-    document.body.style.backgroundRepeat = "no-repeat";
-    return () => {
-      document.body.style = "";
-    };
-  }, []);
-
-  useEffect(() => {
     fetchOrders();
   }, []);
 
   const computeFromWeight = (weight_kg) => {
-    const estimatedPouches = Math.floor((weight_kg * 0.65) / 3);
+    const w = Number(weight_kg) || 0;
+    const estimatedPouches = Math.floor((w * 0.65) / 3);
     const estimatedBoxes = Math.ceil(estimatedPouches / 8);
     return { estimatedPouches, estimatedBoxes };
   };
@@ -80,17 +72,12 @@ function JuiceProcessingManagement() {
   const fetchOrders = async () => {
     try {
       const res = await api.get("/orders?status=processing complete");
-      const enriched = res.data.map((order) => {
+      const enriched = (res.data || []).map((order) => {
         const { estimatedPouches, estimatedBoxes } = computeFromWeight(order.weight_kg);
-
-        // If API already holds edited values, use them; else fallback to formula
-        const pouches = order.estimated_pouches ?? estimatedPouches;
-        const boxes = order.estimated_boxes ?? estimatedBoxes;
-
         return {
           ...order,
-          estimated_pouches: pouches,
-          estimated_boxes: boxes,
+          estimated_pouches: order?.estimated_pouches ?? estimatedPouches,
+          estimated_boxes: order?.estimated_boxes ?? estimatedBoxes,
         };
       });
       setOrders(enriched);
@@ -102,7 +89,7 @@ function JuiceProcessingManagement() {
 
   const handleShowQR = async (order) => {
     try {
-      const boxesToUse = order.estimated_boxes; // (manual override respected)
+      const boxesToUse = Number(order.estimated_boxes) || 0;
       const codes = [];
       for (let i = 0; i < boxesToUse; i++) {
         const text = `BOX_${order.order_id}_${i + 1}`;
@@ -145,11 +132,11 @@ function JuiceProcessingManagement() {
   const openEditDialog = (row) => {
     setSelectedOrder(row);
     setEditedFields({
-      name: row.name ?? "",
-      status: row.status ?? "",
-      weight_kg: row.weight_kg ?? "",
-      estimated_pouches: row.estimated_pouches ?? "",
-      estimated_boxes: row.estimated_boxes ?? "",
+      name: row?.name ?? "",
+      status: row?.status ?? "",
+      weight_kg: row?.weight_kg ?? "",
+      estimated_pouches: row?.estimated_pouches ?? "",
+      estimated_boxes: row?.estimated_boxes ?? "",
     });
     setEditDialogOpen(true);
   };
@@ -170,11 +157,7 @@ function JuiceProcessingManagement() {
 
       // Update locally so QR generation uses overridden values immediately
       setOrders((prev) =>
-        prev.map((o) =>
-          o.order_id === selectedOrder.order_id
-            ? { ...o, ...payload }
-            : o
-        )
+        prev.map((o) => (o.order_id === selectedOrder.order_id ? { ...o, ...payload } : o))
       );
 
       setSnackbarMsg("Order updated successfully");
@@ -187,7 +170,7 @@ function JuiceProcessingManagement() {
 
   const columns = [
     { field: "order_id", headerName: "Order ID", flex: 1 },
-    { field: "name", headerName: "Customer", flex: 1 },
+    { field: "name", headerName: "Customer", flex: 1.5 },
     { field: "weight_kg", headerName: "Weight (kg)", flex: 1 },
     { field: "estimated_pouches", headerName: "Pouches", flex: 1 },
     { field: "estimated_boxes", headerName: "Boxes", flex: 1 },
@@ -196,22 +179,16 @@ function JuiceProcessingManagement() {
       field: "actions",
       headerName: "Actions",
       sortable: false,
-      flex: 1.5,
+      flex: 1.2,
       renderCell: (params) => (
         <Stack direction="row" spacing={1}>
-          <IconButton
-            color="primary"
-            onClick={() => openEditDialog(params.row)}
-          >
+          <IconButton color="primary" onClick={() => openEditDialog(params.row)}>
             <Edit fontSize="small" />
           </IconButton>
           <IconButton color="secondary" onClick={() => handleShowQR(params.row)}>
             <QrCode fontSize="small" />
           </IconButton>
-          <IconButton
-            color="error"
-            onClick={() => handleDeleteOrder(params.row.order_id)}
-          >
+          <IconButton color="error" onClick={() => handleDeleteOrder(params.row.order_id)}>
             <Delete fontSize="small" />
           </IconButton>
         </Stack>
@@ -219,41 +196,64 @@ function JuiceProcessingManagement() {
     },
   ];
 
+  const filteredRows = orders.filter((o) =>
+    (o?.name || "").toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
-    <Box p={3}>
-      <Typography
-        variant="h4"
-        gutterBottom
-        sx={{ background: "#b6a284", color: "white", p: 2, borderRadius: 2 }}
+    <>
+      <DrawerComponent />
+
+      <Box
+        sx={{
+          backgroundColor: "#fffff",
+          minHeight: "90vh",
+          pt: 4,
+          pb: 4,
+          display: "flex",
+          justifyContent: "center",
+        }}
       >
-        Juice Processing Management
-      </Typography>
+        <Paper
+          elevation={3}
+          sx={{
+            width: "min(1200px, 95%)",
+            p: 3,
+            backgroundColor: "#ffffff",
+            borderRadius: 2,
+          }}
+        >
+          <Typography
+            variant="h4"
+            sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
+          >
+            Order Management
+          </Typography>
 
-      <TextField
-        label="Search Orders"
-        variant="outlined"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        fullWidth
-        sx={{ mb: 2, backgroundColor: "white" }}
-      />
+          <TextField
+            label="Search Orders"
+            variant="outlined"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            fullWidth
+            sx={{ mb: 2, backgroundColor: "white", borderRadius: 1 }}
+          />
 
-      <Paper elevation={3} sx={{ p: 2, backgroundColor: "#dcd2ae", borderRadius: 2 }}>
-        <DataGrid
-          autoHeight
-          rows={orders.filter((o) =>
-            o.name.toLowerCase().includes(search.toLowerCase())
-          )}
-          columns={columns}
-          getRowId={(row) => row.order_id}
-          pageSize={5}
-          rowsPerPageOptions={[5]}
-        />
-      </Paper>
+          <DataGrid
+            autoHeight
+            rows={filteredRows}
+            columns={columns}
+            getRowId={(row) => row.order_id}
+            pageSize={10}
+            rowsPerPageOptions={[10, 20, 50]}
+            sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+          />
+        </Paper>
+      </Box>
 
       {/* QR sections */}
       {Object.entries(qrCodes).map(([orderId, data]) => (
-        <Box key={orderId} mt={4} p={2} component={Paper}>
+        <Box key={orderId} mt={2} p={2} component={Paper} sx={{ width: "min(1200px, 95%)", mx: "auto" }}>
           <Typography variant="h6">QR Codes for Order: {orderId}</Typography>
           <Typography>Pouches: {data.pouches}</Typography>
           <Typography>Boxes: {data.boxes}</Typography>
@@ -263,11 +263,7 @@ function JuiceProcessingManagement() {
               <Card key={index} sx={{ p: 1, backgroundColor: "#fff" }}>
                 <CardContent sx={{ textAlign: "center" }}>
                   <Typography variant="body2">Box {index}</Typography>
-                  <img
-                    src={url}
-                    alt={`QR ${index}`}
-                    style={{ width: 120, height: 120 }}
-                  />
+                  <img src={url} alt={`QR ${index}`} style={{ width: 120, height: 120 }} />
                   <Button
                     size="small"
                     sx={{ mt: 1 }}
@@ -291,38 +287,27 @@ function JuiceProcessingManagement() {
             <TextField
               label="Customer Name"
               value={editedFields.name}
-              onChange={(e) =>
-                setEditedFields((p) => ({ ...p, name: e.target.value }))
-              }
+              onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
               fullWidth
             />
             <TextField
               label="Status"
               value={editedFields.status}
-              onChange={(e) =>
-                setEditedFields((p) => ({ ...p, status: e.target.value }))
-              }
+              onChange={(e) => setEditedFields((p) => ({ ...p, status: e.target.value }))}
               fullWidth
             />
             <TextField
               label="Weight (kg)"
               type="number"
               value={editedFields.weight_kg}
-              onChange={(e) =>
-                setEditedFields((p) => ({ ...p, weight_kg: e.target.value }))
-              }
+              onChange={(e) => setEditedFields((p) => ({ ...p, weight_kg: e.target.value }))}
               fullWidth
             />
             <TextField
               label="Estimated Pouches"
               type="number"
               value={editedFields.estimated_pouches}
-              onChange={(e) =>
-                setEditedFields((p) => ({
-                  ...p,
-                  estimated_pouches: e.target.value,
-                }))
-              }
+              onChange={(e) => setEditedFields((p) => ({ ...p, estimated_pouches: e.target.value }))}
               fullWidth
               helperText="Manual override. Will be used instead of the formula."
             />
@@ -330,12 +315,7 @@ function JuiceProcessingManagement() {
               label="Estimated Boxes"
               type="number"
               value={editedFields.estimated_boxes}
-              onChange={(e) =>
-                setEditedFields((p) => ({
-                  ...p,
-                  estimated_boxes: e.target.value,
-                }))
-              }
+              onChange={(e) => setEditedFields((p) => ({ ...p, estimated_boxes: e.target.value }))}
               fullWidth
               helperText="Manual override. QR generation will use this."
             />
@@ -343,9 +323,7 @@ function JuiceProcessingManagement() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleEditSave}>
-            Save
-          </Button>
+          <Button variant="contained" onClick={handleEditSave}>Save</Button>
         </DialogActions>
       </Dialog>
 
@@ -355,7 +333,7 @@ function JuiceProcessingManagement() {
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-    </Box>
+    </>
   );
 }
 

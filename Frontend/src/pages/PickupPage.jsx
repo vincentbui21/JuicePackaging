@@ -12,9 +12,9 @@ import {
   CircularProgress,
   Divider
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import api from "../services/axios";
-import backgroundomena from "../assets/backgroundomena.jpg";
+import DrawerComponent from "../components/drawer";
 
 function PickupPage() {
   const [search, setSearch] = useState("");
@@ -23,21 +23,11 @@ function PickupPage() {
   const [selected, setSelected] = useState(null);
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
-  useEffect(() => {
-    document.body.style.backgroundImage = `url(${backgroundomena})`;
-    document.body.style.backgroundSize = "cover";
-    document.body.style.backgroundRepeat = "no-repeat";
-    document.body.style.backgroundAttachment = "fixed";
-    return () => {
-      document.body.style = "";
-    };
-  }, []);
-
   const handleSearch = async (e) => {
     const q = e.target.value;
     setSearch(q);
     setSelected(null);
-    if (!q) {
+    if (!q.trim()) {
       setResults([]);
       return;
     }
@@ -45,7 +35,7 @@ function PickupPage() {
     setLoading(true);
     try {
       const res = await api.get(`/orders/pickup?query=${encodeURIComponent(q)}`);
-      setResults(res.data);
+      setResults(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Search failed", err);
       setResults([]);
@@ -59,7 +49,7 @@ function PickupPage() {
     try {
       await api.post(`/orders/${selected.order_id}/pickup`);
       setSnackbarMsg(`Order for ${selected.name} marked as picked up.`);
-      setResults(prev => prev.filter(r => r.order_id !== selected.order_id));
+      setResults((prev) => prev.filter((r) => r.order_id !== selected.order_id));
       setSelected(null);
     } catch (err) {
       console.error("Failed to confirm pickup", err);
@@ -68,111 +58,145 @@ function PickupPage() {
   };
 
   return (
-    <Box p={2}>
-      <Box display="flex" justifyContent="center">
-        <Typography
-          variant="h6"
+    <>
+      <DrawerComponent />
+
+      <Box
+        sx={{
+          backgroundColor: "#ffffff",
+          minHeight: "90vh",
+          py: 4,
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
+        <Paper
+          elevation={3}
           sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
-            textAlign: "center",
-            paddingTop: "10px",
-            paddingBottom: "10px",
-            marginBottom: "10px",
-            color: "black",
-            background: "#a9987d",
-            width: "min(1200px, 90%)",
-            borderRadius: "10px",
+            width: "min(90%, 800px)",
+            p: 4,
+            backgroundColor: "#ffffff",
+            borderRadius: 2,
           }}
         >
-          Pickup Confirmation
-        </Typography>
+          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
+            Pickup Confirmation
+          </Typography>
+
+          <Paper
+            elevation={1}
+            sx={{
+              p: 2,
+              mb: 2,
+              backgroundColor: "#fcfcfc",
+              borderRadius: 2,
+              width: "min(600px, 95%)",
+              mx: "auto",
+            }}
+          >
+            <TextField
+              label="Search by Name or Phone"
+              value={search}
+              onChange={handleSearch}
+              fullWidth
+              sx={{ backgroundColor: "white", borderRadius: 1 }}
+            />
+
+            {loading && (
+              <Box mt={2} textAlign="center">
+                <CircularProgress />
+              </Box>
+            )}
+
+            <List>
+              {results.map((res) => (
+                <ListItem
+                  key={res.order_id}
+                  button
+                  selected={selected?.order_id === res.order_id}
+                  onClick={() => setSelected(res)}
+                  sx={{
+                    mt: 1,
+                    backgroundColor: selected?.order_id === res.order_id ? "#b2dfdb" : "#fff",
+                    borderRadius: 1,
+                  }}
+                >
+                  <ListItemText
+                    primary={`${res.name} (${res.phone})`}
+                    secondary={[
+                      `Status: ${res.status}`,
+                      `City: ${res.city}`,
+                      `Boxes: ${res.box_count}`,
+                      res.shelf_location ? `Shelf: ${res.shelf_location}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" | ")}
+                  />
+                </ListItem>
+              ))}
+            </List>
+
+            {selected && (
+              <>
+                <Divider sx={{ my: 2 }} />
+                <Box sx={{ px: 1 }}>
+                  <Typography variant="subtitle1">Order ID:</Typography>
+                  <Typography variant="body2" gutterBottom>
+                    {selected.order_id}
+                  </Typography>
+
+                  <Typography variant="subtitle1">Status:</Typography>
+                  <Typography variant="body2" gutterBottom>
+                    {selected.status}
+                  </Typography>
+
+                  <Typography variant="subtitle1">City:</Typography>
+                  <Typography variant="body2" gutterBottom>
+                    {selected.city}
+                  </Typography>
+
+                  <Typography variant="subtitle1">Boxes:</Typography>
+                  <Typography variant="body2" gutterBottom>
+                    {selected.box_count}
+                  </Typography>
+
+                  {selected.shelf_location && (
+                    <>
+                      <Typography variant="subtitle1">Shelf Location:</Typography>
+                      <Typography
+                        variant="body2"
+                        gutterBottom
+                        sx={{ fontWeight: "bold", color: "green" }}
+                      >
+                        {selected.shelf_location}
+                      </Typography>
+                    </>
+                  )}
+
+                  {selected.status === "Ready for pickup" && (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      fullWidth
+                      sx={{ mt: 2 }}
+                      onClick={confirmPickup}
+                    >
+                      Mark as Picked Up
+                    </Button>
+                  )}
+                </Box>
+              </>
+            )}
+          </Paper>
+        </Paper>
       </Box>
 
-      <Paper elevation={3} sx={{ p: 2, mb: 2, backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(600px, 95%)', mx: 'auto' }}>
-        <TextField
-          label="Search by Name or Phone"
-          value={search}
-          onChange={handleSearch}
-          fullWidth
-          sx={{ backgroundColor: "white", borderRadius: 1 }}
-        />
-
-        {loading && (
-          <Box mt={2} textAlign="center">
-            <CircularProgress />
-          </Box>
-        )}
-
-        <List>
-          {results.map((res) => (
-            <ListItem
-              key={res.order_id}
-              button
-              selected={selected?.order_id === res.order_id}
-              onClick={() => setSelected(res)}
-              sx={{ mt: 1, backgroundColor: selected?.order_id === res.order_id ? '#b2dfdb' : '#fff', borderRadius: 1 }}
-            >
-              <ListItemText
-                primary={`${res.name} (${res.phone})`}
-                secondary={`Status: ${res.status} | City: ${res.city} | Boxes: ${res.box_count}${
-                  res.shelf_location ? ` | Shelf: ${res.shelf_location}` : ""
-                }`}
-              />
-            </ListItem>
-          ))}
-        </List>
-
-        {selected && (
-          <>
-            <Divider sx={{ my: 2 }} />
-            <Box sx={{ px: 1 }}>
-              <Typography variant="subtitle1">Order ID:</Typography>
-              <Typography variant="body2" gutterBottom>{selected.order_id}</Typography>
-
-              <Typography variant="subtitle1">Status:</Typography>
-              <Typography variant="body2" gutterBottom>{selected.status}</Typography>
-
-              <Typography variant="subtitle1">City:</Typography>
-              <Typography variant="body2" gutterBottom>{selected.city}</Typography>
-
-              <Typography variant="subtitle1">Boxes:</Typography>
-              <Typography variant="body2" gutterBottom>{selected.box_count}</Typography>
-
-              {selected.shelf_location && (
-                <>
-                  <Typography variant="subtitle1">Shelf Location:</Typography>
-                  <Typography variant="body2" gutterBottom style={{ fontWeight: "bold", color: "green" }}>
-                    {selected.shelf_location}
-                  </Typography>
-                </>
-              )}
-
-              {selected.status === "Ready for pickup" && (
-                <Button
-                  variant="contained"
-                  color="success"
-                  fullWidth
-                  sx={{ mt: 2 }}
-                  onClick={confirmPickup}
-                >
-                  Mark as Picked Up
-                </Button>
-              )}
-            </Box>
-          </>
-        )}
-      </Paper>
-
-      <Snackbar
-        open={!!snackbarMsg}
-        autoHideDuration={4000}
-        onClose={() => setSnackbarMsg("")}
-      >
-        <Alert severity="info" sx={{ width: '100%' }}>
+      <Snackbar open={!!snackbarMsg} autoHideDuration={4000} onClose={() => setSnackbarMsg("")}>
+        <Alert severity="info" sx={{ width: "100%" }}>
           {snackbarMsg}
         </Alert>
       </Snackbar>
-    </Box>
+    </>
   );
 }
 

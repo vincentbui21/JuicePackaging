@@ -12,9 +12,9 @@ import {
   DialogActions,
 } from "@mui/material";
 import { Print } from "@mui/icons-material";
-import backgroundomena from "../assets/backgroundomena.jpg";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
+import DrawerComponent from "../components/drawer";
 
 function ShelveCreationPage() {
   const [location, setLocation] = useState("");
@@ -25,28 +25,31 @@ function ShelveCreationPage() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
   const handleCreate = async () => {
-    if (!location.trim()) {
-      setSnackbarMsg("Please enter a shelf location");
+    const loc = location.trim();
+    const cap = Number(capacity);
+    if (!loc || cap <= 0) {
       setError(true);
+      setSnackbarMsg(!loc ? "Please enter a shelf location" : "Capacity must be at least 1");
       return;
     }
 
     try {
-        const res = await api.post("/api/shelves", { location, capacity });
-        const { shelf_id } = res.data.result;
+      // Vincent’s API path
+      const res = await api.post("/api/shelves", { location: loc, capacity: cap });
 
-      if (shelf_id) {
-        const qrData = `SHELF_${shelf_id}`;
-        const img = await generateSmallPngQRCode(qrData);
-        setQrImage(img);
-        setQrDialogOpen(true);
-        setSnackbarMsg("Shelf created successfully!");
-        setLocation("");
-        setCapacity(8);
-        setError(false);
-      } else {
-        throw new Error("Missing shelf_id in server response");
-      }
+      // Support both shapes: { shelf_id } or { result: { shelf_id } }
+      const shelf_id = res?.data?.shelf_id ?? res?.data?.result?.shelf_id;
+      if (!shelf_id) throw new Error("Missing shelf_id in server response");
+
+      const qrData = `SHELF_${shelf_id}`;
+      const img = await generateSmallPngQRCode(qrData);
+
+      setQrImage(img);
+      setQrDialogOpen(true);
+      setSnackbarMsg("Shelf created successfully!");
+      setLocation("");
+      setCapacity(8);
+      setError(false);
     } catch (err) {
       console.error("Failed to create shelf:", err);
       setSnackbarMsg("Failed to create shelf. Check server.");
@@ -55,10 +58,11 @@ function ShelveCreationPage() {
   };
 
   const handlePrint = () => {
-    if (qrImage) {
-      const popup = window.open("", "_blank");
-      popup.document.write(`
-        <html><head><title>Print QR Code</title></head><body style="text-align:center;padding:20px;">
+    if (!qrImage) return;
+    const popup = window.open("", "_blank");
+    popup.document.write(`
+      <html><head><title>Print QR Code</title></head>
+      <body style="text-align:center;padding:20px;">
         <img src="${qrImage}" style="width:200px;" />
         <script>
           window.onload = function() {
@@ -66,74 +70,65 @@ function ShelveCreationPage() {
             window.onafterprint = () => window.close();
           }
         </script>
-        </body></html>
-      `);
-      popup.document.close();
-    }
+      </body></html>
+    `);
+    popup.document.close();
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        backgroundImage: `url(${backgroundomena})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 2,
-      }}
-    >
-      <Paper
-        elevation={6}
+    <>
+      <DrawerComponent />
+
+      <Box
         sx={{
-          padding: 4,
-          borderRadius: 3,
-          backgroundColor: "#efe3c6",
-          width: "100%",
-          maxWidth: 500,
-          textAlign: "center",
+          backgroundColor: "#ffffff",
+          minHeight: "90vh",
+          py: 4,
+          display: "flex",
+          justifyContent: "center",
         }}
       >
-        <Typography variant="h4" gutterBottom>
-          Create New Shelf
-        </Typography>
-
-        <TextField
-          label="Shelf Location"
-          variant="outlined"
-          fullWidth
-          margin="normal"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          error={error && !location.trim()}
-          helperText={error && !location.trim() ? "Location is required" : ""}
-          sx={{ backgroundColor: "white", borderRadius: 1 }}
-        />
-
-        <TextField
-          label="Capacity"
-          type="number"
-          variant="outlined"
-          fullWidth
-          margin="normal"
-          value={capacity}
-          onChange={(e) => setCapacity(Number(e.target.value))}
-          sx={{ backgroundColor: "white", borderRadius: 1 }}
-        />
-
-        <Button
-          fullWidth
-          variant="contained"
-          color="primary"
-          onClick={handleCreate}
-          sx={{ marginTop: 2 }}
+        <Paper
+          elevation={3}
+          sx={{
+            width: "min(90%, 600px)",
+            p: 4,
+            backgroundColor: "#ffffff",
+            borderRadius: 2,
+          }}
         >
-          Generate Shelf
-        </Button>
-      </Paper>
+          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
+            Create New Shelf
+          </Typography>
+
+          <TextField
+            label="Shelf Location"
+            variant="filled"
+            fullWidth
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            error={error && !location.trim()}
+            helperText={error && !location.trim() ? "Location is required" : ""}
+            sx={{ mb: 2 }}
+          />
+
+          <TextField
+            label="Capacity"
+            type="number"
+            variant="filled"
+            fullWidth
+            value={capacity}
+            onChange={(e) => setCapacity(Number(e.target.value))}
+            error={error && Number(capacity) <= 0}
+            helperText={error && Number(capacity) <= 0 ? "Capacity must be at least 1" : ""}
+            sx={{ mb: 3 }}
+          />
+
+          <Button fullWidth variant="contained" onClick={handleCreate}>
+            Generate Shelf
+          </Button>
+        </Paper>
+      </Box>
 
       {/* QR Code Dialog */}
       <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
@@ -157,7 +152,7 @@ function ShelveCreationPage() {
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-    </Box>
+    </>
   );
 }
 

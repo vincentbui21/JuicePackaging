@@ -13,81 +13,119 @@ import {
   DialogContent,
   DialogActions,
   Snackbar,
+  List,
+  ListItem,
+  ListItemText,
 } from "@mui/material";
-import { QrCode, Print, Delete, Visibility } from "@mui/icons-material";
+import { QrCode, Print, Delete, Visibility, Add } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
-import backgroundomena from "../assets/backgroundomena.jpg";
-import sendToPrinter from "../services/send_to_printer";
 import DrawerComponent from "../components/drawer";
 
 function PalletsManagementPage() {
   const [pallets, setPallets] = useState([]);
-  const [cities, setCities] = useState(["Lahti", "Kuopio"]);
-  const [selectedCity, setSelectedCity] = useState("Lahti");
+  const [cities, setCities] = useState([]);
+  const [selectedCity, setSelectedCity] = useState("");
+
+  const [capacity, setCapacity] = useState(8);
+  const [newCity, setNewCity] = useState("");
+
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [snackbarMsg, setSnackbarMsg] = useState("");
 
   const [boxDialogOpen, setBoxDialogOpen] = useState(false);
   const [boxList, setBoxList] = useState([]);
   const [selectedPalletId, setSelectedPalletId] = useState(null);
+
+  const [snackbarMsg, setSnackbarMsg] = useState("");
 
   useEffect(() => {
     fetchCities();
   }, []);
 
   useEffect(() => {
-    fetchPallets();
+    if (selectedCity) fetchPallets();
   }, [selectedCity]);
 
   const fetchCities = async () => {
     try {
       const res = await api.get("/cities");
-      setCities(res.data || []);
+      // can be ["Lahti","Kuopio"] or [{location:"Lahti"},...]
+      const list =
+        Array.isArray(res.data)
+          ? res.data.map((c) => (typeof c === "string" ? c : c.location)).filter(Boolean)
+          : [];
+      setCities(list);
+      if (list.length && !selectedCity) setSelectedCity(list[0]);
     } catch (err) {
       console.error("Failed to fetch cities", err);
+      setSnackbarMsg("Failed to load cities");
     }
   };
 
   const fetchPallets = async () => {
     try {
-      const res = await api.get(`/pallets?location=${selectedCity}`);
-      setPallets(Array.isArray(res.data) ? res.data : []);
-    if (!res.data || res.data.length === 0) {
-  setSnackbarMsg("No pallets found in this city");
-}
-
+      const res = await api.get(`/pallets?location=${encodeURIComponent(selectedCity)}`);
+      const arr = Array.isArray(res.data) ? res.data : [];
+      setPallets(arr);
+      if (!arr.length) setSnackbarMsg("No pallets found in this city");
     } catch (err) {
       console.error("Failed to fetch pallets", err);
+      setSnackbarMsg("Failed to load pallets");
+    }
+  };
+
+  const handleCreatePallet = async () => {
+    try {
+      await api.post("/pallets", { location: selectedCity, capacity: Number(capacity) || 8 });
+      setSnackbarMsg("Pallet created");
+      fetchPallets();
+    } catch (err) {
+      console.error("Failed to create pallet", err);
+      setSnackbarMsg("Creation failed");
+    }
+  };
+
+  const handleAddCity = async () => {
+    const name = newCity.trim();
+    if (!name) return setSnackbarMsg("City name is required");
+    if (cities.includes(name)) return setSnackbarMsg("City already exists");
+    try {
+      await api.post("/cities", { name });
+      setCities((prev) => [...prev, name].sort());
+      setNewCity("");
+      setSelectedCity(name);
+      setSnackbarMsg("City added");
+    } catch (err) {
+      console.error("Failed to add city", err);
+      setSnackbarMsg("Failed to add city");
     }
   };
 
   const handleShowQR = async (pallet_id) => {
-    const img = await generateSmallPngQRCode("PALLET_" + pallet_id);
+    const img = await generateSmallPngQRCode(`PALLET_${pallet_id}`);
     setQrImage(img);
     setQrDialogOpen(true);
   };
 
   const handlePrint = () => {
-    if (qrImage) {
-      const popup = window.open("", "_blank");
-      popup.document.write(`
-        <html><head><title>Print QR Code</title></head><body style="text-align:center;">
-        <img src="${qrImage}" style="width: 100px; height: 100px; object-fit: contain;" />
-        <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
-        </body></html>
-      `);
-      popup.document.close();
-    }
+    if (!qrImage) return;
+    const popup = window.open("", "_blank");
+    popup.document.write(`
+      <html><head><title>Print QR Code</title></head><body style="text-align:center;">
+      <img src="${qrImage}" style="width: 120px; height: 120px; object-fit: contain;" />
+      <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
+      </body></html>
+    `);
+    popup.document.close();
   };
 
   const handleDelete = async (pallet_id) => {
     try {
       await api.delete(`/pallets/${pallet_id}`);
-      fetchPallets();
       setSnackbarMsg("Pallet deleted");
+      fetchPallets();
     } catch (err) {
       console.error("Failed to delete pallet", err);
       setSnackbarMsg("Failed to delete pallet");
@@ -97,7 +135,7 @@ function PalletsManagementPage() {
   const handleViewBoxes = async (pallet_id) => {
     try {
       const res = await api.get(`/pallets/${pallet_id}/boxes`);
-      setBoxList(res.data || []);
+      setBoxList(Array.isArray(res.data) ? res.data : []);
       setSelectedPalletId(pallet_id);
       setBoxDialogOpen(true);
     } catch (err) {
@@ -107,15 +145,15 @@ function PalletsManagementPage() {
   };
 
   const columns = [
-    { field: "pallet_id", headerName: "Pallet ID", flex: 2 },
+    { field: "pallet_id", headerName: "Pallet ID", flex: 1.5 },
     { field: "location", headerName: "City", flex: 1 },
     { field: "status", headerName: "Status", flex: 1 },
-    { field: "capacity", headerName: "Capacity", flex: 1 },
-    { field: "holding", headerName: "Holding", flex: 1 },
+    { field: "capacity", headerName: "Capacity", flex: 0.8 },
+    { field: "holding", headerName: "Holding", flex: 0.8 },
     {
       field: "actions",
       headerName: "Actions",
-      flex: 1.5,
+      flex: 1.2,
       sortable: false,
       renderCell: (params) => (
         <>
@@ -129,173 +167,150 @@ function PalletsManagementPage() {
             <Delete />
           </IconButton>
         </>
-      )
-    }
+      ),
+    },
   ];
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundImage: `url(${backgroundomena})`,
-        backgroundSize: "cover",
-        backgroundPosition: "fixed",
-        backgroundRepeat: "no-repeat",
-      }}
-    >
-      <Box display="flex" justifyContent="center">
-        <Typography
-          variant="h6"
-          sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
-            textAlign: "center",
-            paddingTop: "10px",
-            paddingBottom: "10px",
-            marginBottom: "10px",
-            color: "black",
-            background: "#a9987d",
-            width: "min(1200px, 90%)",
-            borderRadius: "10px",
-          }}
-        >
-          Pallets Management
-        </Typography>
-      </Box>
     <>
-
-      <DrawerComponent></DrawerComponent>
+      <DrawerComponent />
 
       <Box
-            sx={
-                {
-                    backgroundColor: "#fffff",
-                    minHeight: "90vh",
-                    paddingTop: 4,
-                    paddingBottom: 4,
-                    display: "flex",
-                    justifyContent: "center"
-                }
-            }>
-                <Paper elevation={3} sx={{
-                    width: "min(90%, 800px)",
-                    padding: 4,
-                    backgroundColor: "#ffffff",
-                    borderRadius: 2
-                }}>
-                  <Typography
-                    variant="h4"
-                    sx={{
-                      textAlign: "center",
-                      paddingTop: "40px",
-                      paddingBottom: "10px",
-                      marginBottom: "10px",
-                      color: "black",
-                      borderRadius: "10px",
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    Pallet Management
-                  </Typography>
+        sx={{
+          backgroundColor: "#ffffff",
+          minHeight: "90vh",
+          pt: 4,
+          pb: 4,
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
+        <Paper
+          elevation={3}
+          sx={{
+            width: "min(1200px, 95%)",
+            p: 3,
+            backgroundColor: "#ffffff",
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
+            Pallet Management
+          </Typography>
 
-      <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(1200px, 95%)' }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={4}>
-            <TextField
-              select
-              label="Select City"
-              fullWidth
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            >
-              {cities.map((city) => (
-                <MenuItem key={city} value={city}>
-                  {city}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-        </Grid>
+          {/* Toolbar */}
+          <Box component={Paper} elevation={1} sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+            <Grid container spacing={2} alignItems="center" justifyContent="center">
+              <Grid item xs={12} sm={4} md={3}>
+                <TextField
+                  select
+                  label="Select City"
+                  fullWidth
+                  value={selectedCity}
+                  onChange={(e) => setSelectedCity(e.target.value)}
+                >
+                  {cities.map((city) => (
+                    <MenuItem key={city} value={city}>
+                      {city}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+
+              <Grid item xs={6} sm={3} md={2}>
+                <TextField
+                  label="Capacity"
+                  fullWidth
+                  type="number"
+                  value={capacity}
+                  onChange={(e) => setCapacity(Number(e.target.value))}
+                />
+              </Grid>
+
+              <Grid item xs={6} sm={3} md={2}>
+                <Button fullWidth variant="contained" onClick={handleCreatePallet}>
+                  Create Pallet
+                </Button>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={5}>
+                <TextField
+                  label="Add New City"
+                  fullWidth
+                  value={newCity}
+                  onChange={(e) => setNewCity(e.target.value)}
+                  InputProps={{
+                    endAdornment: (
+                      <IconButton onClick={handleAddCity} edge="end" aria-label="add city">
+                        <Add />
+                      </IconButton>
+                    ),
+                  }}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* Table */}
+          <Box sx={{ backgroundColor: "white", borderRadius: 2 }}>
+            <DataGrid
+              rows={pallets.map((p, i) => ({ ...p, id: i }))}
+              columns={columns}
+              autoHeight
+              pageSizeOptions={[10, 20, 50]}
+              initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+              sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+            />
+          </Box>
+        </Paper>
       </Box>
-                  <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', borderRadius: 2, width: 'min(1200px, 95%)' }}>
-                    <Grid container spacing={2} alignItems="center" justifyContent="center">
-                      <Grid item xs={12} sm={4}>
-                        <TextField
-                          select
-                          label="Select City"
-                          fullWidth
-                          value={selectedCity}
-                          onChange={(e) => setSelectedCity(e.target.value)}
-                          sx={{ backgroundColor: "white", borderRadius: 1 }}
-                        >
-                          {cities.map((city) => (
-                            <MenuItem key={city} value={city}>
-                              {city}
-                            </MenuItem>
-                          ))}
-                        </TextField>
-                      </Grid>
-                      <Grid item xs={6} sm={2}>
-                        <TextField
-                          label="Capacity"
-                          fullWidth
-                          type="number"
-                          value={capacity}
-                          onChange={(e) => setCapacity(Number(e.target.value))}
-                          sx={{ backgroundColor: "white", borderRadius: 1 }}
-                        />
-                      </Grid>
-                      <Grid item xs={6} sm={3}>
-                        <Button fullWidth variant="contained" onClick={handleCreatePallet}>
-                          Create Pallet
-                        </Button>
-                      </Grid>
-                      <Grid item xs={12} sm={3}>
-                        <TextField
-                          label="Add New City"
-                          fullWidth
-                          value={newCity}
-                          onChange={(e) => setNewCity(e.target.value)}
-                          sx={{ backgroundColor: "white", borderRadius: 1 }}
-                          InputProps={{
-                            endAdornment: (
-                              <IconButton onClick={handleAddCity}>
-                                <Add />
-                              </IconButton>
-                            ),
-                          }}
-                        />
-                      </Grid>
-                    </Grid>
-                  </Box>
 
+      {/* QR dialog */}
+      <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
+        <DialogTitle>QR Code</DialogTitle>
+        <DialogContent>
+          <Box display="flex" justifyContent="center">
+            <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
+          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
+            Print
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-
-                  <Box sx={{ mx: 'auto', width: 'min(1200px, 95%)', backgroundColor: "white", borderRadius: 2 }}>
-                    <DataGrid
-                      rows={pallets.map((p, i) => ({ ...p, id: i }))}
-                      columns={columns}
-                      autoHeight
-                      pageSize={10}
-                      rowsPerPageOptions={[10, 20, 50]}
-                      sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
-                    />
-                  </Box>
-
-                  <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
-                    <DialogTitle>QR Code</DialogTitle>
-                    <DialogContent>
-                      <Box display="flex" justifyContent="center">
-                        <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
-                      </Box>
-                    </DialogContent>
-                    <DialogActions>
-                      <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-                      <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
-                        Print
-                      </Button>
-                    </DialogActions>
-                  </Dialog>
+      {/* Boxes on pallet */}
+      <Dialog open={boxDialogOpen} onClose={() => setBoxDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Boxes on Pallet {selectedPalletId}</DialogTitle>
+        <DialogContent dividers>
+          {boxList.length === 0 ? (
+            <Typography>No boxes on this pallet.</Typography>
+          ) : (
+            <List dense>
+              {boxList.map((b, idx) => (
+                <ListItem key={idx} disableGutters>
+                  <ListItemText
+                    primary={b.box_id || b.id || `BOX_${idx + 1}`}
+                    secondary={
+                      [
+                        b.order_id ? `Order: ${b.order_id}` : null,
+                        b.created_at ? `Created: ${new Date(b.created_at).toLocaleString()}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join("  •  ")
+                    }
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBoxDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={!!snackbarMsg}
@@ -303,18 +318,7 @@ function PalletsManagementPage() {
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-    </div>
-                  <Snackbar
-                    open={!!snackbarMsg}
-                    autoHideDuration={3000}
-                    onClose={() => setSnackbarMsg("")}
-                    message={snackbarMsg}
-                  />
-                </Paper>
-              </Box>
-
-
-  </>
+    </>
   );
 }
 

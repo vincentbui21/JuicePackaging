@@ -1,52 +1,54 @@
 import { useEffect, useState } from "react";
 import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Snackbar,
-  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button
+  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button, List, ListItem, ListItemText
 } from "@mui/material";
 import { QrCode, Print, Delete, Visibility } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
-import backgroundomena from "../assets/backgroundomena.jpg";
+import DrawerComponent from "../components/drawer";
 
 function ShelvesManagementPage() {
   const [shelves, setShelves] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
+
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [snackbarMsg, setSnackbarMsg] = useState("");
 
   const [contentDialogOpen, setContentDialogOpen] = useState(false);
   const [palletContent, setPalletContent] = useState(null);
   const [boxesOnShelf, setBoxesOnShelf] = useState([]);
+
+  const [snackbarMsg, setSnackbarMsg] = useState("");
 
   useEffect(() => {
     fetchLocations();
   }, []);
 
   useEffect(() => {
-    if (selectedLocation) {
-      fetchShelves();
-    }
+    if (selectedLocation) fetchShelves();
   }, [selectedLocation]);
 
   const fetchLocations = async () => {
     try {
       const res = await api.get("/locations");
-      setLocations(res.data || []);
-      if (res.data.length > 0) {
-        setSelectedLocation(res.data[0].location);
-      }
+      const list = Array.isArray(res.data)
+        ? res.data.map((v) => (typeof v === "string" ? v : v.location)).filter(Boolean)
+        : [];
+      setLocations(list);
+      if (list.length) setSelectedLocation(list[0]);
     } catch (err) {
       console.error("Failed to fetch shelf locations", err);
+      setSnackbarMsg("Failed to load locations");
     }
   };
 
   const fetchShelves = async () => {
     try {
-      const res = await api.get(`/api/shelves/${selectedLocation}`);
-      setShelves(res.data || []);
+      const res = await api.get(`/api/shelves/${encodeURIComponent(selectedLocation)}`);
+      setShelves(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Failed to fetch shelves", err);
       setSnackbarMsg("Failed to load shelves");
@@ -54,22 +56,21 @@ function ShelvesManagementPage() {
   };
 
   const handleShowQR = async (shelf_id) => {
-    const img = await generateSmallPngQRCode("SHELF_" + shelf_id);
+    const img = await generateSmallPngQRCode(`SHELF_${shelf_id}`);
     setQrImage(img);
     setQrDialogOpen(true);
   };
 
   const handlePrint = () => {
-    if (qrImage) {
-      const popup = window.open("", "_blank");
-      popup.document.write(`
-        <html><head><title>Print QR Code</title></head><body style="text-align:center;padding:20px;">
-        <img src="${qrImage}" style="width:200px;" />
-        <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
-        </body></html>
-      `);
-      popup.document.close();
-    }
+    if (!qrImage) return;
+    const popup = window.open("", "_blank");
+    popup.document.write(`
+      <html><head><title>Print QR Code</title></head><body style="text-align:center;padding:20px;">
+      <img src="${qrImage}" style="width:200px;" />
+      <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
+      </body></html>
+    `);
+    popup.document.close();
   };
 
   const handleDelete = async (shelf_id) => {
@@ -86,25 +87,28 @@ function ShelvesManagementPage() {
   const handleViewContents = async (shelf_id) => {
     try {
       const res = await api.get(`/shelves/${shelf_id}/contents`);
-      setPalletContent(res.data.pallet);
-      setBoxesOnShelf(res.data.boxes || []);
+      setPalletContent(res.data?.pallet ?? null);
+      setBoxesOnShelf(Array.isArray(res.data?.boxes) ? res.data.boxes : []);
       setContentDialogOpen(true);
     } catch (err) {
       console.error("Failed to fetch shelf contents", err);
+      setPalletContent(null);
+      setBoxesOnShelf([]);
+      setContentDialogOpen(true);
       setSnackbarMsg("No pallet or boxes found for this shelf");
     }
   };
 
   const columns = [
-    { field: "shelf_id", headerName: "Shelf ID", flex: 2 },
+    { field: "shelf_id", headerName: "Shelf ID", flex: 1.5 },
     { field: "location", headerName: "Location", flex: 1 },
     { field: "status", headerName: "Status", flex: 1 },
-    { field: "capacity", headerName: "Capacity", flex: 1 },
-    { field: "holding", headerName: "Holding", flex: 1 },
+    { field: "capacity", headerName: "Capacity", flex: 0.8 },
+    { field: "holding", headerName: "Holding", flex: 0.8 },
     {
       field: "actions",
       headerName: "Actions",
-      flex: 2,
+      flex: 1.4,
       sortable: false,
       renderCell: (params) => (
         <>
@@ -118,70 +122,75 @@ function ShelvesManagementPage() {
             <Delete />
           </IconButton>
         </>
-      )
-    }
+      ),
+    },
   ];
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      backgroundImage: `url(${backgroundomena})`,
-      backgroundSize: "cover",
-      backgroundPosition: "fixed",
-      backgroundRepeat: "no-repeat",
-    }}>
-      <Box display="flex" justifyContent="center">
-        <Typography
-          variant="h6"
+    <>
+      <DrawerComponent />
+
+      <Box
+        sx={{
+          backgroundColor: "#ffffff",
+          minHeight: "90vh",
+          pt: 4,
+          pb: 4,
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
+        <Paper
+          elevation={3}
           sx={{
-            fontSize: "clamp(20px, 5vw, 40px)",
-            textAlign: "center",
-            paddingTop: "10px",
-            paddingBottom: "10px",
-            marginBottom: "10px",
-            color: "black",
-            background: "#a9987d",
-            width: "min(1200px, 90%)",
-            borderRadius: "10px",
+            width: "min(1200px, 95%)",
+            p: 3,
+            backgroundColor: "#ffffff",
+            borderRadius: 2,
           }}
         >
-          Shelves Management
-        </Typography>
-      </Box>
+          <Typography
+            variant="h4"
+            sx={{
+              textAlign: "center",
+              mb: 3,
+              fontWeight: "bold",
+            }}
+          >
+            Shelves Management
+          </Typography>
 
-      <Box component={Paper} elevation={3} sx={{
-        p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae',
-        borderRadius: 2, width: 'min(1200px, 95%)'
-      }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={4}>
-            <TextField
-              select
-              label="Select Location"
-              fullWidth
-              value={selectedLocation}
-              onChange={(e) => setSelectedLocation(e.target.value)}
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            >
-              {locations.map((locObj) => (
-                <MenuItem key={locObj.location} value={locObj.location}>
-                  {locObj.location}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-        </Grid>
-      </Box>
+          <Box component={Paper} elevation={1} sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} sm={6} md={4}>
+                <TextField
+                  select
+                  label="Select Location"
+                  fullWidth
+                  value={selectedLocation}
+                  onChange={(e) => setSelectedLocation(e.target.value)}
+                >
+                  {locations.map((loc) => (
+                    <MenuItem key={loc} value={loc}>
+                      {loc}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+            </Grid>
+          </Box>
 
-      <Box sx={{ mx: 'auto', width: 'min(1200px, 95%)', backgroundColor: "white", borderRadius: 2 }}>
-        <DataGrid
-          rows={shelves.map((s, i) => ({ ...s, id: i }))}
-          columns={columns}
-          autoHeight
-          pageSize={10}
-          rowsPerPageOptions={[10, 20, 50]}
-          sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
-        />
+          <Box sx={{ backgroundColor: "white", borderRadius: 2 }}>
+            <DataGrid
+              rows={shelves.map((s, i) => ({ ...s, id: i }))}
+              columns={columns}
+              autoHeight
+              pageSizeOptions={[10, 20, 50]}
+              initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+              sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+            />
+          </Box>
+        </Paper>
       </Box>
 
       {/* QR Dialog */}
@@ -213,14 +222,22 @@ function ShelvesManagementPage() {
               {boxesOnShelf.length === 0 ? (
                 <Typography>No boxes on this pallet.</Typography>
               ) : (
-                boxesOnShelf.map((box, i) => (
-                  <Box key={i} sx={{ mb: 2, p: 1, border: "1px solid #ccc", borderRadius: 1 }}>
-                    <Typography><strong>Box ID:</strong> {box.box_id}</Typography>
-                    <Typography><strong>Customer:</strong> {box.customer_id}</Typography>
-                    <Typography><strong>Pouch Count:</strong> {box.pouch_count}</Typography>
-                    <Typography><strong>Created:</strong> {new Date(box.created_at).toLocaleDateString()}</Typography>
-                  </Box>
-                ))
+                <List dense>
+                  {boxesOnShelf.map((box, i) => (
+                    <ListItem key={i} disableGutters>
+                      <ListItemText
+                        primary={box.box_id || `BOX_${i + 1}`}
+                        secondary={
+                          [
+                            box.customer_id ? `Customer: ${box.customer_id}` : null,
+                            box.pouch_count ? `Pouches: ${box.pouch_count}` : null,
+                            box.created_at ? `Created: ${new Date(box.created_at).toLocaleDateString()}` : null,
+                          ].filter(Boolean).join("  •  ")
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                </List>
               )}
             </>
           ) : (
@@ -238,7 +255,7 @@ function ShelvesManagementPage() {
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-    </div>
+    </>
   );
 }
 

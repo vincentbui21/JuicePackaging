@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Box,
   Typography,
@@ -8,61 +8,59 @@ import {
   Paper,
   Grow,
 } from "@mui/material";
-import QRScanner from "../components/qrscanner";
+import QRScanner from "../components/qrcamscanner";
 import api from "../services/axios";
-import backgroundomena from "../assets/backgroundomena.jpg";
+import DrawerComponent from "../components/drawer";
 
 function BoxToPalletLoadingPage() {
   const [scanResult, setScanResult] = useState(null);
-  const [scannedBoxes, setScannedBoxes] = useState([]);
-  const [palletId, setPalletId] = useState(null);
+  const [scannedBoxes, setScannedBoxes] = useState([]);       // stores full scanned codes (with prefix)
+  const [palletId, setPalletId] = useState(null);             // stores id WITHOUT prefix
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
-  useEffect(() => {
-    document.body.style.backgroundImage = `url(${backgroundomena})`;
-    document.body.style.backgroundSize = "cover";
-    document.body.style.backgroundRepeat = "no-repeat";
-    return () => {
-      document.body.style = "";
-    };
-  }, []);
+  const handleScan = (raw) => {
+    if (!raw) return;
+    const code = String(raw).trim();
 
-  useEffect(() => {
-    if (!scanResult) return;
-
-    const trimmed = scanResult.trim();
-
-    if (trimmed.startsWith("BOX_")) {
-      if (!scannedBoxes.includes(trimmed)) {
-        setScannedBoxes((prev) => [...prev, trimmed]);
-        setSnackbarMsg("Box scanned.");
-      } else {
-        setSnackbarMsg("Box already scanned.");
-      }
-    }
-
-    if (trimmed.startsWith("PALLET_")) {
-      const id = trimmed.replace("PALLET_", "");
+    // Pallet
+    if (code.startsWith("PALLET_")) {
+      const id = code.replace("PALLET_", "");
       setPalletId(id);
       setSnackbarMsg("Pallet scanned.");
-    }
-
-    setScanResult(null);
-  }, [scanResult]);
-
-  const handleSubmit = async () => {
-    if (!palletId || scannedBoxes.length === 0) {
-      setSnackbarMsg("Missing pallet or boxes.");
+      setScanResult(null);
       return;
     }
 
-    try {
-      const res = await api.post(`/pallets/${palletId}/load-boxes`, {
-        boxes: scannedBoxes,
-      });
-      setSnackbarMsg(res.data.message || "Boxes loaded successfully");
+    // Box (support both BOX_ and CRATE_ prefixes)
+    if (code.startsWith("BOX_") || code.startsWith("CRATE_")) {
+      if (scannedBoxes.includes(code)) {
+        setSnackbarMsg("Box already scanned.");
+      } else {
+        setScannedBoxes((prev) => [...prev, code]);
+        setSnackbarMsg("Box scanned.");
+      }
+      setScanResult(null);
+      return;
+    }
 
-      // Reset
+    setSnackbarMsg("Unsupported QR code.");
+    setScanResult(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!palletId || scannedBoxes.length === 0) {
+      setSnackbarMsg("Scan a pallet and at least one box first.");
+      return;
+    }
+
+    // Normalize boxes for API: strip prefix -> ORDERID_INDEX
+    const boxesPayload = scannedBoxes.map((c) => c.replace(/^BOX_|^CRATE_/, ""));
+
+    try {
+      const res = await api.post(`/pallets/${encodeURIComponent(palletId)}/load-boxes`, {
+        boxes: boxesPayload,
+      });
+      setSnackbarMsg(res?.data?.message || "Boxes loaded successfully.");
       setPalletId(null);
       setScannedBoxes([]);
     } catch (err) {
@@ -79,90 +77,102 @@ function BoxToPalletLoadingPage() {
   };
 
   return (
-    <Box p={3} textAlign="center">
-      <Typography
-        variant="h4"
+    <>
+      <DrawerComponent />
+
+      <Box
         sx={{
-          background: "#8d7b65",
-          color: "white",
-          p: 2,
-          borderRadius: 2,
-          width: "fit-content",
-          mx: "auto",
+          backgroundColor: "#ffffff",
+          minHeight: "90vh",
+          py: 4,
+          display: "flex",
+          justifyContent: "center",
         }}
       >
-        Load Boxes onto Pallet
-      </Typography>
-
-      <Stack spacing={3} alignItems="center" mt={4}>
-        <Box
+        <Paper
+          elevation={3}
           sx={{
-            border: "3px dashed",
+            width: "min(900px, 95%)",
+            p: 3,
+            backgroundColor: "#ffffff",
             borderRadius: 2,
-            p: 2,
-            backgroundColor: "rgba(255,255,255,0.9)",
+            textAlign: "center",
           }}
         >
-          <Typography variant="h6">
-            Scan {palletId ? "Box" : "Pallet"} QR Code
+          <Typography
+            variant="h4"
+            sx={{ fontWeight: "bold", mb: 2 }}
+          >
+            Load Boxes onto Pallet
           </Typography>
-          <QRScanner onResult={setScanResult} />
-        </Box>
 
-        <Grow in={scannedBoxes.length > 0 || palletId}>
-          <Paper elevation={4} sx={{ p: 3, maxWidth: 500, minWidth: 300 }}>
-            {palletId && (
-              <Typography variant="subtitle1" mb={1}>
-                Pallet ID: {palletId}
-              </Typography>
-            )}
-
-            <Typography variant="body1" gutterBottom>
-              Scanned Boxes: {scannedBoxes.length}
-            </Typography>
-
+          <Stack spacing={3} alignItems="center" mt={2}>
             <Box
               sx={{
-                maxHeight: 200,
-                overflowY: "auto",
-                border: "1px solid #ccc",
-                borderRadius: 1,
-                p: 1,
+                border: "3px dashed",
+                borderRadius: 2,
+                p: 2,
+                backgroundColor: "rgba(255,255,255,0.9)",
+                width: "fit-content",
               }}
             >
-              {scannedBoxes.map((id, idx) => (
-                <Paper
-                  key={id}
-                  elevation={1}
+              <Typography variant="h6" mb={1}>
+                Scan {palletId ? "Box" : "Pallet"} QR Code
+              </Typography>
+              <QRScanner onResult={handleScan} />
+            </Box>
+
+            <Grow in={scannedBoxes.length > 0 || Boolean(palletId)}>
+              <Paper elevation={2} sx={{ p: 3, maxWidth: 500, minWidth: 300 }}>
+                {palletId && (
+                  <Typography variant="subtitle1" mb={1}>
+                    Pallet ID: {palletId}
+                  </Typography>
+                )}
+                <Typography variant="body1" gutterBottom>
+                  Scanned Boxes: {scannedBoxes.length}
+                </Typography>
+
+                <Box
                   sx={{
+                    maxHeight: 220,
+                    overflowY: "auto",
+                    border: "1px solid #eee",
+                    borderRadius: 1,
                     p: 1,
-                    mb: 1,
-                    backgroundColor: "#f3f3f3",
                     textAlign: "left",
                   }}
                 >
-                  <Typography variant="body2">
-                    Box {idx + 1}: {id}
-                  </Typography>
-                </Paper>
-              ))}
-            </Box>
-          </Paper>
-        </Grow>
+                  {scannedBoxes.map((id, idx) => (
+                    <Paper
+                      key={id}
+                      elevation={0}
+                      sx={{ p: 1, mb: 1, backgroundColor: "#f7f7f7" }}
+                    >
+                      <Typography variant="body2">
+                        Box {idx + 1}: {id}
+                      </Typography>
+                    </Paper>
+                  ))}
+                </Box>
+              </Paper>
+            </Grow>
 
-        <Stack direction="row" spacing={2} mt={3}>
-          {scannedBoxes.length > 0 && (
-            <Button variant="outlined" color="error" onClick={handleCancel}>
-              Cancel
-            </Button>
-          )}
-          {palletId && scannedBoxes.length > 0 && (
-            <Button variant="contained" color="primary" onClick={handleSubmit}>
-              Load to Pallet
-            </Button>
-          )}
-        </Stack>
-      </Stack>
+            <Stack direction="row" spacing={2} mt={1}>
+              {scannedBoxes.length > 0 && (
+                <Button variant="outlined" color="error" onClick={handleCancel}>
+                  Cancel
+                </Button>
+              )}
+              {palletId && scannedBoxes.length > 0 && (
+                <Button variant="contained" color="primary" onClick={handleSubmit}>
+                  Load to Pallet
+                </Button>
+              )}
+            </Stack>
+          </Stack>
+        </Paper>
+      </Box>
 
       <Snackbar
         open={!!snackbarMsg}
@@ -170,7 +180,7 @@ function BoxToPalletLoadingPage() {
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
       />
-    </Box>
+    </>
   );
 }
 
