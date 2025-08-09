@@ -19,6 +19,8 @@ import { DataGrid } from "@mui/x-data-grid";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import backgroundomena from "../assets/backgroundomena.jpg";
+import sendToPrinter from "../services/send_to_printer";
+import DrawerComponent from "../components/drawer";
 
 function PalletsManagementPage() {
   const [pallets, setPallets] = useState([]);
@@ -72,8 +74,8 @@ function PalletsManagementPage() {
     if (qrImage) {
       const popup = window.open("", "_blank");
       popup.document.write(`
-        <html><head><title>Print QR Code</title></head><body style="text-align:center;padding:20px;">
-        <img src="${qrImage}" style="width:200px;" />
+        <html><head><title>Print QR Code</title></head><body style="text-align:center;">
+        <img src="${qrImage}" style="width: 100px; height: 100px; object-fit: contain;" />
         <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
         </body></html>
       `);
@@ -159,6 +161,41 @@ function PalletsManagementPage() {
           Pallets Management
         </Typography>
       </Box>
+    <>
+
+      <DrawerComponent></DrawerComponent>
+
+      <Box
+            sx={
+                {
+                    backgroundColor: "#fffff",
+                    minHeight: "90vh",
+                    paddingTop: 4,
+                    paddingBottom: 4,
+                    display: "flex",
+                    justifyContent: "center"
+                }
+            }>
+                <Paper elevation={3} sx={{
+                    width: "min(90%, 800px)",
+                    padding: 4,
+                    backgroundColor: "#ffffff",
+                    borderRadius: 2
+                }}>
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      textAlign: "center",
+                      paddingTop: "40px",
+                      paddingBottom: "10px",
+                      marginBottom: "10px",
+                      color: "black",
+                      borderRadius: "10px",
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    Pallet Management
+                  </Typography>
 
       <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', backgroundColor: '#dcd2ae', borderRadius: 2, width: 'min(1200px, 95%)' }}>
         <Grid container spacing={2} alignItems="center">
@@ -180,55 +217,85 @@ function PalletsManagementPage() {
           </Grid>
         </Grid>
       </Box>
+                  <Box component={Paper} elevation={3} sx={{ p: 2, mb: 2, mx: 'auto', borderRadius: 2, width: 'min(1200px, 95%)' }}>
+                    <Grid container spacing={2} alignItems="center" justifyContent="center">
+                      <Grid item xs={12} sm={4}>
+                        <TextField
+                          select
+                          label="Select City"
+                          fullWidth
+                          value={selectedCity}
+                          onChange={(e) => setSelectedCity(e.target.value)}
+                          sx={{ backgroundColor: "white", borderRadius: 1 }}
+                        >
+                          {cities.map((city) => (
+                            <MenuItem key={city} value={city}>
+                              {city}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid item xs={6} sm={2}>
+                        <TextField
+                          label="Capacity"
+                          fullWidth
+                          type="number"
+                          value={capacity}
+                          onChange={(e) => setCapacity(Number(e.target.value))}
+                          sx={{ backgroundColor: "white", borderRadius: 1 }}
+                        />
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Button fullWidth variant="contained" onClick={handleCreatePallet}>
+                          Create Pallet
+                        </Button>
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <TextField
+                          label="Add New City"
+                          fullWidth
+                          value={newCity}
+                          onChange={(e) => setNewCity(e.target.value)}
+                          sx={{ backgroundColor: "white", borderRadius: 1 }}
+                          InputProps={{
+                            endAdornment: (
+                              <IconButton onClick={handleAddCity}>
+                                <Add />
+                              </IconButton>
+                            ),
+                          }}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Box>
 
-      <Box sx={{ mx: 'auto', width: 'min(1200px, 95%)', backgroundColor: "white", borderRadius: 2 }}>
-        <DataGrid
-          rows={pallets.map((p, i) => ({ ...p, id: i }))}
-          columns={columns}
-          autoHeight
-          pageSize={10}
-          rowsPerPageOptions={[10, 20, 50]}
-          sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
-        />
-      </Box>
 
-      {/* QR Code Dialog */}
-      <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
-        <DialogTitle>QR Code</DialogTitle>
-        <DialogContent>
-          <Box display="flex" justifyContent="center">
-            <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
-            Print
-          </Button>
-        </DialogActions>
-      </Dialog>
 
-      {/* Box Viewer Dialog */}
-      <Dialog open={boxDialogOpen} onClose={() => setBoxDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Boxes on Pallet {selectedPalletId}</DialogTitle>
-        <DialogContent dividers>
-          {boxList.length === 0 ? (
-            <Typography>No boxes assigned to this pallet.</Typography>
-          ) : (
-            boxList.map((box, index) => (
-              <Box key={index} sx={{ mb: 2, p: 1, border: "1px solid #ccc", borderRadius: 1 }}>
-                <Typography><strong>Customer ID:</strong> {box.customer_id}</Typography>
-                <Typography><strong>Customer ID:</strong> {box.city}</Typography>
-                <Typography><strong>Pouch Count:</strong> {box.pouch_count}</Typography>
-                <Typography><strong>Created At:</strong> {new Date(box.created_at).toLocaleDateString()}</Typography>
-              </Box>
-            ))
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBoxDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+                  <Box sx={{ mx: 'auto', width: 'min(1200px, 95%)', backgroundColor: "white", borderRadius: 2 }}>
+                    <DataGrid
+                      rows={pallets.map((p, i) => ({ ...p, id: i }))}
+                      columns={columns}
+                      autoHeight
+                      pageSize={10}
+                      rowsPerPageOptions={[10, 20, 50]}
+                      sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+                    />
+                  </Box>
+
+                  <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
+                    <DialogTitle>QR Code</DialogTitle>
+                    <DialogContent>
+                      <Box display="flex" justifyContent="center">
+                        <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+                      </Box>
+                    </DialogContent>
+                    <DialogActions>
+                      <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
+                      <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
+                        Print
+                      </Button>
+                    </DialogActions>
+                  </Dialog>
 
       <Snackbar
         open={!!snackbarMsg}
@@ -237,6 +304,17 @@ function PalletsManagementPage() {
         message={snackbarMsg}
       />
     </div>
+                  <Snackbar
+                    open={!!snackbarMsg}
+                    autoHideDuration={3000}
+                    onClose={() => setSnackbarMsg("")}
+                    message={snackbarMsg}
+                  />
+                </Paper>
+              </Box>
+
+
+  </>
   );
 }
 

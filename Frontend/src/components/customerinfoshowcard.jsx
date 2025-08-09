@@ -22,7 +22,7 @@ function CustomerInfoCard({customerInfo}) {
             }}>
                 <Grid container>
                     <Grid item size={6}>
-                        <Typography variant='h6'>Name</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>Name</Typography>
                     </Grid>
                     
                     <Grid item size={6}>
@@ -30,7 +30,7 @@ function CustomerInfoCard({customerInfo}) {
                     </Grid>
 
                     <Grid item size={6}>
-                        <Typography variant='h6'>Date Entry</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>Date Entry</Typography>
                     </Grid>
 
                     <Grid item size={6}>
@@ -38,7 +38,7 @@ function CustomerInfoCard({customerInfo}) {
                     </Grid>
 
                     <Grid item size={6}>
-                        <Typography variant='h6'>Apple weight</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>Apple weight</Typography>
                     </Grid>
 
                     <Grid item size={6}>
@@ -46,7 +46,7 @@ function CustomerInfoCard({customerInfo}) {
                     </Grid>
 
                     <Grid item size={6}>
-                        <Typography variant='h6'>Crate Count</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>Crate Count</Typography>
                     </Grid>
 
                     <Grid item size={6}>
@@ -54,7 +54,7 @@ function CustomerInfoCard({customerInfo}) {
                     </Grid>
 
                     <Grid item size={6}>
-                        <Typography variant='h6'>City</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>City</Typography>
                     </Grid>
 
                     <Grid item size={6}>

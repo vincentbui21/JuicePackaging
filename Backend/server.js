@@ -6,6 +6,8 @@ const database = require('./source/database_fns');
 const uuid = require('./source/uuid');
 const { publishDirectSMS } = require('./utils/aws_sns');
 const { pool } = require('./source/database_fns');
+const fs = require('fs').promises;
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app); // wrap express app in HTTP server

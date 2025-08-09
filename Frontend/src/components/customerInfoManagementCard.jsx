@@ -7,6 +7,8 @@ import QRCodeDialog from './qrcodeDialog';
 
 
 export default function CustomerTable() {
+
+    const [CustomerForwardName, setCustomerForwardName] = useState('')
     
     const handleDelete = async (row) => {
         try {
@@ -47,6 +49,8 @@ export default function CustomerTable() {
 
         if (response.data && Array.isArray(response.data.crates)) {
             setCrateIds(response.data.crates.map(c => c.crate_id));
+            setCustomerForwardName(row.name)
+            // console.log(row.name);
             setQrDialogOpen(true);
         } else {
             console.error('Unexpected response format', response.data);
@@ -126,8 +130,8 @@ export default function CustomerTable() {
 
     return (
         <>
-            <Box sx={{ width: '100%', overflowX: 'auto' }}>
-
+            <Box sx={{ width: 'auto',overflowX: 'auto', ml: "250px" }}>
+                
                 <Stack direction="row" spacing={2}
                     sx={{
                         justifySelf: "center",
@@ -135,7 +139,6 @@ export default function CustomerTable() {
                         justifyContent: "center",
                         alignItems: "center",
                         width: "min(1200px, 90%)",
-                        background: "#d6d0b1",
                         padding: "5px",
                         borderRadius: "10px",
                         marginBottom: "10px"
@@ -183,6 +186,7 @@ export default function CustomerTable() {
                 open={qrDialogOpen} 
                 onClose={() => setQrDialogOpen(false)} 
                 data={crateIds} 
+                name ={CustomerForwardName}
             />
 
         </>

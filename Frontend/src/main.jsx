@@ -14,6 +14,7 @@ import ShelveManagement from './pages/ShelveManagement.jsx'
 import PalletCreationPage from './pages/PalletCreationPage.jsx'
 import PalletsManagementPage from './pages/PalletsManagementPage.jsx'
 import ShelveCreationPage from './pages/ShelveCreationPage.jsx'
+import SettingPage from './pages/settingPage.jsx'
 
 const router = createBrowserRouter([
   {
@@ -63,6 +64,10 @@ element: <PickupPage />,
     {
     path: "/pallets-management",
       element: <PalletsManagementPage />,
+  },
+{
+  path: "/setting",
+  element: <SettingPage />,
   },
 ])
 

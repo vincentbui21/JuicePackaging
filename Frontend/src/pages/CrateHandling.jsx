@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import backgroundomena from "../assets/backgroundomena.jpg"
-import { Paper, Box, Stack, Typography, Button } from '@mui/material';
-import QRScanner from '../components/qrscanner';
+import { Paper, Box, Stack, Typography, Button, Container } from '@mui/material';
+import QRScanner from '../components/qrcamscanner';
 import CustomerInfoCard from '../components/customerinfoshowcard';
 import CrateInfoCard from '../components/CrateInfoCard';
 import api from '../services/axios';
-
+import DrawerComponent from '../components/drawer';
 
 function CrateHandling() {
 
@@ -70,23 +70,6 @@ function CrateHandling() {
         }
     }, [scannedCratesID])
 
-
-    useEffect(() => {
-        document.body.style.backgroundImage = `url(${backgroundomena})`;
-        document.body.style.backgroundSize = "cover";
-        document.body.style.backgroundRepeat = "no-repeat";
-        document.body.style.backgroundAttachment = "fixed"; // Optional: for parallax effect
-
-    
-        return () => {
-            // Clean up background when component unmounts
-            document.body.style.backgroundImage = "";
-            document.body.style.backgroundSize = "";
-            document.body.style.backgroundRepeat = "";
-            document.body.style.backgroundAttachment ="";
-        };
-    }, []);
-
     const Delete_all_data = () => {
         setCustomerInfo(InitialCustomerInfo)
         setFetchedCrateInfo([])
@@ -115,61 +98,50 @@ function CrateHandling() {
 
     return (
         <>
-            <Box display={"flex"} justifyContent={"center"} >
-                <Typography variant='h6'
-                    sx={
-                        {
-                            fontSize: "clamp(20px, 5vw, 40px);",
-                            textAlign: "center",
-                            paddingTop: "10px",
-                            paddingBottom: "10px",
-                            marginBottom: "10px",
-                            color: "black",
-                            background: "#a9987d",
-                            width: "min(1200px, 60%)",
-                            borderRadius: "10px"
-                        }
-                    }>Crate Management System
-                </Typography>
-            </Box>
+            <DrawerComponent></DrawerComponent>
 
-            <Stack direction = "column" spacing={2}
-            sx={{
-                display: "flex",
-                height: "auto",
-                alignItems: "center",
-                paddingTop: "10px"
-            }}>
-                <QRScanner onResult={setScanResult}/>
+            <Container maxWidth="md" sx={{ py: 4, height: "95vh" }}>
+                <Paper elevation={3} 
+                    sx={{ 
+                        p: 4, 
+                        borderRadius: 2, 
+                        display: "flex", 
+                        height: "100%",
+                        flexDirection: "column"
+                        }}>
+                    <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
+                        Crate Management System
+                    </Typography>
 
-                <CustomerInfoCard customerInfo={customerInfo}/>
+                    <Stack spacing={3} alignItems="center">
+                        <QRScanner onResult={setScanResult} />
 
-                <Stack spacing={2} sx={{
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: 'center'
-                }}>
-                    {
-                        scannedCratesID.map((value, index) =>{
-                            return <CrateInfoCard index={index+1} crateID={value}/>
-                        })
-                    }
-                </Stack>
+                        <CustomerInfoCard customerInfo={customerInfo} />
 
-                <Stack spacing= {5}direction={"row"}>
+                        <Stack spacing={2} alignItems="center" width="100%">
+                            {scannedCratesID.map((id, idx) => (
+                                <CrateInfoCard key={id} index={idx + 1} crateID={id} />
+                            ))}
+                        </Stack>
 
-                    {
-                        scannedCratesID.length != 0 &&
-                        <Button color='error' variant='contained' onClick={Delete_all_data}>Cancle</Button>
-                    }
+                        <Stack spacing={2} direction="row">
+                            {scannedCratesID.length > 0 && (
+                                <Button color="error" variant="contained" onClick={Delete_all_data}>
+                                    Cancel
+                                </Button>
+                            )}
+                            {!disabledSubmitButton && (
+                                <Button color="success" variant="contained" onClick={handleSubmitButton} sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}>
+                                    Submit
+                                </Button>
 
-                    {
-                        !disabledSubmitButton && 
-                        <Button color='success' variant='contained' onClick={handleSubmitButton}>Submit</Button>
-                    }
-                </Stack>
+                                
+                            )}
+                        </Stack>
+                    </Stack>
+                </Paper>
+            </Container>
 
-            </Stack>
         </>
     );
 }
