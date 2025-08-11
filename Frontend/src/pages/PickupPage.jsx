@@ -10,8 +10,14 @@ import {
   Snackbar,
   Alert,
   CircularProgress,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
 import { useState } from "react";
 import api from "../services/axios";
 import DrawerComponent from "../components/drawer";
@@ -20,13 +26,19 @@ function PickupPage() {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // selected order + dialog open
   const [selected, setSelected] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
   const handleSearch = async (e) => {
     const q = e.target.value;
     setSearch(q);
     setSelected(null);
+    setDetailsOpen(false);
+
     if (!q.trim()) {
       setResults([]);
       return;
@@ -44,13 +56,23 @@ function PickupPage() {
     }
   };
 
+  const openDetails = (order) => {
+    setSelected(order);
+    setDetailsOpen(true);
+  };
+
+  const closeDetails = () => {
+    setDetailsOpen(false);
+    setSelected(null);
+  };
+
   const confirmPickup = async () => {
     if (!selected) return;
     try {
       await api.post(`/orders/${selected.order_id}/pickup`);
       setSnackbarMsg(`Order for ${selected.name} marked as picked up.`);
       setResults((prev) => prev.filter((r) => r.order_id !== selected.order_id));
-      setSelected(null);
+      closeDetails();
     } catch (err) {
       console.error("Failed to confirm pickup", err);
       setSnackbarMsg("Failed to confirm pickup");
@@ -87,7 +109,6 @@ function PickupPage() {
             elevation={1}
             sx={{
               p: 2,
-              mb: 2,
               backgroundColor: "#fcfcfc",
               borderRadius: 2,
               width: "min(600px, 95%)",
@@ -110,21 +131,22 @@ function PickupPage() {
 
             <List>
               {results.map((res) => {
-                // NEW: Compose a friendly shelf display like "Shelf 2 (Helsinki)"
                 const shelfDisplay = res.shelf_name
-                  ? `${res.shelf_name}${res.shelf_location || res.city ? ` (${res.shelf_location || res.city})` : ""}`
-                  : (res.shelf_location || ""); // fallback to location if no name
+                  ? `${res.shelf_name}${
+                      res.shelf_location || res.city ? ` (${res.shelf_location || res.city})` : ""
+                    }`
+                  : res.shelf_location || "";
 
                 return (
                   <ListItem
                     key={res.order_id}
                     button
-                    selected={selected?.order_id === res.order_id}
-                    onClick={() => setSelected(res)}
+                    onClick={() => openDetails(res)}
                     sx={{
                       mt: 1,
-                      backgroundColor: selected?.order_id === res.order_id ? "#b2dfdb" : "#fff",
+                      backgroundColor: "#fff",
                       borderRadius: 1,
+                      "&:hover": { backgroundColor: "#f5f5f5" },
                     }}
                   >
                     <ListItemText
@@ -133,7 +155,7 @@ function PickupPage() {
                         `Status: ${res.status}`,
                         `City: ${res.city}`,
                         `Boxes: ${res.box_count}`,
-                        shelfDisplay ? `Shelf: ${shelfDisplay}` : null, // NEW
+                        shelfDisplay ? `Shelf: ${shelfDisplay}` : null,
                       ]
                         .filter(Boolean)
                         .join(" | ")}
@@ -142,64 +164,79 @@ function PickupPage() {
                 );
               })}
             </List>
-
-            {selected && (
-              <>
-                <Divider sx={{ my: 2 }} />
-                <Box sx={{ px: 1 }}>
-                  <Typography variant="subtitle1">Order ID:</Typography>
-                  <Typography variant="body2" gutterBottom>
-                    {selected.order_id}
-                  </Typography>
-
-                  <Typography variant="subtitle1">Status:</Typography>
-                  <Typography variant="body2" gutterBottom>
-                    {selected.status}
-                  </Typography>
-
-                  <Typography variant="subtitle1">City:</Typography>
-                  <Typography variant="body2" gutterBottom>
-                    {selected.city}
-                  </Typography>
-
-                  <Typography variant="subtitle1">Boxes:</Typography>
-                  <Typography variant="body2" gutterBottom>
-                    {selected.box_count}
-                  </Typography>
-
-                  {/* NEW: show shelf name + city clearly */}
-                  {(selected.shelf_name || selected.shelf_location) && (
-                    <>
-                      <Typography variant="subtitle1">Shelf:</Typography>
-                      <Typography
-                        variant="body2"
-                        gutterBottom
-                        sx={{ fontWeight: "bold", color: "green" }}
-                      >
-                        {selected.shelf_name
-                          ? `${selected.shelf_name}${selected.shelf_location || selected.city ? ` (${selected.shelf_location || selected.city})` : ""}`
-                          : selected.shelf_location}
-                      </Typography>
-                    </>
-                  )}
-
-                  {selected.status === "Ready for pickup" && (
-                    <Button
-                      variant="contained"
-                      color="success"
-                      fullWidth
-                      sx={{ mt: 2 }}
-                      onClick={confirmPickup}
-                    >
-                      Mark as Picked Up
-                    </Button>
-                  )}
-                </Box>
-              </>
-            )}
           </Paper>
         </Paper>
       </Box>
+
+      {/* Details dialog (popup) */}
+      <Dialog open={detailsOpen} onClose={closeDetails} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ pr: 6 }}>
+          Pickup Details
+          <IconButton
+            aria-label="close"
+            onClick={closeDetails}
+            sx={{ position: "absolute", right: 8, top: 8 }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {!selected ? (
+            <Typography>Select an order from the list.</Typography>
+          ) : (
+            <>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                {selected.name} ({selected.phone})
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {selected.city}
+              </Typography>
+
+              <Divider sx={{ my: 1.5 }} />
+
+              <Typography variant="subtitle2">Order ID</Typography>
+              <Typography variant="body2" gutterBottom>
+                {selected.order_id}
+              </Typography>
+
+              <Typography variant="subtitle2">Status</Typography>
+              <Typography variant="body2" gutterBottom>
+                {selected.status}
+              </Typography>
+
+              <Typography variant="subtitle2">Boxes</Typography>
+              <Typography variant="body2" gutterBottom>
+                {selected.box_count}
+              </Typography>
+
+              {(selected.shelf_name || selected.shelf_location) && (
+                <>
+                  <Typography variant="subtitle2">Shelf</Typography>
+                  <Typography variant="body2" gutterBottom sx={{ fontWeight: "bold", color: "green" }}>
+                    {selected.shelf_name
+                      ? `${selected.shelf_name}${
+                          selected.shelf_location || selected.city
+                            ? ` (${selected.shelf_location || selected.city})`
+                            : ""
+                        }`
+                      : selected.shelf_location}
+                  </Typography>
+                </>
+              )}
+            </>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={closeDetails}>Close</Button>
+          {selected?.status === "Ready for pickup" && (
+            <Button variant="contained" color="success" onClick={confirmPickup}>
+              Mark as Picked Up
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
 
       <Snackbar open={!!snackbarMsg} autoHideDuration={4000} onClose={() => setSnackbarMsg("")}>
         <Alert severity="info" sx={{ width: "100%" }}>

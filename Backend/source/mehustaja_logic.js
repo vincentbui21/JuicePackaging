@@ -1,6 +1,6 @@
 
-function caculated_price(apple_weight) {
-    return Number(parseFloat(apple_weight).toFixed(2))
+function caculated_price(num) {
+    return Number(parseFloat(num).toFixed(2))
 }
 
 function formatDateToSQL(dateStr) {

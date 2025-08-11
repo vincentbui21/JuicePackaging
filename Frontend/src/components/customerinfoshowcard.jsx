@@ -1,71 +1,51 @@
-import { Grid, Paper, Typography } from "@mui/material";
+import React from "react";
+import { Paper, Stack, Typography } from "@mui/material";
 
+const Row = ({ label, value }) => (
+  <Stack direction="row" spacing={2} alignItems="baseline">
+    <Typography sx={{ minWidth: 160, fontWeight: 700 }}>{label}</Typography>
+    <Typography>:</Typography>
+    <Typography>{value ?? "—"}</Typography>
+  </Stack>
+);
 
-function CustomerInfoCard({customerInfo}) {
+export default function CustomerInfoCard({ customerInfo = {}, countLabel }) {
+  const {
+    name,
+    created_at,
+    weight_kg,
+    boxes_count,   // new for boxes flow
+    crate_count,   // legacy (crate flow)
+    city,
+  } = customerInfo;
 
-    function formatToMMDDYYYY(isoString) {
-        if (!isoString) return "";
+  // Decide which count + label to show
+  const hasBoxes = boxes_count !== undefined && boxes_count !== null;
+  const computedCountLabel =
+    countLabel || (hasBoxes ? "Box Count" : "Crate Count");
+  const countValue = hasBoxes ? boxes_count : crate_count;
 
-        const date = new Date(isoString);
-        const mm = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-        const dd = String(date.getDate()).padStart(2, '0');
-        const yyyy = date.getFullYear();
-        return `${mm}/${dd}/${yyyy}`;
-    }
+  const dateStr = created_at
+    ? new Date(created_at).toLocaleDateString()
+    : "—";
 
-    return ( 
-        <>
-            <Paper elevation={6} sx={{
-                width: "max(300px, 30%)",
-                height: "auto",
-                padding:"15px"
-            }}>
-                <Grid container>
-                    <Grid item size={6}>
-                        <Typography variant='body1' fontWeight={"bold"}>Name</Typography>
-                    </Grid>
-                    
-                    <Grid item size={6}>
-                        <Typography>: {customerInfo.name}</Typography>
-                    </Grid>
+  const weightStr =
+    weight_kg === 0 || weight_kg
+      ? Number(weight_kg).toFixed(2)
+      : "—";
 
-                    <Grid item size={6}>
-                        <Typography variant='body1' fontWeight={"bold"}>Date Entry</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography >: {formatToMMDDYYYY(customerInfo.created_at)}</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography variant='body1' fontWeight={"bold"}>Apple weight</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography>: {customerInfo.weight_kg}</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography variant='body1' fontWeight={"bold"}>Crate Count</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography>: {customerInfo.crate_count}</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography variant='body1' fontWeight={"bold"}>City</Typography>
-                    </Grid>
-
-                    <Grid item size={6}>
-                        <Typography>: {customerInfo.city}</Typography>
-                    </Grid>
-
-                </Grid>
-
-            </Paper>
-        </>
-    );
+  return (
+    <Paper
+      elevation={2}
+      sx={{ p: 2.5, borderRadius: 2, width: "100%", maxWidth: 700 }}
+    >
+      <Stack spacing={1.5}>
+        <Row label="Name" value={name || "—"} />
+        <Row label="Date Entry" value={dateStr} />
+        <Row label="Apple weight" value={weightStr} />
+        <Row label={computedCountLabel} value={countValue ?? "—"} />
+        <Row label="City" value={city || "—"} />
+      </Stack>
+    </Paper>
+  );
 }
-
-export default CustomerInfoCard;

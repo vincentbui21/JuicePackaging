@@ -10,7 +10,7 @@ const fs = require('fs').promises;
 const path = require('path');
 
 const app = express();
-const server = http.createServer(app); // wrap express app in HTTP server
+const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
@@ -163,24 +163,41 @@ app.get('/crates', async (req, res) => {
   res.json({ crates });
 });
 
-  app.post('/orders/:order_id/done', async (req, res) => {
-    const { order_id } = req.params;
-    const { comment } = req.body;
-  
-    try {
-      // Update order status to "processing complete"
-      await database.markOrderAsDone(order_id, comment);
-  
-      // Notify frontend via socket
-      const io = req.app.get('io');
-      io.emit("order-status-updated");
-  
-      res.status(200).json({ message: "Order marked as done" });
-    } catch (error) {
-      console.error("Failed to mark order as done:", error);
-      res.status(500).json({ error: "Failed to mark order as done" });
+// single handler so we can mount both paths
+const markDoneHandler = async (req, res) => {
+  const { order_id } = req.params;
+  const { comment = "" } = req.body || {};
+
+  try {
+    // Update order status + create BOX_* entries
+    const result = await database.markOrderAsDone(order_id, comment);
+
+    // (Optional) also recompute/return expected explicitly
+    // const expected = await database.updateBoxesCountForOrder(order_id);
+
+    // Notify clients
+    const io = req.app.get('io');
+    if (io) {
+      io.emit("order-status-updated", { order_id, status: "processing complete" });
     }
-  });
+
+    res.status(200).json({
+      message: "Order marked as done",
+      ...(result || {}) // includes boxes_count
+      // expected, // if you used the explicit recompute above
+    });
+  } catch (error) {
+    console.error(`[Order Done] Failed for order ${order_id}:`, error);
+    res.status(500).json({
+      error: "Failed to mark order as done",
+      details: error.message
+    });
+  }
+};
+
+app.post('/orders/:order_id/done', markDoneHandler);
+app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
+
 
   app.put('/orders/:order_id', async (req, res) => {
     const { order_id } = req.params;
@@ -203,7 +220,7 @@ app.get('/crates', async (req, res) => {
   app.delete("/orders/:order_id", async (req, res) => {
     try {
       const { order_id } = req.params;
-      await database.deleteOrder(order_id); // Ensure this method exists
+      await database.deleteOrder(order_id); 
       res.status(200).send({ message: "Order deleted" });
     } catch (err) {
       console.error("Failed to delete order:", err);
@@ -242,16 +259,16 @@ app.get('/crates', async (req, res) => {
   app.delete('/pallets/:pallet_id', async (req, res) => {
     const { pallet_id } = req.params;
     try {
-      await database.deletePallet(pallet_id);
-      res.status(200).json({ message: "Pallet deleted" });
+      const ok = await database.deletePallet(pallet_id);
+      if (!ok) {
+        return res.status(404).json({ error: 'Pallet not found' });
+      }
+      res.status(200).json({ message: 'Pallet deleted' });
     } catch (err) {
-      console.error("Failed to delete pallet:", err);
-      res.status(500).json({ error: "Failed to delete pallet" });
+      console.error('Failed to delete pallet:', err);
+      res.status(500).json({ error: 'Failed to delete pallet' });
     }
   });
-  
-
-
 
 
   app.post('/orders/:order_id/ready', async (req, res) => {
@@ -262,7 +279,6 @@ app.get('/crates', async (req, res) => {
   
       const order = await database.getOrderById(order_id);
   
-      // Ensure order.phone or order.phone_number exists
       const phone = order.phone
   
       if (phone) {
@@ -298,8 +314,6 @@ app.get('/crates', async (req, res) => {
     }
   });
   
-  
-  
   app.get("/orders/:order_id", async (req, res) => {
     try {
       const result = await database.getOrderById(req.params.order_id);
@@ -312,32 +326,6 @@ app.get('/crates', async (req, res) => {
       res.status(500).send("Server error");
     }
   });
-
-  app.post('/loading/complete', async (req, res) => {
-    const { order_id, pallet_id, boxes } = req.body;
-  
-    if (!order_id || !pallet_id || !Array.isArray(boxes)) {
-      return res.status(400).json({ error: "Missing required data" });
-    }
-  
-    try {
-      // Update each box with the pallet ID and set city based on pallet
-      const pallet = await database.getPalletById(pallet_id);
-      if (!pallet) return res.status(404).json({ error: "Pallet not found" });
-  
-      const updateResults = await Promise.all(
-        boxes.map(box_id =>
-          database.assignBoxToPallet(box_id, pallet_id, pallet.location)
-        )
-      );
-  
-      res.status(200).json({ message: "Boxes assigned to pallet successfully" });
-    } catch (error) {
-      console.error("Error in /loading/complete:", error);
-      res.status(500).json({ error: "Failed to complete loading" });
-    }
-  });
-  
   
   app.post('/orders/:order_id/pickup', async (req, res) => {
     const { order_id } = req.params;
@@ -351,68 +339,113 @@ app.get('/crates', async (req, res) => {
     }
   });
   
+
   app.post('/pallets/:pallet_id/load-boxes', async (req, res) => {
     const { pallet_id } = req.params;
-    const { boxes } = req.body;
-
-    if (!Array.isArray(boxes) || boxes.length === 0) {
-        return res.status(400).json({ error: "Boxes array is required" });
-    }
-
+    const { boxes = [] } = req.body || {};
     try {
-        for (const box_id of boxes) {
-            const success = await database.assignBoxToPallet(box_id, pallet_id);
-            if (!success) {
-                return res.status(400).json({ error: `Failed to assign box ${box_id}` });
-            }
+      const { assigned, holding } = await database.assignBoxesToPallet(pallet_id, boxes);
+  
+      // optional: broadcast so Pallet grids refresh in real time
+      const io = req.app.get('io');
+      if (io) io.emit('pallet-updated', { pallet_id, holding });
+  
+      res.json({ message: 'Boxes assigned to pallet', assigned, holding });
+    } catch (e) {
+      console.error('Error assigning boxes:', e);
+      res.status(500).json({ error: 'Failed to assign boxes to pallet' });
+    }
+  });
+
+
+  app.post('/pallets/assign-shelf', async (req, res) => {
+    const { palletId, shelfId } = req.body || {};
+    if (!palletId || !shelfId) {
+      return res.status(400).json({ ok: false, error: 'palletId and shelfId are required' });
+    }
+  
+    try {
+      // 1) Link pallet to shelf (and whatever bookkeeping you already do there)
+      const assignResult = await database.assignPalletToShelf(palletId, shelfId);
+  
+      // 2) Mark orders on that pallet as "Ready for pickup"
+      let ready = { updated: 0, orderIds: [] };
+      if (typeof database.markOrdersOnPalletReady === 'function') {
+        ready = await database.markOrdersOnPalletReady(palletId);
+      }
+  
+      // 3) Fetch customers who have boxes on this pallet
+      let customers = [];
+      if (typeof database.getCustomersByPalletId === 'function') {
+        customers = await database.getCustomersByPalletId(palletId); // expect [{name, phone}, ...]
+      }
+  
+      if (!Array.isArray(customers) || customers.length === 0) {
+        return res.json({ ok: true, message: 'Assigned; no customers on this pallet', assignResult, ready, sms: [] });
+      }
+  
+      // 4) Build a simple pickup location line (optional)
+      let placeText = 'the store';
+      if (typeof database.getShelfById === 'function') {
+        try {
+          const shelf = await database.getShelfById(shelfId);
+          if (shelf) {
+            placeText = shelf.shelf_name
+              ? `${shelf.shelf_name}${shelf.location ? ` (${shelf.location})` : ''}`
+              : (shelf.location || placeText);
+          }
+        } catch (_) {}
+      }
+  
+      // 5) Send SMS directly (just like your test_sns.js)
+      const results = [];
+      for (const c of customers) {
+        const phone = (c && c.phone) ? String(c.phone) : '';
+        if (!phone) continue;
+        const msg = `Hi ${c.name || 'there'}, your order is ready for pickup at ${placeText}.`;
+        try {
+          const messageId = await publishDirectSMS(phone, msg);
+          console.log(`[assign-shelf] SMS OK -> ${phone} | ${messageId}`);
+          results.push({ ok: true, phone, messageId });
+        } catch (e) {
+          console.warn(`[assign-shelf] SMS FAIL -> ${phone}: ${e.message}`);
+          results.push({ ok: false, phone, error: e.message });
         }
-
-        res.status(200).json({ message: "Boxes assigned to pallet successfully" });
-    } catch (err) {
-        console.error("Failed loading boxes to pallet:", err);
-        res.status(500).json({ error: "Loading failed" });
+      }
+  
+      return res.json({
+        ok: true,
+        message: 'Pallet assigned; orders ready; SMS attempted',
+        assignResult,
+        ready,
+        notified: results.filter(r => r.ok).length,
+        sms: results,
+      });
+    } catch (e) {
+      console.error('assign-shelf failed:', e);
+      return res.status(500).json({ ok: false, error: 'assign-shelf failed', details: e.message });
     }
-});
-
-app.post('/pallets/assign-shelf', async (req, res) => {
-  const { palletId, shelfId } = req.body;
-
-  try {
-    const result = await database.assignPalletToShelf(palletId, shelfId);
-
-    const shelf = await database.getShelfById(shelfId);
-    if (!shelf) throw new Error("Shelf not found");
-
-    const customer = await database.getCustomerByPalletId(palletId);
-    if (customer?.phone) {
-      await publishDirectSMS(
-        customer.phone,
-        `Hi ${customer.name}, your order is ready for pickup at ${shelf.location}.`
-      );
+  });
+  
+  app.get("/pallets/:pallet_id/customers", async (req, res) => {
+    try {
+      const rows = await database.getCustomersByPalletId(req.params.pallet_id);
+      res.json(rows);
+    } catch (e) {
+      console.error("Failed to fetch customers by pallet:", e.message);
+      res.status(500).json({ error: "Failed to fetch customers" });
     }
+  });
 
-    res.json({ message: "Pallet assigned to shelf successfully and customer notified", result });
-  } catch (error) {
-    console.error("❌ Assign Shelf Error:", error);
-    res.status(500).json({ error: "Failed to assign pallet to shelf", details: error.message });
-  }
-});
-
-
-
-app.get("/pallets/:pallet_id/boxes", async (req, res) => {
-  const { pallet_id } = req.params;
-  try {
-    const boxes = await database.getBoxesByPalletId(pallet_id);
-    res.status(200).json(boxes);
-  } catch (err) {
-    console.error("Error fetching boxes for pallet:", err);
-    res.status(500).json({ error: "Failed to fetch boxes" });
-  }
-});
-
-
-
+  app.get('/pallets/:pallet_id/boxes', async (req, res) => {
+    try {
+      const rows = await database.getBoxesOnPallet(req.params.pallet_id);
+      res.json(rows);
+    } catch (e) {
+      console.error('Failed to fetch boxes on pallet:', e);
+      res.status(500).json({ error: 'Failed to fetch boxes on pallet' });
+    }
+  });
 
 app.get('/locations', async (req, res) => {
   try {
@@ -449,8 +482,6 @@ app.post('/api/shelves', async (req, res) => {
     res.status(500).json({ message: 'Error creating shelf', details: err.message });
   }
 });
-
-
 
 app.delete('/shelves/:shelf_id', async (req, res) => {
   const { shelf_id } = req.params;
@@ -491,6 +522,29 @@ app.get('/shelves/:shelf_id/contents', async (req, res) => {
       res.status(500).json({ error: 'Server error' });
     }
   });
+  
+  app.get('/orders/:order_id/expected-boxes', async (req, res) => {
+    try {
+      // returns Orders.boxes_count; if 0, recomputes from Boxes and persists
+      const expected = await database.updateBoxesCountForOrder(req.params.order_id);
+      res.json({ expected });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to fetch expected boxes' });
+    }
+  });
+  
+
+// First-box scan -> fetch order summary + all boxes for that order
+app.get('/boxes/scan-info/:box_id', async (req, res) => {
+  try {
+    const data = await database.getScanInfoByBoxId(req.params.box_id);
+    res.json(data);
+  } catch (e) {
+    console.error('scan-info error:', e.message);
+    res.status(400).json({ error: e.message || 'Failed to fetch scan info' });
+  }
+});
+
   
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {

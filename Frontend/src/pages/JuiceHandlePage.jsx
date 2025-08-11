@@ -81,20 +81,41 @@ function JuiceHandlePage() {
   const markOrderDone = async (orderId) => {
     try {
       const comment = comments[orderId] || "";
-      await api.post(`/orders/${orderId}/done`, { comment });
-      socket.emit("order-completed", { order_id: orderId, status: "Loading" });
+  
+      // Call the backend route (this matches your server: /orders/:order_id/done)
+      const { data } = await api.post(
+        `/orders/${encodeURIComponent(orderId)}/done`,
+        { comment }
+      );
+  
+      // Optional: use what the server returns (boxes_count, boxCount, etc.)
+      const createdCount = data?.boxes_count ?? null;
+  
+      // Emit a consistent socket event (server also emits "order-status-updated")
+      socket.emit("order-status-updated", {
+        order_id: orderId,
+        status: "processing complete",
+        boxes_count: createdCount,
+      });
+  
+      // Update UI
       setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
       setComments((prev) => {
-        const updated = { ...prev };
-        delete updated[orderId];
-        return updated;
+        const { [orderId]: _removed, ...rest } = prev;
+        return rest;
       });
-      setSnackbarMsg("Order marked as done");
+  
+      setSnackbarMsg(
+        createdCount != null
+          ? `Order marked as done. Boxes created: ${createdCount}.`
+          : "Order marked as done."
+      );
     } catch (err) {
       console.error("Failed to update status", err);
       setSnackbarMsg("Failed to update order status");
     }
   };
+  
 
   return (
     <>

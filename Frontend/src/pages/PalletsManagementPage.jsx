@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -16,6 +16,7 @@ import {
   List,
   ListItem,
   ListItemText,
+  Chip, // <-- added
 } from "@mui/material";
 import { QrCode, Print, Delete, Visibility, Add } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -40,6 +41,9 @@ function PalletsManagementPage() {
 
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
+  // NEW: lightweight client-side search for pallets (by id/status/location)
+  const [searchText, setSearchText] = useState("");
+
   useEffect(() => {
     fetchCities();
   }, []);
@@ -51,11 +55,9 @@ function PalletsManagementPage() {
   const fetchCities = async () => {
     try {
       const res = await api.get("/cities");
-      // can be ["Lahti","Kuopio"] or [{location:"Lahti"},...]
-      const list =
-        Array.isArray(res.data)
-          ? res.data.map((c) => (typeof c === "string" ? c : c.location)).filter(Boolean)
-          : [];
+      const list = Array.isArray(res.data)
+        ? res.data.map((c) => (typeof c === "string" ? c : c.location)).filter(Boolean)
+        : [];
       setCities(list);
       if (list.length && !selectedCity) setSelectedCity(list[0]);
     } catch (err) {
@@ -143,6 +145,18 @@ function PalletsManagementPage() {
       setSnackbarMsg("Failed to load boxes");
     }
   };
+
+  // NEW: filtered pallets (client-side)
+  const filteredPallets = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    if (!q) return pallets;
+    return pallets.filter((p) => {
+      const id = String(p.pallet_id || "").toLowerCase();
+      const status = String(p.status || "").toLowerCase();
+      const loc = String(p.location || "").toLowerCase();
+      return id.includes(q) || status.includes(q) || loc.includes(q);
+    });
+  }, [pallets, searchText]);
 
   const columns = [
     { field: "pallet_id", headerName: "Pallet ID", flex: 1.5 },
@@ -248,13 +262,23 @@ function PalletsManagementPage() {
                   }}
                 />
               </Grid>
+
+              {/* NEW: search input (purely client-side) */}
+              <Grid item xs={12} sm={6} md={5}>
+                <TextField
+                  label="Search pallets (id / status / city)"
+                  fullWidth
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                />
+              </Grid>
             </Grid>
           </Box>
 
           {/* Table */}
           <Box sx={{ backgroundColor: "white", borderRadius: 2 }}>
             <DataGrid
-              rows={pallets.map((p, i) => ({ ...p, id: i }))}
+              rows={filteredPallets.map((p, i) => ({ ...p, id: i }))}
               columns={columns}
               autoHeight
               pageSizeOptions={[10, 20, 50]}
@@ -288,23 +312,41 @@ function PalletsManagementPage() {
           {boxList.length === 0 ? (
             <Typography>No boxes on this pallet.</Typography>
           ) : (
-            <List dense>
-              {boxList.map((b, idx) => (
-                <ListItem key={idx} disableGutters>
-                  <ListItemText
-                    primary={b.box_id || b.id || `BOX_${idx + 1}`}
-                    secondary={
-                      [
-                        b.order_id ? `Order: ${b.order_id}` : null,
-                        b.created_at ? `Created: ${new Date(b.created_at).toLocaleString()}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join("  •  ")
-                    }
-                  />
-                </ListItem>
-              ))}
-            </List>
+            <>
+              {/* NEW: customer summary chips */}
+              {boxList.length > 0 && (
+                <Box sx={{ mb: 1.5 }}>
+                  {Object.entries(
+                    boxList.reduce((acc, b) => {
+                      const key = b.customer_name || b.customer_id || "Unknown";
+                      acc[key] = (acc[key] || 0) + 1;
+                      return acc;
+                    }, {})
+                  ).map(([label, count]) => (
+                    <Chip key={label} label={`${label}: ${count}`} sx={{ mr: 1, mb: 1 }} />
+                  ))}
+                </Box>
+              )}
+
+              <List dense>
+                {boxList.map((b, idx) => (
+                  <ListItem key={idx} disableGutters>
+                    <ListItemText
+                      primary={b.box_id || b.id || `BOX_${idx + 1}`}
+                      secondary={
+                        [
+                          b.customer_name ? `Customer: ${b.customer_name}` : null,
+                          b.order_id ? `Order: ${b.order_id}` : null,
+                          b.created_at ? `Created: ${new Date(b.created_at).toLocaleString()}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join("  •  ")
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </>
           )}
         </DialogContent>
         <DialogActions>

@@ -1,75 +1,58 @@
-SELECT * FROM Pallets;
+START TRANSACTION;
+UPDATE Boxes
+SET box_id = REPLACE(box_id, 'CRATE_', 'BOX_')
+WHERE box_id LIKE 'CRATE_%';
+COMMIT;
 
-RENAME TABLE Pallets TO Shelves;
+UPDATE Pallets p
+LEFT JOIN (
+  SELECT pallet_id, COUNT(*) AS cnt
+  FROM Boxes
+  WHERE pallet_id IS NOT NULL
+  GROUP BY pallet_id
+) b ON b.pallet_id = p.pallet_id
+SET p.holding = IFNULL(b.cnt, 0),
+    p.status  = CASE
+                  WHEN IFNULL(b.cnt,0) >= p.capacity THEN 'full'
+                  ELSE 'available'
+                END;
 
 
-ALTER TABLE Shelves
-CHANGE COLUMN pallet_id shelf_id VARCHAR(36);
+SELECT *FROM Orders;
+
+ALTER TABLE Orders
+  ADD COLUMN boxes_count INT NOT NULL DEFAULT 0 AFTER crate_count;
 
 
-ALTER TABLE Pallets
-ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP;
+  
+SELECT  *
+FROM Orders;
 
-CREATE TABLE Cities (
-  city_id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(255) NOT NULL UNIQUE
-);
+SELECT box_id FROM Boxes WHERE box_id LIKE 'BOX_%' ORDER BY box_id LIMIT 20;
+
+SHOW CREATE TABLE Boxes;
+
+SELECT box_id
+FROM Boxes
+WHERE box_id REGEXP '^BOX_[0-9a-fA-F-]{36}_$';
+
 
 ALTER TABLE Boxes
-CHANGE COLUMN pallete_id pallet_id VARCHAR(36);
+  MODIFY COLUMN box_id VARCHAR(64) NOT NULL;
+
+  DELETE FROM Boxes
+WHERE box_id REGEXP '^BOX_[0-9a-fA-F-]{36}_$';
+
+ALTER TABLE Boxes DROP FOREIGN KEY Boxes_ibfk_2;
 
 
-SELECT * FROM Customers WHERE name LIKE '%Sami%';
-
-SELECT * FROM Orders WHERE customer_id = (
-  SELECT customer_id FROM Customers WHERE name LIKE '%Sami%'
-);
-
-SELECT 
-  o.order_id,
-
-
-
-  o.status,
-  o.customer_id,
-  o.created_at,
-  c.name,
-  c.phone,
-  c.city
-FROM Orders o
-JOIN Customers c ON o.customer_id = c.customer_id
-WHERE c.name LIKE '%Sami%' OR c.phone LIKE '%Sami%';
-
-
-CREATE TABLE Pallets (
-    pallet_id VARCHAR(255) PRIMARY KEY,
-    location VARCHAR(255),
-    created_at DATE DEFAULT CURRENT_DATE,
-    status ENUM('available','full','shipped') DEFAULT 'available',
-    capacity INT DEFAULT 8,
-    holding INT DEFAULT 0
-);
 
 ALTER TABLE Boxes
-ADD COLUMN shelf_id VARCHAR(255);
+  ADD CONSTRAINT fk_boxes_pallet
+  FOREIGN KEY (pallet_id)
+  REFERENCES Pallets(pallet_id)
+  ON UPDATE CASCADE
+  ON DELETE SET NULL;
 
-
-ALTER TABLE Pallets ADD COLUMN shelf_id TEXT;
-
-ALTER TABLE Shelves
-  ADD COLUMN shelf_name VARCHAR(64) NOT NULL AFTER location;
-
-SET @loc := NULL; 
-SET @n := 0;
-
-UPDATE Shelves s
-JOIN (
-  SELECT shelf_id, location,
-         (@n := IF(@loc = location, @n + 1, 1)) AS seq,
-         (@loc := location) AS dummy
-  FROM Shelves
-  ORDER BY location, created_at
-) x ON x.shelf_id = s.shelf_id
-SET s.shelf_name = CONCAT('Shelf ', x.seq);
-
-SELECT shelf_id, location, shelf_name FROM Shelves;
+  ALTER TABLE Pallets
+  MODIFY COLUMN status ENUM('available','loading','full','shipped') DEFAULT 'available';

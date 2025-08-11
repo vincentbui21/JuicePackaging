@@ -55,7 +55,7 @@ async function update_new_customer_data(customer_data, order_data) {
             "Created", // Status
             Number(parseFloat(order_data.total_apple_weight).toFixed(2)), //total_apple_weight
             parseInt(order_data.No_of_Crates),
-            logic.caculated_price(order_data.Price), 
+            logic.caculated_price(order_data.price), 
             order_data.Notes,
             logic.formatDateToSQL(customer_data.entryDate)       
         ]);
@@ -84,6 +84,7 @@ async function update_new_customer_data(customer_data, order_data) {
         return false
     }
 }
+
 
 async function get_crate_data(crate_id) {
     const connection = await pool.getConnection()
@@ -450,27 +451,36 @@ async function getPalletsByLocation(location, page, limit) {
     }
 }
 
+
 async function deletePallet(pallet_id) {
-    const connection = await pool.getConnection();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
 
-    try {
-        await connection.beginTransaction();
+    // Unlink any boxes on this pallet to avoid FK issues
+    await connection.query(
+      `UPDATE Boxes SET pallet_id = NULL WHERE pallet_id = ?`,
+      [pallet_id]
+    );
 
-        const deleteQuery = `DELETE FROM Palletes WHERE pallete_id = ?`;
+    // Delete the pallet itself (
+    const [result] = await connection.query(
+      `DELETE FROM Pallets WHERE pallet_id = ?`,
+      [pallet_id]
+    );
 
-        const [result] = await connection.query(deleteQuery, [pallet_id]);
-
-        await connection.commit();
-        connection.release();
-
-        return result.affectedRows > 0;
-    } catch (error) {
-        await connection.rollback();
-        console.error("Error deleting pallet:", error);
-        connection.release();
-        return false;
-    }
+    await connection.commit();
+    return result.affectedRows > 0; // true if something was deleted
+  } catch (err) {
+    await connection.rollback();
+    console.error("Error deleting pallet:", err);
+    throw err;
+  } finally {
+    connection.release();
+  }
 }
+
+
 
 async function updatePalletCapacity(pallete_id, newCapacity) {
     const connection = await pool.getConnection();
@@ -524,43 +534,69 @@ async function markOrderAsReady(order_id) {
   }
   
 
-    async function markOrderAsDone(order_id, comment = "") {
-        // 1. Update order status
-        await pool.query(
-          `UPDATE Orders SET status = ? WHERE order_id = ?`,
-          ['processing complete', order_id]
+  async function markOrderAsDone(order_id, comment = "") {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+  
+      // Lock order row
+      const [[o]] = await conn.query(
+        `SELECT order_id, customer_id, weight_kg
+           FROM Orders
+          WHERE order_id = ?
+          FOR UPDATE`,
+        [order_id]
+      );
+      if (!o) throw new Error("Order not found");
+  
+      // Compute how many boxes to make (same logic you use in the UI)
+      const weight = Number(o.weight_kg) || 0;
+      const estimatedPouches = Math.floor((weight * 0.65) / 3);
+      const boxCount = Math.max(1, Math.ceil(estimatedPouches / 8));
+  
+      // Build suffixed ids
+      const now = new Date();
+      const rows = [];
+      for (let i = 1; i <= boxCount; i++) {
+        rows.push([`BOX_${order_id}_${i}`, o.customer_id, now]);
+      }
+  
+      // Insert idempotently
+      if (rows.length) {
+        await conn.query(
+          `INSERT IGNORE INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
+          [rows]
         );
-      
-        // 2. Update crate status (via customer_id)
-        await pool.query(
-          `UPDATE Crates SET status = ? WHERE customer_id = (
-            SELECT customer_id FROM Orders WHERE order_id = ?
-          )`,
-          ['processing complete', order_id]
-        );
-      
-        // 3. Get customer_id and weight
-        const [[order]] = await pool.query(
-          `SELECT weight_kg, customer_id FROM Orders WHERE order_id = ?`,
-          [order_id]
-        );
-      
-        const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);
-        const boxCount = Math.ceil(estimatedPouches / 8);
-      
-        const inserts = [];
-      
-        for (let i = 1; i <= boxCount; i++) {
-          const boxId = `CRATE_${order_id}_${i}`;
-          inserts.push([boxId, order.customer_id]);
-        }
-      
-        // 4. Insert into Boxes table (ignore duplicates)
-        await pool.query(
-          `INSERT IGNORE INTO Boxes (box_id, customer_id) VALUES ?`,
-          [inserts]
-        );
-      }      
+      }
+  
+      // Authoritative count saved on Orders
+      const actualCount = await updateBoxesCountForOrder(order_id, conn);
+  
+      // Status update
+      await conn.query(
+        `UPDATE Orders SET status = ? WHERE order_id = ?`,
+        ["processing complete", order_id]
+      );
+  
+      await conn.commit();
+  
+      // DEBUG (remove later): see what happened
+      console.log(`[markOrderAsDone] order=${order_id} intended=${boxCount} saved=${actualCount}`);
+  
+      return {
+        created: rows.length,       // attempted inserts
+        boxes_count: actualCount,   // persisted total
+        estimatedPouches,
+        boxCount
+      };
+    } catch (e) {
+      await conn.rollback();
+      console.error("markOrderAsDone error:", e);
+      throw e;
+    } finally {
+      conn.release();
+    }
+  }   
     
     async function updateOrderInfo(order_id, data) {
         const { weight_kg, estimated_pouches, estimated_boxes } = data;
@@ -615,49 +651,103 @@ async function markOrderAsReady(order_id) {
         return rows[0] || null;
       }
       
-      async function assignBoxToPallet(box_id, pallet_id) {
-        const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
-    
-            // Get pallet info
-            const [[pallet]] = await connection.query(
-                'SELECT capacity, holding FROM Pallets WHERE pallet_id = ?',
-                [pallet_id]
-            );
-    
-            if (!pallet) throw new Error("Pallet not found");
-    
-            if (pallet.holding >= pallet.capacity) {
-                throw new Error("Pallet is full");
-            }
-    
-            // Update box
-            await connection.query(
-                `UPDATE Boxes SET pallet_id = ? WHERE box_id = ?`,
-                [pallet_id, box_id]
-            );
-    
-            // Update pallet holding and status
-            const newHolding = pallet.holding + 1;
-            const newStatus = newHolding === pallet.capacity ? "full" : "available";
-    
-            await connection.query(
-                `UPDATE Pallets SET holding = ?, status = ? WHERE pallet_id = ?`,
-                [newHolding, newStatus, pallet_id]
-            );
-    
-            await connection.commit();
-            return true;
-        } catch (err) {
-            await connection.rollback();
-            console.error("Error assigning box to pallet:", err.message);
-            return false;
-        } finally {
-            connection.release();
-        }
+     // Holding-safe
+// Holding-safe + robust ID normalization
+async function assignBoxToPallet(box_id_raw, pallet_id) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const box_id = normalizeBoxId(box_id_raw);
+
+    // lock the box row and read its current pallet
+    const [[box]] = await connection.query(
+      "SELECT pallet_id FROM Boxes WHERE box_id = ? FOR UPDATE",
+      [box_id]
+    );
+    if (!box) {
+      throw new Error(`Box not found: ${box_id_raw}`);
     }
-    
+
+    // lock the target pallet
+    const [[target]] = await connection.query(
+      "SELECT capacity, holding FROM Pallets WHERE pallet_id = ? FOR UPDATE",
+      [pallet_id]
+    );
+    if (!target) throw new Error("Pallet not found");
+
+    // already on this pallet? nothing to do
+    if (box.pallet_id === pallet_id) {
+      await connection.commit();
+      return true;
+    }
+
+    // capacity check
+    if (target.holding >= target.capacity) throw new Error("Pallet is full");
+
+    // move the box
+    const [upd] = await connection.query(
+      "UPDATE Boxes SET pallet_id = ? WHERE box_id = ?",
+      [pallet_id, box_id]
+    );
+    if (upd.affectedRows === 0) throw new Error("Box update failed");
+
+    // decrement old pallet holding if moving from another pallet
+    if (box.pallet_id) {
+      await connection.query(
+        `UPDATE Pallets
+           SET holding = GREATEST(holding - 1, 0),
+               status  = CASE WHEN holding - 1 <= 0 THEN 'available' ELSE status END
+         WHERE pallet_id = ?`,
+        [box.pallet_id]
+      );
+    }
+
+    // increment target pallet and set status
+    const newHolding = target.holding + 1;
+    const newStatus = newHolding === target.capacity ? "full" : "available";
+    await connection.query(
+      "UPDATE Pallets SET holding = ?, status = ? WHERE pallet_id = ?",
+      [newHolding, newStatus, pallet_id]
+    );
+
+    await connection.commit();
+    return true;
+  } catch (err) {
+    await connection.rollback();
+    console.error("Error assigning box to pallet:", err.message);
+    return false;
+  } finally {
+    connection.release();
+  }
+}
+
+async function updatePalletHolding(pallet_id, connOrPool = pool) {
+  const [[{ cnt }]] = await connOrPool.query(
+    `SELECT COUNT(*) AS cnt FROM Boxes WHERE pallet_id = ?`,
+    [pallet_id]
+  );
+
+  const holding = Number(cnt || 0);
+
+  await connOrPool.query(
+    `
+    UPDATE Pallets
+       SET holding = ?,
+           status = CASE
+                      WHEN ? = 0 THEN 'available'
+                      WHEN capacity <= ? THEN 'full'
+                      ELSE 'loading'
+                    END
+     WHERE pallet_id = ?
+    `,
+    [holding, holding, holding, pallet_id]
+  );
+
+  return holding;
+}
+
+
 
       async function searchOrdersForPickup(query) {
         const [rows] = await pool.query(`
@@ -690,7 +780,7 @@ async function markOrderAsReady(order_id) {
           [order_id]
         );
       }
-      
+
       async function searchOrdersWithShelfInfo(query) {
         const [rows] = await pool.query(`
           SELECT 
@@ -771,31 +861,37 @@ async function getShelvesByLocation(location) {
   return rows;
 }
 
-async function getShelfById(shelfId) {
-  const [rows] = await pool.query(
-    `SELECT location, shelf_name FROM Shelves WHERE shelf_id = ?`,
-    [shelfId]
-  );
-  return rows[0] || null;
-}
-
 
 async function getBoxesByPalletId(pallet_id) {
-    const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.query(
-        "SELECT box_id, customer_id, pouch_count, created_at FROM Boxes WHERE pallet_id = ?",
-        [pallet_id]
-      );
-      return rows;
-    } catch (err) {
-      console.error("Error fetching boxes for pallet:", err);
-      return [];
-    } finally {
-      connection.release();
-    }
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.query(
+      `
+      SELECT 
+        b.box_id,
+        b.customer_id,
+        c.name AS customer_name,
+        (
+          SELECT o.order_id 
+          FROM Orders o 
+          WHERE o.customer_id = b.customer_id 
+          ORDER BY o.created_at DESC 
+          LIMIT 1
+        ) AS order_id,
+        b.created_at
+      FROM Boxes b
+      JOIN Customers c ON c.customer_id = b.customer_id
+      WHERE b.pallet_id = ?
+      ORDER BY b.created_at DESC
+      `,
+      [pallet_id]
+    );
+    return rows;
+  } finally {
+    connection.release();
   }
-  
+}
+
   async function assignPalletToShelf(palletId, shelfId) {
     const connection = await pool.getConnection();
   
@@ -840,24 +936,346 @@ async function getBoxesByPalletId(pallet_id) {
     }
   }
   async function getShelfById(shelfId) {
-    const [rows] = await pool.query(`SELECT location FROM Shelves WHERE shelf_id = ?`, [shelfId]);
+    const [rows] = await pool.query(
+      `SELECT location, shelf_name FROM Shelves WHERE shelf_id = ?`,
+      [shelfId]
+    );
     return rows[0] || null;
   }
   
-  async function getCustomerByPalletId(palletId) {
-    const [boxes] = await pool.query(
-      `SELECT c.name, c.phone
+  
+  async function getCustomersByPalletId(palletId) {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT c.name, c.phone
        FROM Boxes b
        JOIN Customers c ON b.customer_id = c.customer_id
-       WHERE b.pallet_id = ?
-       LIMIT 1`,
+       WHERE b.pallet_id = ?`,
       [palletId]
     );
-    return boxes[0] || null;
+    return rows;
   }
   
-  
+ 
+
+// Preferred source of truth for "expected": Orders.boxes_count,
+// falling back to a live count if it’s 0/NULL (safety).
+async function getExpectedBoxesForOrder(order_id) {
+  const [[row]] = await pool.query(
+    "SELECT boxes_count FROM Orders WHERE order_id = ?",
+    [order_id]
+  );
+  const stored = row?.boxes_count != null ? Number(row.boxes_count) : 0;
+  if (!Number.isNaN(stored) && stored > 0) return stored;
+
+  // Fallback: compute now and persist
+  return await updateBoxesCountForOrder(order_id);
+}
+
+// Normalize any scanned box code to canonical "BOX_<uuid>" or "BOX_<uuid>_<n>"
+function normalizeBoxId(raw) {
+  const s = String(raw || "").trim();
+  const m = s.match(/([0-9a-fA-F-]{36})(?:_(\d+))?/); // uuid + optional _n anywhere
+  if (m) return `BOX_${m[1]}${m[2] ? `_${m[2]}` : ""}`;
+  if (/^BOX[\s:\-_]/i.test(s)) {
+    const t = s.replace(/^BOX[\s:\-_]*/i, "BOX_");
+    return t.replace(/^BOX__/, "BOX_"); // collapse accidental double _
+  }
+  return s.startsWith("BOX_") ? s : s;
+}
+
+function extractOrderIdFromBoxId(box_id) {
+  const m = String(box_id).match(/^BOX_([0-9a-fA-F-]{36})(?:_(\d+))?$/i);
+  return m ? m[1] : null;
+}
+
+// Fallback: find an order for this box via its customer_id
+async function findOrderIdForBox(box_id) {
+  const [[bx]] = await pool.query(
+    "SELECT customer_id FROM Boxes WHERE box_id = ?",
+    [box_id]
+  );
+  if (!bx) return null;
+
+  // Prefer the most recent order for this customer
+  const [[ord]] = await pool.query(
+    `SELECT o.order_id
+       FROM Orders o
+      WHERE o.customer_id = ?
+      ORDER BY o.created_at DESC
+      LIMIT 1`,
+    [bx.customer_id]
+  );
+  return ord?.order_id ?? null;
+}
+
+// Count BOX_<order_id>_% in Boxes, store result on Orders.boxes_count, return the count
+// Count boxes for an order (prefers suffixed; falls back to unsuffixed; then customer)
+async function updateBoxesCountForOrder(order_id, connOrPool = pool) {
+  // count suffixed: BOX_<order>_1, _2, ...
+  const [[{ cnt: suf }]] = await connOrPool.query(
+    `SELECT COUNT(*) AS cnt
+       FROM Boxes
+      WHERE box_id REGEXP CONCAT('^BOX_', ?, '_[0-9]+$')`,
+    [order_id]
+  );
+  let count = Number(suf || 0);
+
+  // if no suffixed, check a single unsuffixed row
+  if (count === 0) {
+    const [[{ cnt: unsuf }]] = await connOrPool.query(
+      `SELECT COUNT(*) AS cnt
+         FROM Boxes
+        WHERE box_id = CONCAT('BOX_', ?)`,
+      [order_id]
+    );
+    count = Number(unsuf || 0);
+  }
+
+  // optional safety: fall back to Boxes.customer_id if still zero
+  if (count === 0) {
+    const [[ord]] = await connOrPool.query(
+      `SELECT customer_id FROM Orders WHERE order_id = ?`,
+      [order_id]
+    );
+    if (ord?.customer_id) {
+      const [[{ cnt: byCustomer }]] = await connOrPool.query(
+        `SELECT COUNT(*) AS cnt FROM Boxes WHERE customer_id = ?`,
+        [ord.customer_id]
+      );
+      count = Number(byCustomer || 0);
+    }
+  }
+
+  await connOrPool.query(
+    `UPDATE Orders SET boxes_count = ? WHERE order_id = ?`,
+    [count, order_id]
+  );
+  return count;
+}
+
+// Prefer Orders.boxes_count; if zero, recompute and persist
+async function getExpectedBoxesForOrder(order_id) {
+  const [[row]] = await pool.query(
+    "SELECT boxes_count FROM Orders WHERE order_id = ?",
+    [order_id]
+  );
+  const stored = row?.boxes_count != null ? Number(row.boxes_count) : 0;
+  if (stored > 0) return stored;
+  return await updateBoxesCountForOrder(order_id);
+}
        
+// Get scan info for a box by its ID, returning order and boxes summary
+async function getScanInfoByBoxId(box_id_raw) {
+ 
+  const normalizeBoxId = (raw) => {
+    const s = String(raw || "").trim();
+    const m = s.match(/([0-9a-fA-F-]{36})(?:_(\d+))?/); // uuid + optional _n anywhere
+    if (m) return `BOX_${m[1]}${m[2] ? `_${m[2]}` : ""}`;
+    if (/^BOX[\s:\-_]/i.test(s)) {
+      const t = s.replace(/^BOX[\s:\-_]*/i, "BOX_");
+      return t.replace(/^BOX__/, "BOX_");
+    }
+    return s.startsWith("BOX_") ? s : s;
+  };
+  const extractOrderIdFromBoxId = (boxId) => {
+    const m = String(boxId).match(/^BOX_([0-9a-fA-F-]{36})(?:_(\d+))?$/i);
+    return m ? m[1] : null;
+  };
+
+  const box_id = normalizeBoxId(box_id_raw);
+
+  // 1) Resolve order_id: try from the box_id; else via the box's customer_id -> latest order
+  let order_id = extractOrderIdFromBoxId(box_id);
+  if (!order_id) {
+    // find the box's customer
+    const [[bx]] = await pool.query(
+      "SELECT customer_id FROM Boxes WHERE box_id = ?",
+      [box_id]
+    );
+    if (!bx) throw new Error("Order not found for this box");
+    const [[ord]] = await pool.query(
+      `SELECT o.order_id
+         FROM Orders o
+        WHERE o.customer_id = ?
+        ORDER BY o.created_at DESC
+        LIMIT 1`,
+      [bx.customer_id]
+    );
+    order_id = ord?.order_id || null;
+  }
+  if (!order_id) throw new Error("Order not found for this box");
+
+  // 2) Fetch order + customer summary
+  const [[order]] = await pool.query(
+    `
+    SELECT 
+      o.order_id,
+      o.customer_id,
+      o.created_at,
+      o.weight_kg,
+      COALESCE(o.boxes_count, 0) AS boxes_count,
+      c.name,
+      c.city
+    FROM Orders o
+    JOIN Customers c ON c.customer_id = o.customer_id
+    WHERE o.order_id = ?
+    `,
+    [order_id]
+  );
+  if (!order) throw new Error("Order not found");
+
+  // 3) Ensure boxes_count is accurate (auto-heal from DB if 0)
+  if (!order.boxes_count || Number(order.boxes_count) === 0) {
+    if (typeof updateBoxesCountForOrder === "function") {
+      order.boxes_count = await updateBoxesCountForOrder(order_id);
+    }
+  }
+
+  // 4) List boxes for this order.
+  //    Prefer suffixed rows (BOX_<order>_n). If none exist, fall back to the single unsuffixed row.
+  const [[{ cnt: suf }]] = await pool.query(
+    `SELECT COUNT(*) AS cnt
+       FROM Boxes
+      WHERE box_id REGEXP CONCAT('^BOX_', ?, '_[0-9]+$')`,
+    [order_id]
+  );
+
+  let boxes = [];
+  if (Number(suf || 0) > 0) {
+    // return the suffixed set
+    const [rows] = await pool.query(
+      `SELECT box_id
+         FROM Boxes
+        WHERE box_id REGEXP CONCAT('^BOX_', ?, '_[0-9]+$')
+        ORDER BY box_id`,
+      [order_id]
+    );
+    boxes = rows;
+  } else {
+    // fall back to unsuffixed single row (if present)
+    const [rows] = await pool.query(
+      `SELECT box_id
+         FROM Boxes
+        WHERE box_id = CONCAT('BOX_', ?)
+        ORDER BY box_id`,
+      [order_id]
+    );
+    boxes = rows;
+  }
+
+  return { order, boxes }; // { order: {...}, boxes: [{box_id}, ...] }
+}
+
+async function assignBoxesToPallet(pallet_id, box_ids = []) {
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    // Normalize and dedupe IDs
+    const ids = Array.from(
+      new Set(
+        (Array.isArray(box_ids) ? box_ids : [])
+          .filter(Boolean)
+          .map((s) => String(s).trim())
+      )
+    );
+
+    if (ids.length === 0) {
+      const holding = await updatePalletHolding(pallet_id, conn);
+      await conn.commit();
+      return { assigned: 0, holding };
+    }
+
+    const placeholders = ids.map(() => "?").join(", ");
+
+    const [result] = await conn.query(
+      `UPDATE Boxes
+          SET pallet_id = ?
+        WHERE box_id IN (${placeholders})`,
+      [pallet_id, ...ids]
+    );
+
+    const assigned = Number(result.affectedRows || 0);
+
+    const holding = await updatePalletHolding(pallet_id, conn);
+
+    await conn.commit();
+    return { assigned, holding };
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+// Backend (./source/database_fns.js)
+async function getBoxesOnPallet(pallet_id) {
+  const [rows] = await pool.query(
+    `
+    SELECT
+      b.box_id,
+      b.created_at,
+      b.customer_id,
+      c.name AS customer_name,
+      CASE
+        WHEN b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}' THEN SUBSTRING(b.box_id, 5, 36)
+        ELSE NULL
+      END AS order_id
+    FROM Boxes b
+    LEFT JOIN Customers c ON c.customer_id = b.customer_id
+    WHERE b.pallet_id = ?
+    ORDER BY b.box_id
+    `,
+    [pallet_id]
+  );
+  return rows;
+}
+
+// Mark all orders that have boxes on a given pallet as 'Ready for pickup'.
+// Uses order_id derived from BOX_<order_uuid>[_n]; falls back to customer join if needed.
+async function markOrdersOnPalletReady(palletId) {
+  // Try to resolve order IDs from the box_id pattern
+  const [orderRows] = await pool.query(
+    `
+    SELECT DISTINCT SUBSTRING(b.box_id, 5, 36) AS order_id
+    FROM Boxes b
+    WHERE b.pallet_id = ?
+      AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}'
+    `,
+    [palletId]
+  );
+  const ids = orderRows.map(r => r.order_id).filter(Boolean);
+
+  let updatedByOrderId = 0;
+  if (ids.length) {
+    const placeholders = ids.map(() => '?').join(', ');
+    const [res] = await pool.query(
+      `UPDATE Orders SET status = 'Ready for pickup' WHERE order_id IN (${placeholders})`,
+      ids
+    );
+    updatedByOrderId = res.affectedRows || 0;
+  }
+
+  // If nothing matched the BOX_ pattern, fall back to "by customer" linkage
+  if (updatedByOrderId === 0) {
+    const [res2] = await pool.query(
+      `
+      UPDATE Orders o
+      JOIN Boxes b ON b.customer_id = o.customer_id
+      SET o.status = 'Ready for pickup'
+      WHERE b.pallet_id = ?
+      `,
+      [palletId]
+    );
+    return { updated: res2.affectedRows || 0, orderIds: [] };
+  }
+
+  return { updated: updatedByOrderId, orderIds: ids };
+}
+
+
 module.exports = {
     update_new_customer_data, 
     get_crate_data, 
@@ -874,6 +1292,7 @@ module.exports = {
     getPalletsByLocation,
     createPallet,
     deleteShelf,
+    deletePallet,
     updatePalletCapacity,
     getOrderById,
     getPalletById,
@@ -889,5 +1308,16 @@ module.exports = {
     getBoxesByPalletId,
     assignPalletToShelf,
     getShelfById,
-    getCustomerByPalletId,
+    getCustomersByPalletId,
+    getPalletsByLocation,
+    normalizeBoxId,
+    getExpectedBoxesForOrder,
+    extractOrderIdFromBoxId,
+    findOrderIdForBox,
+    getScanInfoByBoxId,
+    updateBoxesCountForOrder,
+    assignBoxesToPallet,
+    updatePalletHolding,
+    getBoxesOnPallet,
+    markOrdersOnPalletReady,
 }
