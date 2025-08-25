@@ -170,7 +170,7 @@ export default function PalletTable() {
                         variant="contained"
                         onClick={ () => createNewPallet()}
                     >
-                        Create new Pallete
+                        Create new Pallet
                     </Button>
                 </Stack>
 

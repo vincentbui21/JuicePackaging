@@ -56,3 +56,55 @@ ALTER TABLE Boxes
 
   ALTER TABLE Pallets
   MODIFY COLUMN status ENUM('available','loading','full','shipped') DEFAULT 'available';
+
+
+ALTER TABLE Customers
+  ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE Customers
+  ADD INDEX idx_customers_created_at (created_at);
+
+  UPDATE Customers c
+LEFT JOIN (
+  SELECT customer_id, MIN(created_at) AS first_order_at
+  FROM Orders
+  GROUP BY customer_id
+) o USING (customer_id)
+SET c.created_at = COALESCE(o.first_order_at, c.created_at);
+
+ALTER TABLE Crates
+  CHANGE COLUMN updated_at created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+  ALTER TABLE Crates
+  ADD INDEX idx_crates_created_at (created_at);
+
+  START TRANSACTION;
+
+UPDATE Crates
+SET created_at = 
+  CASE
+    WHEN updated_at IS NULL THEN NULL
+    ELSE CAST(updated_at AS DATETIME)
+  END;
+
+ALTER TABLE Crates
+  DROP COLUMN updated_at;
+
+ALTER TABLE Crates
+  MODIFY created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+COMMIT;
+
+ALTER TABLE Orders
+  ADD COLUMN ready_at DATETIME NULL DEFAULT NULL,
+  ADD INDEX idx_orders_ready_at (ready_at);
+
+
+ALTER TABLE Orders  ADD INDEX idx_orders_status (status),
+                    ADD INDEX idx_orders_ready_at (ready_at);
+ALTER TABLE Boxes   ADD INDEX idx_boxes_pallet_id (pallet_id),
+                    ADD INDEX idx_boxes_box_id (box_id);
+
+
+SHOW INDEX FROM `Orders`;
+SHOW INDEX FROM `Boxes`;

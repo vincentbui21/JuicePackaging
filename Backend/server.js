@@ -8,9 +8,21 @@ const { publishDirectSMS } = require('./utils/aws_sns');
 const { pool } = require('./source/database_fns');
 const fs = require('fs').promises;
 const path = require('path');
+const { printPouch } = require("./source/printers/videojet6330");
+
+const net = require("net");
 
 const app = express();
 const server = http.createServer(app);
+
+function emitActivity(type, message, extra = {}) {
+  io.emit("activity", {
+    type,         // "customer" | "processing" | "warehouse" | "ready" | "pickup"
+    message,      // short text
+    ts: new Date().toISOString(),
+    ...extra,
+  });
+}
 
 const io = new Server(server, {
   cors: {
@@ -40,15 +52,33 @@ app.get('/', (req, res) => {
 });
 
 app.post('/new-entry', async (req, res) => {
-  const customer_datas = req.body[0];
-  const order_datas = req.body[1];
+  try {
+    const customer_datas = req.body[0];
+    const order_datas    = req.body[1];
 
-  const update = await database.update_new_customer_data(customer_datas, order_datas);
+    const update = await database.update_new_customer_data(customer_datas, order_datas);
 
-  if (!update) {
-    res.status(400).send('something wrong');
-  } else {
-    res.status(200).send(update);
+    if (!update) {
+      return res.status(400).send('something wrong');
+    }
+
+    // SUCCESS — emit the live notification before responding
+    emitActivity(
+      'customer',
+      `New customer registered: ${customer_datas?.name || 'Unknown'}`,
+      {
+        customer_id: update?.customer_id || update?.customer?.customer_id,
+        order_id:    update?.order_id    || update?.order?.order_id
+      }
+    );
+
+    // (optional) still broadcast any existing events your UI listens for
+    io.emit('order-status-updated');
+
+    return res.status(200).send(update);
+  } catch (err) {
+    console.error('new-entry error', err);
+    return res.status(500).send('server error');
   }
 });
 
@@ -72,6 +102,18 @@ app.put('/orders', async (req, res) => {
   // Notify all clients that orders have been updated
   io.emit('order-status-updated');
 
+  // Lightweight activity (generic route – we may not have order_id here)
+  if (status) {
+    const s = String(status).toLowerCase();
+    if (s.includes('ready')) {
+      emitActivity('ready', `Order(s) for customer ${customer_id} marked ready for pickup`, { customer_id });
+    } else if (s.includes('picked')) {
+      emitActivity('pickup', `Order(s) for customer ${customer_id} picked up`, { customer_id });
+    } else if (s.includes('process')) {
+      emitActivity('processing', `Order status updated for customer ${customer_id}: ${status}`, { customer_id });
+    }
+  }
+
   res.status(200).send('Updated orders data successfully');
 });
 
@@ -80,11 +122,13 @@ app.put('/crates', async (req, res) => {
   const result = await database.update_crates_status(crate_id, status);
 
   if (!result) {
-    res.status(400).send("cannot update crate status");
-  } else {
-    res.status(200).send('Updated crate status successfully');
+    return res.status(400).send("cannot update crate status");
   }
+
+  emitActivity('processing', `Crate ${crate_id} status → ${status}`, { crate_id, status });
+  res.status(200).send('Updated crate status successfully');
 });
+
 
 app.get('/orders', async (req, res) => {
   const { status } = req.query;
@@ -163,7 +207,6 @@ app.get('/crates', async (req, res) => {
   res.json({ crates });
 });
 
-// single handler so we can mount both paths
 const markDoneHandler = async (req, res) => {
   const { order_id } = req.params;
   const { comment = "" } = req.body || {};
@@ -172,19 +215,13 @@ const markDoneHandler = async (req, res) => {
     // Update order status + create BOX_* entries
     const result = await database.markOrderAsDone(order_id, comment);
 
-    // (Optional) also recompute/return expected explicitly
-    // const expected = await database.updateBoxesCountForOrder(order_id);
-
-    // Notify clients
-    const io = req.app.get('io');
-    if (io) {
-      io.emit("order-status-updated", { order_id, status: "processing complete" });
-    }
+    // Broadcast
+    io.emit("order-status-updated", { order_id, status: "processing complete" });
+    emitActivity('processing', `Order ${order_id} processing completed`, { order_id });
 
     res.status(200).json({
       message: "Order marked as done",
-      ...(result || {}) // includes boxes_count
-      // expected, // if you used the explicit recompute above
+      ...(result || {})
     });
   } catch (error) {
     console.error(`[Order Done] Failed for order ${order_id}:`, error);
@@ -195,9 +232,9 @@ const markDoneHandler = async (req, res) => {
   }
 };
 
-app.post('/orders/:order_id/done', markDoneHandler);
-app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
 
+app.post('/orders/:order_id/done', markDoneHandler);
+app.post('/orders/:order_id/mark-done', markDoneHandler); 
 
   app.put('/orders/:order_id', async (req, res) => {
     const { order_id } = req.params;
@@ -209,7 +246,9 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
         estimated_pouches,
         estimated_boxes
       });
-  
+      // Notify all clients that orders have been updated
+      emitActivity('processing', `Order ${order_id} info updated`, { order_id });
+
       res.status(200).json({ message: 'Order updated successfully' });
     } catch (error) {
       console.error('Failed to update order:', error);
@@ -240,7 +279,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
       res.status(500).json({ error: "Failed to fetch pallets" });
     }
   });
-  
+
   app.post('/pallets', async (req, res) => {
     const { location, capacity } = req.body;
     if (!location || !capacity) {
@@ -249,6 +288,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
   
     try {
       const pallet_id = await database.createPallet(location, capacity);
+      emitActivity('warehouse', `Pallet ${pallet_id} created (${location})`, { pallet_id, location });
       res.status(201).json({ message: "Pallet created", pallet_id });
     } catch (err) {
       console.error("Failed to create pallet:", err);
@@ -257,47 +297,47 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
   });
   
   app.delete('/pallets/:pallet_id', async (req, res) => {
-    const { pallet_id } = req.params;
-    try {
-      const ok = await database.deletePallet(pallet_id);
-      if (!ok) {
-        return res.status(404).json({ error: 'Pallet not found' });
-      }
-      res.status(200).json({ message: 'Pallet deleted' });
-    } catch (err) {
-      console.error('Failed to delete pallet:', err);
-      res.status(500).json({ error: 'Failed to delete pallet' });
+  const { pallet_id } = req.params;
+  try {
+    const ok = await database.deletePallet(pallet_id);
+    if (!ok) {
+      return res.status(404).json({ error: 'Pallet not found' });
     }
-  });
+    emitActivity('warehouse', `Pallet ${pallet_id} deleted`, { pallet_id });
+    res.status(200).json({ message: 'Pallet deleted' });
+  } catch (err) {
+    console.error('Failed to delete pallet:', err);
+    res.status(500).json({ error: 'Failed to delete pallet' });
+  }
+});
 
 
-  app.post('/orders/:order_id/ready', async (req, res) => {
-    const { order_id } = req.params;
-  
-    try {
-      await database.markOrderAsReady(order_id);
-  
-      const order = await database.getOrderById(order_id);
-  
-      const phone = order.phone
-  
-      if (phone) {
-        await publishDirectSMS(
-          phone,
-          `Hi ${order.name}, your juice order is ready for pickup.`
-        );
-      }
-  
-      const io = req.app.get('io');
-      io.emit("order-status-updated");
-  
-      res.status(200).json({ message: "Order marked as ready and customer notified." });
-    } catch (error) {
-      console.error("Failed to mark order as ready:", error);
-      res.status(500).json({ error: "Failed to mark order as ready" });
+app.post('/orders/:order_id/ready', async (req, res) => {
+  const { order_id } = req.params;
+
+  try {
+    await database.markOrderAsReady(order_id);
+
+    const order = await database.getOrderById(order_id);
+    const phone = order.phone;
+
+    if (phone) {
+      await publishDirectSMS(
+        phone,
+        `Hi ${order.name}, your juice order is ready for pickup.`
+      );
     }
-  });
-  
+
+    io.emit("order-status-updated");
+    emitActivity('ready', `Order ${order_id} ready for pickup`, { order_id });
+
+    res.status(200).json({ message: "Order marked as ready and customer notified." });
+  } catch (error) {
+    console.error("Failed to mark order as ready:", error);
+    res.status(500).json({ error: "Failed to mark order as ready" });
+  }
+});
+
   
   app.get("/orders/pickup", async (req, res) => {
     const { query } = req.query;
@@ -332,6 +372,10 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
   
     try {
       await database.markOrderAsPickedUp(order_id);
+  
+      io.emit("order-status-updated");
+      emitActivity('pickup', `Order ${order_id} picked up`, { order_id });
+  
       res.status(200).json({ message: "Order marked as picked up" });
     } catch (err) {
       console.error("Failed to mark as picked up:", err);
@@ -346,9 +390,12 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
     try {
       const { assigned, holding } = await database.assignBoxesToPallet(pallet_id, boxes);
   
-      // optional: broadcast so Pallet grids refresh in real time
       const io = req.app.get('io');
       if (io) io.emit('pallet-updated', { pallet_id, holding });
+  
+      emitActivity('warehouse',
+        `Loaded ${Array.isArray(assigned) ? assigned.length : (boxes.length || 0)} box(es) onto pallet ${pallet_id}`,
+        { pallet_id });
   
       res.json({ message: 'Boxes assigned to pallet', assigned, holding });
     } catch (e) {
@@ -356,7 +403,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
       res.status(500).json({ error: 'Failed to assign boxes to pallet' });
     }
   });
-
+  
 
   app.post('/pallets/assign-shelf', async (req, res) => {
     const { palletId, shelfId } = req.body || {};
@@ -365,7 +412,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
     }
   
     try {
-      // 1) Link pallet to shelf (and whatever bookkeeping you already do there)
+      // 1) Link pallet to shelf
       const assignResult = await database.assignPalletToShelf(palletId, shelfId);
   
       // 2) Mark orders on that pallet as "Ready for pickup"
@@ -374,17 +421,13 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
         ready = await database.markOrdersOnPalletReady(palletId);
       }
   
-      // 3) Fetch customers who have boxes on this pallet
+      // 3) Notify customers by SMS (your existing logic)
       let customers = [];
       if (typeof database.getCustomersByPalletId === 'function') {
-        customers = await database.getCustomersByPalletId(palletId); // expect [{name, phone}, ...]
+        customers = await database.getCustomersByPalletId(palletId);
       }
   
-      if (!Array.isArray(customers) || customers.length === 0) {
-        return res.json({ ok: true, message: 'Assigned; no customers on this pallet', assignResult, ready, sms: [] });
-      }
-  
-      // 4) Build a simple pickup location line (optional)
+      // build pickup location text (optional)
       let placeText = 'the store';
       if (typeof database.getShelfById === 'function') {
         try {
@@ -397,7 +440,6 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
         } catch (_) {}
       }
   
-      // 5) Send SMS directly (just like your test_sns.js)
       const results = [];
       for (const c of customers) {
         const phone = (c && c.phone) ? String(c.phone) : '';
@@ -405,12 +447,19 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
         const msg = `Hi ${c.name || 'there'}, your order is ready for pickup at ${placeText}.`;
         try {
           const messageId = await publishDirectSMS(phone, msg);
-          console.log(`[assign-shelf] SMS OK -> ${phone} | ${messageId}`);
           results.push({ ok: true, phone, messageId });
         } catch (e) {
-          console.warn(`[assign-shelf] SMS FAIL -> ${phone}: ${e.message}`);
           results.push({ ok: false, phone, error: e.message });
         }
+      }
+  
+      // 4) Broadcast + activity
+      io.emit("order-status-updated");
+      io.emit("pallet-updated", { pallet_id: palletId, shelfId });
+  
+      emitActivity('warehouse', `Pallet ${palletId} assigned to shelf ${shelfId}`, { pallet_id: palletId, shelf_id: shelfId });
+      if (ready.updated > 0) {
+        emitActivity('ready', `${ready.updated} order(s) ready for pickup (pallet ${palletId})`, { pallet_id: palletId });
       }
   
       return res.json({
@@ -426,6 +475,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler); // alias
       return res.status(500).json({ ok: false, error: 'assign-shelf failed', details: e.message });
     }
   });
+  
   
   app.get("/pallets/:pallet_id/customers", async (req, res) => {
     try {
@@ -474,8 +524,10 @@ app.post('/api/shelves', async (req, res) => {
     if (!location || capacity == null) {
       return res.status(400).json({ message: "Location and capacity are required" });
     }
-
     const shelf = await database.createShelf(location, capacity, shelf_name);
+    emitActivity('warehouse', `Shelf created: ${shelf_name || shelf?.shelf_id} @ ${location}`, {
+      shelf_id: shelf?.shelf_id, location
+    });
     res.status(201).json({ message: 'Shelf created', result: shelf });
   } catch (err) {
     console.error('❌ Error creating shelf:', err);
@@ -487,6 +539,7 @@ app.delete('/shelves/:shelf_id', async (req, res) => {
   const { shelf_id } = req.params;
   try {
     await database.deleteShelf(shelf_id);
+    emitActivity('warehouse', `Shelf ${shelf_id} deleted`, { shelf_id });
     res.status(200).json({ message: 'Shelf deleted successfully' });
   } catch (err) {
     console.error('Error deleting shelf:', err);
@@ -545,7 +598,92 @@ app.get('/boxes/scan-info/:box_id', async (req, res) => {
   }
 });
 
-  
+
+// --- Printer: Built-in test print with timeout fallback ---
+app.post("/printer/test-print", async (req, res) => {
+  const s = new net.Socket();
+  let replied = false;
+
+  const cleanup = () => {
+    try { s.end(); } catch {}
+    try { s.destroy(); } catch {}
+  };
+
+  // 3s fallback if printer returns no data
+  const timer = setTimeout(() => {
+    if (replied) return;
+    replied = true;
+    cleanup();
+    return res.json({
+      status: "sent",
+      note: "No data received from printer after TPR (likely normal). Command sent."
+    });
+  }, 3000);
+
+  s.once("error", (err) => {
+    if (replied) return;
+    replied = true;
+    clearTimeout(timer);
+    cleanup();
+    return res.status(500).json({ status: "error", message: err.message });
+  });
+
+  s.connect(3001, "192.168.1.149", () => {
+    // Send CR + TPR
+    s.write("\rTPR\r");
+
+    // If printer does send data, reply immediately
+    s.once("data", (buf) => {
+      if (replied) return;
+      replied = true;
+      clearTimeout(timer);
+      cleanup();
+      return res.json({ status: "ok", response: buf.toString("utf8").trim() });
+    });
+  });
+});
+
+
+app.post("/printer/print-pouch", async (req, res) => {
+  try {
+    const { customer, productionDate } = req.body;
+    const { printPouch } = require("./source/printers/videojet6330");
+    const result = await printPouch({
+      host: "192.168.1.149",
+      port: 3003,
+      job: "Mehustaja",
+      customer,
+      productionDate,
+    });
+    res.json({ status: "ok", ...result });
+  } catch (err) {
+    console.error("print-pouch failed:", err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+app.get('/dashboard/summary', async (req, res) => {
+  try {
+    const data = await database.getDashboardSummary();
+    res.json(data);
+  } catch (err) {
+    console.error('summary error:', err);
+    res.status(500).json({ error: 'Failed to compute summary' });
+  }
+});
+
+app.get('/dashboard/activity', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const data = await database.getRecentActivity(limit);
+    res.json(data);
+  } catch (err) {
+    console.error('activity error:', err);
+    res.status(500).json({ error: 'Failed to fetch activity' });
+  }
+});
+
+
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
   console.log("server is listening at port 5001!!");

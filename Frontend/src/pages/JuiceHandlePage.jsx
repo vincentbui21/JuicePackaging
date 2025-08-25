@@ -9,7 +9,7 @@ import { io } from "socket.io-client";
 import generateSmallPngQRCode from '../services/qrcodGenerator';
 import DrawerComponent from "../components/drawer";
 
-// ✅ build socket URL from the same base as axios
+// build socket URL from the same base as axios
 const WS_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/').replace(/\/+$/,'');
 const socket = io(WS_URL);
 
@@ -38,20 +38,33 @@ function JuiceHandlePage() {
     }
   };
 
-  const printPouchLabels = (order) => {
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html><head><title>Print Pouch Info</title></head><body>
-      <h2>Pouch Info</h2>
-      <p><strong>Customer:</strong> ${order.name}</p>
-      <p><strong>Expiry:</strong> ${expiryDate.toISOString().split("T")[0]}</p>
-      </body></html>
-    `);
-    popup.document.close();
-    popup.print();
+  const printPouchLabels = async (order) => {
+    try {
+      // Build values for the label
+      const customer = order?.name || order?.customer_name || "Unknown";
+  
+      // dd/mm/yyyy (works fine since your job field is text)
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, "0");
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const yyyy = now.getFullYear();
+      const productionDate = `${dd}/${mm}/${yyyy}`;
+  
+      // Send to backend printer route
+      const { data } = await api.post("/printer/print-pouch", {
+        customer,
+        productionDate,
+      });
+  
+      console.log("Printer response:", data); 
+      setSnackbarMsg("Pouch print sent to Videojet");
+    } catch (err) {
+      console.error("Videojet print failed:", err);
+      setSnackbarMsg("Failed to print pouch (see console)");
+    }
   };
+  
+
 
   const generateQRCodes = async (order) => {
     const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);

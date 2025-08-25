@@ -10,12 +10,13 @@ function LoginPage() {
   const [roleError, setRoleError] = useState(false);
 
   const routes = {
-    1: "/customer-info-entry",
-    2: "/crate-handling",
-    3: "/juice-handle",
-    4: "/load-boxes-to-pallet",
-    5: "/load-pallet-to-shelf",
-    6: "/pickup",
+    1: "/dashboard",
+    2: "/customer-info-entry",
+    3: "/crate-handling",
+    4: "/juice-handle",
+    5: "/load-boxes-to-pallet",
+    6: "/load-pallet-to-shelf",
+    7: "/pickup",
   };
 
   const handleChangeRole = (e) => {
@@ -75,12 +76,13 @@ function LoginPage() {
           helperText={roleError ? "Please choose a role" : ""}
           sx={{ width: "60%" }}
         >
-          <MenuItem value="1">Customer Info Entry</MenuItem>
-          <MenuItem value="2">Crate Management</MenuItem>
-          <MenuItem value="3">Juice Processing</MenuItem>
-          <MenuItem value="4">Load Boxes to Pallet</MenuItem>
-          <MenuItem value="5">Load Pallet to Shelf</MenuItem>
-          <MenuItem value="6">Pickup Coordination</MenuItem>
+          <MenuItem value="1">Dashboard</MenuItem>
+          <MenuItem value="2">Customer Info Entry</MenuItem>
+          <MenuItem value="3">Crate Management</MenuItem>
+          <MenuItem value="4">Juice Processing</MenuItem>
+          <MenuItem value="5">Load Boxes to Pallet</MenuItem>
+          <MenuItem value="6">Load Pallet to Shelf</MenuItem>
+          <MenuItem value="7">Pickup Coordination</MenuItem>
         </TextField>
 
         <Button variant="contained" onClick={handleConfirm}>

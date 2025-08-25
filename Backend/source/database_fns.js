@@ -32,7 +32,7 @@ async function update_new_customer_data(customer_data, order_data) {
         `;
 
         const insertCrateData = `
-            INSERT INTO Crates (crate_id, customer_id, status, updated_at, crate_order)
+            INSERT INTO Crates (crate_id, customer_id, status, created_at, crate_order)
             VALUES (?, ?, ?, ?, ?)
         `
 
@@ -260,7 +260,7 @@ async function delete_customer(customer_id) {
 
 async function insertCratesForCustomer(connection, customer_id, crateCount, updatedAt) {
     const insertQuery = `
-        INSERT INTO Crates (crate_id, customer_id, status, updated_at, crate_order)
+        INSERT INTO Crates (crate_id, customer_id, status, created_at, crate_order)
         VALUES (?, ?, 'Created', ?, ?)
     `;
 
@@ -527,12 +527,18 @@ async function updatePalletCapacity(pallete_id, newCapacity) {
     }
 }
 async function markOrderAsReady(order_id) {
-    await pool.query(
-      `UPDATE Orders SET status = 'Ready for pickup' WHERE order_id = ?`,
-      [order_id]
-    );
-  }
-  
+  const [res] = await pool.query(
+    `
+    UPDATE Orders
+       SET status   = 'Ready for pickup',
+           ready_at = COALESCE(ready_at, NOW())
+     WHERE order_id = ?
+       AND (status IS NULL OR status <> 'Picked up')
+    `,
+    [order_id]
+  );
+  return res.affectedRows || 0;
+}
 
   async function markOrderAsDone(order_id, comment = "") {
     const conn = await pool.getConnection();
@@ -1236,7 +1242,7 @@ async function getBoxesOnPallet(pallet_id) {
 // Mark all orders that have boxes on a given pallet as 'Ready for pickup'.
 // Uses order_id derived from BOX_<order_uuid>[_n]; falls back to customer join if needed.
 async function markOrdersOnPalletReady(palletId) {
-  // Try to resolve order IDs from the box_id pattern
+  // 1) Extract order_ids from BOX_ pattern
   const [orderRows] = await pool.query(
     `
     SELECT DISTINCT SUBSTRING(b.box_id, 5, 36) AS order_id
@@ -1252,20 +1258,28 @@ async function markOrdersOnPalletReady(palletId) {
   if (ids.length) {
     const placeholders = ids.map(() => '?').join(', ');
     const [res] = await pool.query(
-      `UPDATE Orders SET status = 'Ready for pickup' WHERE order_id IN (${placeholders})`,
+      `
+      UPDATE Orders
+         SET status   = 'Ready for pickup',
+             ready_at = COALESCE(ready_at, NOW())
+       WHERE order_id IN (${placeholders})
+         AND (status IS NULL OR status <> 'Picked up')
+      `,
       ids
     );
     updatedByOrderId = res.affectedRows || 0;
   }
 
-  // If nothing matched the BOX_ pattern, fall back to "by customer" linkage
+  // 2) Fallback: link via customer_id if none matched the BOX_ pattern
   if (updatedByOrderId === 0) {
     const [res2] = await pool.query(
       `
       UPDATE Orders o
-      JOIN Boxes b ON b.customer_id = o.customer_id
-      SET o.status = 'Ready for pickup'
-      WHERE b.pallet_id = ?
+      JOIN Boxes  b ON b.customer_id = o.customer_id
+                   AND b.pallet_id   = ?
+         SET o.status   = 'Ready for pickup',
+             o.ready_at = COALESCE(o.ready_at, NOW())
+       WHERE (o.status IS NULL OR o.status <> 'Picked up')
       `,
       [palletId]
     );
@@ -1274,6 +1288,124 @@ async function markOrdersOnPalletReady(palletId) {
 
   return { updated: updatedByOrderId, orderIds: ids };
 }
+
+// helper unchanged
+function pctChange(today, yesterday) {
+  if (!yesterday || Number(yesterday) === 0) return today > 0 ? 100 : 0;
+  return Number((((Number(today) - Number(yesterday)) / Number(yesterday)) * 100).toFixed(1));
+}
+
+async function getDashboardSummary() {
+  // Today
+  const [[{ boxes_today }]] = await pool.query(
+    `SELECT COUNT(*) AS boxes_today FROM Boxes WHERE DATE(created_at) = CURDATE()`
+  );
+  const [[{ crates_today }]] = await pool.query(
+    `SELECT COUNT(*) AS crates_today FROM Crates WHERE DATE(created_at) = CURDATE()`
+  );
+  const [[{ customers_today }]] = await pool.query(
+    `SELECT COUNT(*) AS customers_today FROM Customers WHERE DATE(created_at) = CURDATE()`
+  );
+  const [[{ orders_new_today }]] = await pool.query(
+    `SELECT COUNT(*) AS orders_new_today FROM Orders WHERE DATE(created_at) = CURDATE()`
+  );
+
+  // Yesterday
+  const [[{ boxes_yesterday }]] = await pool.query(
+    `SELECT COUNT(*) AS boxes_yesterday FROM Boxes WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
+  );
+  const [[{ crates_yesterday }]] = await pool.query(
+    `SELECT COUNT(*) AS crates_yesterday FROM Crates WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
+  );
+  const [[{ customers_yesterday }]] = await pool.query(
+    `SELECT COUNT(*) AS customers_yesterday FROM Customers WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
+  );
+  const [[{ orders_new_yesterday }]] = await pool.query(
+    `SELECT COUNT(*) AS orders_new_yesterday FROM Orders WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
+  );
+
+  // Snapshots
+  const [[{ active_orders }]] = await pool.query(
+    `SELECT COUNT(*) AS active_orders
+       FROM Orders
+      WHERE status IS NULL OR status <> 'Picked up'`
+  );
+  const [[{ customers_served }]] = await pool.query(
+    `SELECT COUNT(*) AS customers_served FROM Customers`
+  );
+
+  // Uses ready_at if present, else updated_at, else created_at
+  const [[{ orders_fulfilled_today }]] = await pool.query(
+    `SELECT COUNT(*) AS orders_fulfilled_today
+       FROM Orders
+      WHERE status IN ('Ready for pickup','Picked up')
+        AND DATE(COALESCE(ready_at, created_at)) = CURDATE()`
+  );
+
+  // Metrics
+  const daily_production_liters   = Number(boxes_today || 0) * 8;
+  const daily_production_liters_y = Number(boxes_yesterday || 0) * 8;
+  const eff_today = crates_today    ? (Number(boxes_today || 0) / Number(crates_today)) * 100 : 0;
+  const eff_yday  = crates_yesterday? (Number(boxes_yesterday || 0) / Number(crates_yesterday)) * 100 : 0;
+
+  const changes = {
+    daily_production_pct:      pctChange(daily_production_liters, daily_production_liters_y),
+    active_orders_pct:         pctChange(Number(orders_new_today || 0), Number(orders_new_yesterday || 0)),
+    customers_served_pct:      pctChange(Number(customers_today || 0), Number(customers_yesterday || 0)),
+    processing_efficiency_pct: Number((eff_today - eff_yday).toFixed(1)),
+  };
+
+  return {
+    daily_production_liters,
+    active_orders: Number(active_orders || 0),
+    customers_served: Number(customers_served || 0),
+    processing_efficiency: Number(eff_today.toFixed(1)),
+    overview: {
+      juice_liters: daily_production_liters,
+      crates_processed: Number(crates_today || 0),
+      orders_fulfilled: Number(orders_fulfilled_today || 0), // ← tweaked
+    },
+    changes,
+  };
+}
+
+
+// ----- Recent activity for dashboard/notifications -----
+async function getRecentActivity(limit = 20) {
+  limit = Math.max(1, Math.min(100, Number(limit || 20)));
+  const [rows] = await pool.query(
+    `
+    SELECT * FROM (
+      -- new customer created
+      SELECT c.created_at AS ts,
+             CONCAT('New customer registered - ', c.name) AS message,
+             'customer' AS type
+        FROM Customers c
+
+      UNION ALL
+      -- processing completed (boxes created)
+      SELECT b.created_at AS ts,
+             CONCAT('Juice processing completed - ', cu.name) AS message,
+             'processing' AS type
+        FROM Boxes b
+        LEFT JOIN Customers cu ON b.customer_id = cu.customer_id
+
+      UNION ALL
+      -- pallet created
+      SELECT p.created_at AS ts,
+             CONCAT('Pallet created - ', IFNULL(p.location,'')) AS message,
+             'warehouse' AS type
+        FROM Pallets p
+    ) t
+    WHERE ts IS NOT NULL
+    ORDER BY ts DESC
+    LIMIT ?
+    `,
+    [limit]
+  );
+  return rows;
+}
+
 
 
 module.exports = {
@@ -1320,4 +1452,6 @@ module.exports = {
     updatePalletHolding,
     getBoxesOnPallet,
     markOrdersOnPalletReady,
+    getDashboardSummary,
+    getRecentActivity,
 }
