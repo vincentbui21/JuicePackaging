@@ -15,8 +15,9 @@ function CrateHandling() {
         weight_kg: "",
         crate_count: "",
         city: "",
-        order_id: ""
-    }
+        order_id: "",
+        customer_id: ""
+      };
 
     const [scanResult, setScanResult] = useState(null);
     const [customerInfo, setCustomerInfo] = useState(InitialCustomerInfo)
@@ -24,51 +25,55 @@ function CrateHandling() {
     const [scannedCratesID, setScannedCratesID] = useState([])
     const [disabledSubmitButton, setDisableSubmitButton] = useState(true)
     
-    useEffect(()=>{
-
+    useEffect(() => {
+        if (!scanResult) return;
+      
         const fetchDatFunction = async () => {
-            console.log(scanResult);
-            try{
-                const fetch_data = await api.get(`http://localhost:5001/crates/${scanResult}`)
-                return fetch_data.data;
-            }
-            catch(error){
-                console.log(error);
-            }
-        }
-
-        if((customerInfo.name == "" || customerInfo.crate_count=="") && scanResult !=null){
-            fetchDatFunction()
-            .then((data) => {
-                setCustomerInfo(data[0][0])
-                setFetchedCrateInfo(data[1])
-
-                setScannedCratesID(scannedCratesID => [...scannedCratesID, scanResult])
-            });
-        }
-
-        else{
-            const exist = FetchedcrateInfo.some(crate => crate.crate_id === scanResult)
-            const duplicate = scannedCratesID.some(crate => crate === scanResult)
-
-            if (exist && !duplicate){
-                setScannedCratesID(scannedCratesID => [...scannedCratesID, scanResult])
-
-            }
-            else{
-                console.log("no, not same group or duplicated");
-            }
-        }
-
+          try {
+            const res = await api.get(`http://localhost:5001/crates/${scanResult}`);
+            return res.data; 
+          } catch (error) {
+            console.log(error);
+            return null;
+          }
+        };
+      
+     
+        const needCustomer = !customerInfo?.name || !customerInfo?.crate_count;
+      
+        if (needCustomer) {
+          fetchDatFunction().then((data) => {
+            if (!data) return;
+      
+            const info = data?.[0]?.[0] || {};
+            const firstCrateRow = data?.[1]?.[0] || {};
+      
+           
+            const mergedInfo = {
+              ...info,
+              customer_id: info?.customer_id || firstCrateRow?.customer_id || ""
+            };
+      
+            setCustomerInfo(mergedInfo);
+            setFetchedCrateInfo(data?.[1] || []);
+            setScannedCratesID((prev) =>
+              prev.includes(scanResult) ? prev : [...prev, scanResult]
+            );
+          });
+        } else {
         
-
-    }, [scanResult])
-
-    useEffect(()=>{
-        if(scannedCratesID.length == parseInt(customerInfo.crate_count)){
-            setDisableSubmitButton(false)
+          setScannedCratesID((prev) =>
+            prev.includes(scanResult) ? prev : [...prev, scanResult]
+          );
         }
-    }, [scannedCratesID])
+    }, [scanResult]);
+
+      
+    useEffect(() => {
+        const can = scannedCratesID.length > 0 && Boolean(customerInfo.customer_id);
+        setDisableSubmitButton(!can);
+    }, [scannedCratesID.length, customerInfo.customer_id]);
+        
 
     const Delete_all_data = () => {
         setCustomerInfo(InitialCustomerInfo)
@@ -116,6 +121,12 @@ function CrateHandling() {
                     <Stack spacing={3} alignItems="center">
                         <QRScanner onResult={setScanResult} />
 
+                        {Boolean(customerInfo.order_id) && (
+                      <Typography variant="body2" color="text.secondary">
+                        Scanned <strong>{scannedCratesID.length}</strong> of{" "}
+                                <strong>{parseInt(customerInfo.crate_count || 0, 10)}</strong> crates
+                     </Typography>
+                        )}
                         <CustomerInfoCard customerInfo={customerInfo} />
 
                         <Stack spacing={2} alignItems="center" width="100%">

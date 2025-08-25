@@ -16,7 +16,7 @@ import {
   CardContent,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Edit, QrCode, Delete } from "@mui/icons-material";
+import { Edit, QrCode, Delete, Print} from "@mui/icons-material";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
@@ -87,6 +87,31 @@ function JuiceProcessingManagement() {
     }
   };
 
+  const printPouchLabels = async (order) => {
+    try {
+      const customer = order?.name || order?.customer_name || "Unknown";
+  
+      const now = new Date();
+      const exp = new Date(now);
+      exp.setFullYear(exp.getFullYear() + 1);
+      const dd = String(exp.getDate()).padStart(2, "0");
+      const mm = String(exp.getMonth() + 1).padStart(2, "0");
+      const yyyy = exp.getFullYear();
+      const expiryDate = `${dd}/${mm}/${yyyy}`;
+  
+      await api.post("/printer/print-pouch", {
+        customer,
+        productionDate: expiryDate, // keep legacy param name for server compatibility
+        expiryDate,
+      });
+  
+      setSnackbarMsg("Pouch print sent (Expiry +1 year)");
+    } catch (e) {
+      console.error("printPouchLabels failed", e);
+      setSnackbarMsg("Failed to print pouch");
+    }
+  };
+  
   const handleShowQR = async (order) => {
     try {
       const boxesToUse = Number(order.estimated_boxes) || 0;
@@ -179,21 +204,31 @@ function JuiceProcessingManagement() {
       field: "actions",
       headerName: "Actions",
       sortable: false,
-      flex: 1.2,
+      flex: 0,                 // don't let it shrink
+      minWidth: 280,           // room for 4 icons
+      disableColumnMenu: true,
       renderCell: (params) => (
         <Stack direction="row" spacing={1}>
-          <IconButton color="primary" onClick={() => openEditDialog(params.row)}>
+          <IconButton color="primary" onClick={() => openEditDialog(params.row)} size="small">
             <Edit fontSize="small" />
           </IconButton>
-          <IconButton color="secondary" onClick={() => handleShowQR(params.row)}>
+          <IconButton color="secondary" onClick={() => handleShowQR(params.row)} size="small">
             <QrCode fontSize="small" />
           </IconButton>
-          <IconButton color="error" onClick={() => handleDeleteOrder(params.row.order_id)}>
+          <IconButton
+            color="success"
+            onClick={() => printPouchLabels(params.row)}
+            title="Print Pouch Info"
+            size="small"
+          >
+            <Print fontSize="small" />
+          </IconButton>
+          <IconButton color="error" onClick={() => handleDeleteOrder(params.row.order_id)} size="small">
             <Delete fontSize="small" />
           </IconButton>
         </Stack>
       ),
-    },
+    }
   ];
 
   const filteredRows = orders.filter((o) =>
@@ -212,6 +247,7 @@ function JuiceProcessingManagement() {
           pb: 4,
           display: "flex",
           justifyContent: "center",
+          overflowX: "auto"
         }}
       >
         <Paper
@@ -239,21 +275,28 @@ function JuiceProcessingManagement() {
             sx={{ mb: 2, backgroundColor: "white", borderRadius: 1 }}
           />
 
-          <DataGrid
-            autoHeight
-            rows={filteredRows}
-            columns={columns}
-            getRowId={(row) => row.order_id}
-            pageSize={10}
-            rowsPerPageOptions={[10, 20, 50]}
-            sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
-          />
+        <DataGrid
+          autoHeight
+          rows={filteredRows}
+          columns={columns}
+          getRowId={(row) => row.order_id}
+          pageSize={10}
+          rowsPerPageOptions={[10, 20, 50]}
+          sx={{
+            backgroundColor: "white",
+            borderRadius: 2,
+            boxShadow: 3,
+            // ensure the Actions column doesn't clip last buttons on tight layouts
+            '& .MuiDataGrid-cell[data-field="actions"]': { overflow: "visible" },
+         }}
+        />
+
         </Paper>
       </Box>
 
       {/* QR sections */}
       {Object.entries(qrCodes).map(([orderId, data]) => (
-        <Box key={orderId} mt={2} p={2} component={Paper} sx={{ width: "min(1200px, 95%)", mx: "auto" }}>
+        <Box key={orderId} mt={2} p={2} component={Paper} sx={{ width: "min(1200px, 95%)", mx: "auto",overflowX: "auto" }}>
           <Typography variant="h6">QR Codes for Order: {orderId}</Typography>
           <Typography>Pouches: {data.pouches}</Typography>
           <Typography>Boxes: {data.boxes}</Typography>

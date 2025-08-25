@@ -1,17 +1,18 @@
 import { useMemo } from "react";
 import {
   Drawer, Toolbar, List, ListItemButton, ListItemIcon, ListItemText,
-  Box, Typography, Divider, Stack, IconButton, Avatar
+  Box, Typography, Divider, Stack, IconButton, Avatar, Tooltip
 } from "@mui/material";
 import {
   Home, Users, Package, Droplets, Boxes, Archive, MapPin,
   UserCog, Grid3X3, Layers, Plus, Bell, Settings, Apple as AppleIcon,
-  LogOut
+  ChevronLeft, ChevronRight, LogOut
 } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
-import companyLogo from "../assets/company_logo.png"; // make sure path matches your tree
+import companyLogo from "../assets/company_logo.png";
 
-const drawerWidth = 260;
+const EXPANDED_WIDTH = 260;
+const COLLAPSED_WIDTH = 72;
 
 const operations = [
   { label: "Dashboard", to: "/dashboard", icon: <Home size={18} /> },
@@ -36,127 +37,208 @@ const createNew = [
   { label: "Create Shelf", to: "/create-shelve", icon: <Plus size={18} /> },
 ];
 
-export default function AppSidebar() {
-  const { pathname } = useLocation();
+export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onToggleCollapsed }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const isActive = useMemo(() => (p) => pathname === p, [pathname]);
 
   const handleLogout = () => {
     try {
-      // clear anything your app might have stored
       localStorage.removeItem("token");
       localStorage.removeItem("role");
       sessionStorage.clear();
-    } catch (_) {}
-    navigate("/"); // back to LoginPage
+    } catch {}
+    navigate("/");
   };
+
+  const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
 
   const Section = ({ title, items }) => (
     <>
-      <Typography sx={{ px: 2, pt: 2, pb: 0.5, fontSize: 12, color: "text.secondary" }}>
-        {title}
-      </Typography>
-      <List dense sx={{ py: 0 }}>
-        {items.map((it) => (
-          <ListItemButton
-            key={it.label}
-            component={Link}
-            to={it.to}
-            selected={isActive(it.to)}
-            sx={{
-              mx: 1,
-              mb: 0.5,
-              borderRadius: 9999,
-              py: 1,
-              "&.Mui-selected": {
-                bgcolor: "rgba(46,125,50,0.12)",
-                color: "primary.main",
-                "& .MuiListItemIcon-root": { color: "primary.main" },
-              },
-              "&:hover": { bgcolor: "action.hover" },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 34, color: "text.secondary" }}>
-              {it.icon}
-            </ListItemIcon>
-            <ListItemText primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }} primary={it.label} />
-          </ListItemButton>
-        ))}
+      {!collapsed && (
+        <Typography sx={{ px: 2, pt: 2, pb: 0.5, fontSize: 12, color: "text.secondary" }}>
+          {title}
+        </Typography>
+      )}
+      <List dense sx={{ py: collapsed ? 0.5 : 0 }}>
+        {items.map((it) => {
+          const li = (
+            <ListItemButton
+              key={it.label}
+              component={Link}
+              to={it.to}
+              selected={isActive(it.to)}
+              sx={{
+                mx: collapsed ? 0.75 : 1,
+                mb: 0.5,
+                borderRadius: 9999,
+                py: 1,
+                justifyContent: collapsed ? "center" : "flex-start",
+                "&.Mui-selected": {
+                  bgcolor: "rgba(46,125,50,0.12)",
+                  color: "primary.main",
+                  "& .MuiListItemIcon-root": { color: "primary.main" },
+                },
+                "&:hover": { bgcolor: "action.hover" },
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  minWidth: 0,
+                  mr: collapsed ? 0 : 1.25,
+                  color: "text.secondary",
+                  justifyContent: "center",
+                }}
+              >
+                {it.icon}
+              </ListItemIcon>
+              {!collapsed && (
+                <ListItemText primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }} primary={it.label} />
+              )}
+            </ListItemButton>
+          );
+
+          return collapsed ? (
+            <Tooltip key={it.label} title={it.label} placement="right">
+              <span>{li}</span>
+            </Tooltip>
+          ) : (
+            li
+          );
+        })}
       </List>
     </>
   );
 
-  return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: drawerWidth,
-        flexShrink: 0,
-        "& .MuiDrawer-paper": {
-          width: drawerWidth,
-          boxSizing: "border-box",
-          borderRight: "1px solid",
-          borderColor: "divider",
-          backgroundColor: "#fafdf9",
-        },
-      }}
-    >
-      {/* make the inside a column so we can pin Logout at the bottom */}
-      <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <Toolbar sx={{ px: 2 }}>
-          <Stack direction="row" alignItems="center" spacing={1.25}>
-            <Avatar src={companyLogo} sx={{ width: 32, height: 32 }} />
-            <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
-              <AppleIcon size={18} color="#fff" />
-            </Avatar>
-            <Box>
-              <Typography variant="subtitle2" fontWeight={700}>Mehustaja</Typography>
-              <Typography variant="caption" color="text.secondary">Processing Dashboard</Typography>
+  // Shared drawer content
+  const DrawerContent = (
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <Toolbar sx={{ px: 1.25 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.25}
+          sx={{ width: "100%", minHeight: 48 }}
+        >
+          <Avatar
+            src={companyLogo}
+            sx={{ width: 32, height: 32, display: collapsed ? "none" : "inline-flex" }}
+          />
+          <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
+            <AppleIcon size={18} color="#fff" />
+          </Avatar>
+
+          {!collapsed && (
+            <Box sx={{ overflow: "hidden", whiteSpace: "nowrap" }}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Mehustaja
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Processing Dashboard
+              </Typography>
             </Box>
-          </Stack>
-          <Box sx={{ ml: "auto" }}>
-            <IconButton aria-label="notifications" size="small"><Bell size={16} /></IconButton>
-            <IconButton aria-label="settings" component={Link} to="/setting" size="small">
-              <Settings size={16} />
+          )}
+
+          <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.25 }}>
+            {!collapsed && (
+              <IconButton aria-label="notifications" size="small">
+                <Bell size={16} />
+              </IconButton>
+            )}
+            {!collapsed && (
+              <IconButton aria-label="settings" component={Link} to="/setting" size="small">
+                <Settings size={16} />
+              </IconButton>
+            )}
+            {/* Collapse/Expand toggle */}
+            <IconButton aria-label="collapse sidebar" size="small" onClick={onToggleCollapsed}>
+              {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </IconButton>
           </Box>
-        </Toolbar>
+        </Stack>
+      </Toolbar>
 
-        <Divider />
+      <Divider />
 
-        {/* main nav scrolls, takes leftover space */}
-        <Box sx={{ overflowY: "auto", pb: 1, flexGrow: 1 }}>
-          <Section title="Operations" items={operations} />
-          <Section title="Management" items={management} />
-          <Section title="Create New" items={createNew} />
-        </Box>
+      <Box sx={{ overflowY: "auto", pb: 1, flexGrow: 1 }}>
+        <Section title="Operations" items={operations} />
+        <Section title="Management" items={management} />
+        <Section title="Create New" items={createNew} />
+      </Box>
 
-        <Divider />
+      <Divider />
 
-        {/* pinned logout */}
-        <Box sx={{ p: 1.5 }}>
-          <ListItemButton
-            onClick={handleLogout}
-            sx={{
-              mx: 0.5,
-              borderRadius: 9999,
-              py: 1,
-              "&:hover": { bgcolor: "action.hover" },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 34, color: "error.main" }}>
-              <LogOut size={18} />
-            </ListItemIcon>
+      <Box sx={{ p: 1.5 }}>
+        <ListItemButton
+          onClick={handleLogout}
+          sx={{
+            mx: collapsed ? 0.75 : 0.5,
+            borderRadius: 9999,
+            py: 1,
+            justifyContent: collapsed ? "center" : "flex-start",
+            "&:hover": { bgcolor: "action.hover" },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 0, mr: collapsed ? 0 : 1.25, color: "error.main" }}>
+            <LogOut size={18} />
+          </ListItemIcon>
+          {!collapsed && (
             <ListItemText
               primary="Logout"
               primaryTypographyProps={{ fontSize: 14, fontWeight: 600, color: "error.main" }}
             />
-          </ListItemButton>
-        </Box>
+          )}
+        </ListItemButton>
       </Box>
-    </Drawer>
+    </Box>
+  );
+
+  return (
+    <>
+      {/* Mobile (temporary) */}
+      <Drawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={onClose}
+        ModalProps={{ keepMounted: true }}
+        sx={{
+          display: { xs: "block", md: "none" },
+          "& .MuiDrawer-paper": {
+            width: EXPANDED_WIDTH,
+            boxSizing: "border-box",
+            borderRight: "1px solid",
+            borderColor: "divider",
+            backgroundColor: "#fafdf9",
+          },
+        }}
+      >
+        {DrawerContent}
+      </Drawer>
+
+      {/* Desktop (permanent + collapsible) */}
+      <Drawer
+        variant="permanent"
+        sx={{
+          display: { xs: "none", md: "block" },
+          width,
+          flexShrink: 0,
+          "& .MuiDrawer-paper": {
+            width,
+            boxSizing: "border-box",
+            borderRight: "1px solid",
+            borderColor: "divider",
+            backgroundColor: "#fafdf9",
+            transition: "width 200ms ease",
+          },
+        }}
+        open
+      >
+        {DrawerContent}
+      </Drawer>
+    </>
   );
 }
+
 
 
 // This code defines the sidebar for the application, including sections for operations, management, and creating new items. 

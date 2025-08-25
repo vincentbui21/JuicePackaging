@@ -5,7 +5,6 @@ const { Server } = require('socket.io');
 const database = require('./source/database_fns');
 const uuid = require('./source/uuid');
 const { publishDirectSMS } = require('./utils/aws_sns');
-const { pool } = require('./source/database_fns');
 const fs = require('fs').promises;
 const path = require('path');
 const { printPouch } = require("./source/printers/videojet6330");
@@ -45,6 +44,77 @@ app.use(express.json());
 io.on('connection', (socket) => {
   console.log('New client connected');
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Location-specific pickup SMS templates
+// Usage: const smsText = buildPickupSMSText(locationString);
+// If location is unknown, returns a sensible default.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildPickupSMSText(locationRaw) {
+  const l = (locationRaw || "").trim().toLowerCase();
+
+  switch (l) {
+    case "lapinlahti":
+      return (
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne, Anjan Pihaputiikki, Lapinlahti\n" +
+        "puh. 044 073 3447\n" +
+        "Avoinna. Maanantai-Perjantai 09-17, Lauantai 09-13"
+      );
+
+    case "kuopio":
+      return (
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne Mehustajalla. " +
+        "Olemme avoinna Ma klo 8-17 ja Ti - Pe klo 9-17\n" +
+        "Ystävällisin terveisin, Mehustajat"
+      );
+
+    case "lahti":
+      return (
+        "Hei, mehunne ovat valmiina noudettavaksi Vihertalo Varpulasta\n" +
+        "Rajakatu 2, Lahti\n" +
+        "Olemme avoinna Ma-Pe klo 10-18  ja La 9-15\n" +
+        "Terveisin Mehustaja"
+      );
+
+    case "joensuu":
+      return (
+        "Hei, Mehunne ovat valmiina osoitteessa\n" +
+        "Joensuu Nuorisoverstas\n" +
+        "Tulliportinkatu 54\n" +
+        "Mehut voi noutaa Ti ja To 9-14\n" +
+        "puh: 050 4395406 Terveisin Mehustaja"
+      );
+
+    case "mikkeli":
+      return (
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa Nuorten Työpajat Mikkeli.\n" +
+        "Noutopiste on avoinna Ma 09.30-14.00, Ti 8-16, Ke 8-16, To 09.30-14.00\n" +
+        "Ystävällisin terveisin Mehustaja."
+      );
+
+    case "varkaus":
+      return (
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa XXX Varkaus, " +
+        "paikka on sama jonne omanat on jätetty.\n" +
+        "HUOM! Noutopiste on avoinna XXXXXX\n" +
+        "Ystävällisin terveisin, Mehustaja"
+      );
+
+    default:
+      // Generic fallback
+      return "Hei! Mehunne ovat valmiina noudettavaksi. Ystävällisin terveisin, Mehustaja";
+  }
+}
+
+// Small helper: try to pick a location string from known objects
+function resolveLocationForSMS({ shelf, customers, fallback }) {
+  // Priority: shelf.location → shelf.shelf_name → customer.city → fallback
+  if (shelf && shelf.location) return shelf.location;
+  if (shelf && shelf.shelf_name) return shelf.shelf_name;
+  const c = Array.isArray(customers) ? customers.find(x => x && x.city) : null;
+  if (c && c.city) return c.city;
+  return fallback || "";
+}
 
 // Simple test route
 app.get('/', (req, res) => {
@@ -405,6 +475,7 @@ app.post('/orders/:order_id/ready', async (req, res) => {
   });
   
 
+  // ─── Pallet → Shelf (mark orders ready; optionally SMS) ─────────────
   app.post('/pallets/assign-shelf', async (req, res) => {
     const { palletId, shelfId } = req.body || {};
     if (!palletId || !shelfId) {
@@ -415,38 +486,36 @@ app.post('/orders/:order_id/ready', async (req, res) => {
       // 1) Link pallet to shelf
       const assignResult = await database.assignPalletToShelf(palletId, shelfId);
   
-      // 2) Mark orders on that pallet as "Ready for pickup"
+      // 2) Mark orders ready
       let ready = { updated: 0, orderIds: [] };
       if (typeof database.markOrdersOnPalletReady === 'function') {
         ready = await database.markOrdersOnPalletReady(palletId);
       }
   
-      // 3) Notify customers by SMS (your existing logic)
+      // 3) SMS notify customers (location-specific)
       let customers = [];
       if (typeof database.getCustomersByPalletId === 'function') {
         customers = await database.getCustomersByPalletId(palletId);
       }
   
-      // build pickup location text (optional)
-      let placeText = 'the store';
+      // Get shelf to infer location text
+      let shelf = null;
       if (typeof database.getShelfById === 'function') {
-        try {
-          const shelf = await database.getShelfById(shelfId);
-          if (shelf) {
-            placeText = shelf.shelf_name
-              ? `${shelf.shelf_name}${shelf.location ? ` (${shelf.location})` : ''}`
-              : (shelf.location || placeText);
-          }
-        } catch (_) {}
+        try { shelf = await database.getShelfById(shelfId); } catch (_) {}
       }
   
+      const locationForSMS = resolveLocationForSMS({ shelf, customers, fallback: '' });
+      const smsText = buildPickupSMSText(locationForSMS);
+  
+      // Deduplicate phones
+      const uniquePhones = Array.from(
+        new Set(customers.map(c => (c && c.phone ? String(c.phone).trim() : '')).filter(Boolean))
+      );
+  
       const results = [];
-      for (const c of customers) {
-        const phone = (c && c.phone) ? String(c.phone) : '';
-        if (!phone) continue;
-        const msg = `Hi ${c.name || 'there'}, your order is ready for pickup at ${placeText}.`;
+      for (const phone of uniquePhones) {
         try {
-          const messageId = await publishDirectSMS(phone, msg);
+          const messageId = await publishDirectSMS(phone, smsText);
           results.push({ ok: true, phone, messageId });
         } catch (e) {
           results.push({ ok: false, phone, error: e.message });
@@ -476,7 +545,71 @@ app.post('/orders/:order_id/ready', async (req, res) => {
     }
   });
   
+
   
+// ─── Boxes → Shelf (Kuopio direct) (mark ready; optionally SMS) ─────
+app.post('/shelves/load-boxes', async (req, res) => {
+  const { shelfId, boxes } = req.body || {};
+  if (!shelfId || !Array.isArray(boxes) || boxes.length === 0) {
+    return res.status(400).json({ ok: false, error: 'shelfId and non-empty boxes[] are required' });
+  }
+
+  try {
+    // 1) Place boxes on shelf directly
+    const placed = await database.assignBoxesToShelf(shelfId, boxes);
+
+    // 2) Mark orders ready (based on those boxes)
+    const ready = await database.markOrdersFromBoxesReady(boxes);
+
+    // 3) SMS notify customers
+    const customers = await database.getCustomersByBoxIds(boxes);
+
+    // Resolve shelf and location
+    let shelf = null;
+    if (typeof database.getShelfById === 'function') {
+      try { shelf = await database.getShelfById(shelfId); } catch (_) {}
+    }
+    const locationForSMS = resolveLocationForSMS({ shelf, customers, fallback: '' });
+    const smsText = buildPickupSMSText(locationForSMS);
+
+    // De-dup & send
+    const smsResults = [];
+    const uniquePhones = Array.from(
+      new Set(customers.map(c => (c && c.phone ? String(c.phone).trim() : "")).filter(Boolean))
+    );
+
+    for (const phone of uniquePhones) {
+      try {
+        const messageId = await publishDirectSMS(phone, smsText);
+        smsResults.push({ ok: true, phone, messageId });
+      } catch (e) {
+        smsResults.push({ ok: false, phone, error: e.message });
+      }
+    }
+
+    // 4) Broadcast + activity
+    io.emit("order-status-updated");
+    io.emit("shelf-updated", { shelf_id: shelfId });
+
+    emitActivity('warehouse', `Loaded ${boxes.length} box(es) onto shelf ${shelfId}`, { shelf_id: shelfId });
+    if (ready.updated > 0) {
+      emitActivity('ready', `${ready.updated} order(s) ready for pickup`, { shelf_id: shelfId });
+    }
+
+    return res.json({
+      ok: true,
+      placed,
+      ready,
+      notified: smsResults.filter(r => r.ok).length,
+      sms: smsResults,
+    });
+  } catch (e) {
+    console.error('shelves/load-boxes failed:', e);
+    return res.status(500).json({ ok: false, error: 'shelves/load-boxes failed', details: e.message });
+  }
+});
+
+
   app.get("/pallets/:pallet_id/customers", async (req, res) => {
     try {
       const rows = await database.getCustomersByPalletId(req.params.pallet_id);
@@ -647,20 +780,21 @@ app.post("/printer/test-print", async (req, res) => {
 app.post("/printer/print-pouch", async (req, res) => {
   try {
     const { customer, productionDate } = req.body;
-    const { printPouch } = require("./source/printers/videojet6330");
     const result = await printPouch({
-      host: "192.168.1.149",
+      host: "192.168.1.139",
       port: 3003,
       job: "Mehustaja",
       customer,
       productionDate,
     });
+    console.log("Sent to printer:", result);
     res.json({ status: "ok", ...result });
   } catch (err) {
     console.error("print-pouch failed:", err);
     res.status(500).json({ status: "error", message: err.message });
   }
 });
+
 
 app.get('/dashboard/summary', async (req, res) => {
   try {
@@ -682,6 +816,41 @@ app.get('/dashboard/activity', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch activity' });
   }
 });
+
+// Manual SMS from Customer Management
+app.post('/customers/:customerId/notify', async (req, res) => {
+  const { customerId } = req.params;
+  const { phone, message, location } = req.body || {};
+
+  try {
+    let targetPhone = phone;
+    if (!targetPhone) {
+      // If not provided, try to fetch from DB
+      if (typeof database.getCustomerById === 'function') {
+        const c = await database.getCustomerById(customerId);
+        targetPhone = c?.phone || '';
+      }
+    }
+    if (!targetPhone) {
+      return res.status(400).json({ ok: false, error: 'No phone number found' });
+    }
+
+    // If caller didn’t send a message, build from location (or generic)
+    const smsText = message && String(message).trim().length
+      ? message
+      : buildPickupSMSText(location || '');
+
+    const messageId = await publishDirectSMS(targetPhone, smsText);
+    emitActivity('notify', `Manual SMS sent to ${customerId}`, { customer_id: customerId });
+
+    return res.json({ ok: true, messageId });
+  } catch (e) {
+    console.error('manual notify failed:', e);
+    return res.status(500).json({ ok: false, error: e.code || 'notify_failed', details: e.message });
+  }
+});
+
+
 
 
 // Start the HTTP server (not just Express)

@@ -108,3 +108,6 @@ ALTER TABLE Boxes   ADD INDEX idx_boxes_pallet_id (pallet_id),
 
 SHOW INDEX FROM `Orders`;
 SHOW INDEX FROM `Boxes`;
+
+ALTER TABLE Boxes
+  ADD INDEX idx_boxes_shelf_id (shelf_id);

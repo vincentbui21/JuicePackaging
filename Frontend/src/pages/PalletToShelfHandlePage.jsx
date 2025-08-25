@@ -1,216 +1,294 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Box,
-  Button,
-  Typography,
-  Snackbar,
-  Stack,
+  Container,
   Paper,
-  Grow,
+  Stack,
+  Typography,
+  Button,
+  Snackbar,
+  Alert,
 } from "@mui/material";
-import QRScanner from "../components/qrcamscanner";
-import api from "../services/axios";
 import DrawerComponent from "../components/drawer";
+import QRScanner from "../components/qrcamscanner";
+import CustomerInfoCard from "../components/customerinfoshowcard";
+import BoxInfoCard from "../components/boxinfocard";
+import api from "../services/axios";
+import SmsConfirmDialog from "../components/SmsConfirmDialog";
 
-function PalletToShelfHandlePage() {
+export default function PalletToShelfHandlePage() {
+  const InitialOrderInfo = {
+    order_id: "",
+    name: "",
+    city: "",
+    boxes_count: 0,
+  };
+
   const [scanResult, setScanResult] = useState(null);
-  const [expectedPalletIDs, setExpectedPalletIDs] = useState([]);
-  const [scannedPalletIDs, setScannedPalletIDs] = useState([]);
-  const [shelfId, setShelfId] = useState(null);
-  const [snackbarMsg, setSnackbarMsg] = useState("");
-  const [scanMode, setScanMode] = useState("pallet"); // "pallet" | "shelf"
 
-  // Handle an incoming scan result
+  // Context we show (optional, but nice when available)
+  const [orderInfo, setOrderInfo] = useState(InitialOrderInfo);
+  const [fetchedBoxList, setFetchedBoxList] = useState([]);
+
+  // What we actually need to submit
+  const [palletId, setPalletId] = useState("");
+  const [shelfId, setShelfId] = useState("");
+
+  // Extra – you can scan boxes here too if you want progress UI,
+  // but they are NOT required to submit.
+  const [scannedBoxes, setScannedBoxes] = useState([]);
+
+  const [snackbarMsg, setSnackbarMsg] = useState("");
+
+  // SMS confirmation dialog state
+  const [smsOpen, setSmsOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null); // function to call after choice
+
+  // Try to enrich page with order context based on PALLET id (optional)
+  async function tryFetchOrderContextForPallet(id) {
+    // All of this is best-effort; if your backend doesn’t have these
+    // endpoints yet, it will silently fail and the page still works.
+    const tryEndpoints = [
+      `/pallets/${encodeURIComponent(id)}/order-context`,
+      `/pallets/${encodeURIComponent(id)}/orders`,
+      `/pallets/${encodeURIComponent(id)}/boxes`,
+    ];
+    for (const url of tryEndpoints) {
+      try {
+        const res = await api.get(url);
+        const d = res?.data || {};
+        // normalize a few common shapes
+        const boxes =
+          Array.isArray(d.boxes)
+            ? d.boxes
+            : Array.isArray(d.items)
+            ? d.items
+            : [];
+        const boxes_count =
+          typeof d.boxes_count === "number"
+            ? d.boxes_count
+            : boxes.length || 0;
+
+        const name = d.name || d.customer_name || "";
+        const city = d.city || d.location || "";
+        const order_id = d.order_id || d.orderId || "";
+
+        setOrderInfo({ order_id, name, city, boxes_count });
+        setFetchedBoxList(boxes);
+        return; // success – stop trying further endpoints
+      } catch {
+        // ignore and try next
+      }
+    }
+  }
+
+  // Handle scanner results
   useEffect(() => {
     if (!scanResult) return;
 
     const raw = String(scanResult).trim();
+    const upper = raw.toUpperCase();
+    const uuidMatch = raw.match(/[0-9a-fA-F-]{36}/);
+    const uuid = uuidMatch ? uuidMatch[0] : null;
 
-    if (scanMode === "pallet") {
-      if (!raw.startsWith("PALLET_")) {
-        setSnackbarMsg("Invalid QR: please scan a Pallet (PALLET_...)");
-      } else {
-        const palletId = raw; // keep the full "PALLET_xxx"
-        if (!expectedPalletIDs.includes(palletId)) {
-          setScannedPalletIDs((prev) => [...prev, palletId]);
-          setExpectedPalletIDs((prev) => [...prev, palletId]);
+    // PALLET (supports "PALLET_xxx" or a bare UUID)
+    if (upper.startsWith("PALLET") || (!!uuid && !raw.includes("_"))) {
+      const id = upper.startsWith("PALLET")
+        ? raw.replace(/^PALLET[\s_:\-]*/i, "").trim()
+        : uuid;
+
+      if (id) {
+        setPalletId(id);
+        setSnackbarMsg("Pallet linked");
+        // Best-effort fetch of context (optional)
+        if (!orderInfo.order_id) {
+          tryFetchOrderContextForPallet(id);
         }
-        setScanMode("shelf");
-        setSnackbarMsg("Pallet scanned. Now scan the shelf.");
       }
-    } else if (scanMode === "shelf") {
-      if (!raw.startsWith("SHELF_")) {
-        setSnackbarMsg("Invalid QR: please scan a Shelf (SHELF_...)");
-      } else {
-        const shelf_id = raw.replace("SHELF_", "");
-        setShelfId(shelf_id);
-        setSnackbarMsg("Shelf scanned. Ready to assign.");
-      }
-    }
-
-    setScanResult(null);
-  }, [scanResult, scanMode, expectedPalletIDs]);
-
-  const handleSubmit = async () => {
-    if (!shelfId || scannedPalletIDs.length === 0) {
-      setSnackbarMsg("Scan a pallet and a shelf first.");
       return;
     }
 
+    // SHELF
+    if (upper.startsWith("SHELF")) {
+      const id = raw.replace(/^SHELF[\s_:\-]*/i, "").trim();
+      if (id) {
+        setShelfId(id);
+        setSnackbarMsg("Shelf linked");
+      }
+      return;
+    }
+
+    // BOX – optional here, but if scanned we’ll show order summary/progress
+    if (upper.startsWith("BOX")) {
+      const parts = raw.split("_");
+      // Accept formats like "BOX_<orderId>_<n>" or "BOX <orderId> <n>"
+      const normalizedParts = parts.length >= 3 ? parts : raw.replace(/\s+/g, "_").split("_");
+      if (normalizedParts.length >= 3) {
+        const order_id = normalizedParts[1];
+        if (order_id && !orderInfo.order_id) {
+          api
+            .get(`/orders/${order_id}/boxes`)
+            .then((res) => {
+              const data = res?.data || {};
+              setOrderInfo({
+                order_id,
+                name: data.name || "",
+                city: data.city || "",
+                boxes_count:
+                  data.boxes_count ||
+                  (Array.isArray(data.boxes) ? data.boxes.length : 0) ||
+                  0,
+              });
+              setFetchedBoxList(Array.isArray(data.boxes) ? data.boxes : []);
+            })
+            .catch(() => setSnackbarMsg("Failed to fetch order/boxes"));
+        }
+      }
+      setScannedBoxes((prev) => (prev.includes(raw) ? prev : [...prev, raw]));
+      return;
+    }
+
+    setSnackbarMsg("Unrecognized QR");
+  }, [scanResult]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ✅ Enable submit as soon as we have pallet + shelf (no box scan required)
+  const canSubmit = useMemo(() => {
+    return Boolean(palletId) && Boolean(shelfId);
+  }, [palletId, shelfId]);
+
+  const handleOpenConfirm = () => {
+    setPendingAction(() => submitWithFlag);
+    setSmsOpen(true);
+  };
+
+  const handleSmsChoice = async (sendNow) => {
+    setSmsOpen(false);
+    if (pendingAction) {
+      await pendingAction(sendNow);
+    }
+  };
+
+  const submitWithFlag = async (sendSms) => {
     try {
-      await api.post(`/pallets/assign-shelf`, {
+      await api.post("/pallets/assign-shelf", {
+        palletId,
         shelfId,
-        palletId: scannedPalletIDs[0].replace("PALLET_", ""), // assign first scanned
+        sendSms, // backend will respect or ignore depending on your implementation
       });
 
-      setSnackbarMsg(`Pallet assigned to shelf successfully.`);
-      handleCancel(); // reset
+      // Reset UI
+      setPalletId("");
+      setShelfId("");
+      setOrderInfo(InitialOrderInfo);
+      setFetchedBoxList([]);
+      setScannedBoxes([]);
+      setSnackbarMsg(
+        sendSms ? "Assigned & SMS sent (if available)" : "Assigned (SMS skipped)"
+      );
     } catch (err) {
       console.error(err);
-      setSnackbarMsg("Failed to complete shelf assignment.");
+      setSnackbarMsg("Submit failed. See console for details.");
     }
   };
 
   const handleCancel = () => {
-    setScanResult(null);
-    setExpectedPalletIDs([]);
-    setScannedPalletIDs([]);
-    setShelfId(null);
-    setScanMode("pallet");
+    setOrderInfo(InitialOrderInfo);
+    setFetchedBoxList([]);
+    setScannedBoxes([]);
+    setPalletId("");
+    setShelfId("");
   };
+
+  const scannedCount = scannedBoxes.length;
+  const expectedCount = Number(orderInfo.boxes_count || 0);
 
   return (
     <>
       <DrawerComponent />
 
-      <Box
-        sx={{
-          backgroundColor: "#ffffff",
-          minHeight: "90vh",
-          py: 4,
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
+      <Container maxWidth="md" sx={{ py: 4, height: "95vh" }}>
         <Paper
           elevation={3}
           sx={{
-            width: "min(900px, 95%)",
-            p: 3,
-            backgroundColor: "#ffffff",
+            p: 4,
             borderRadius: 2,
-            textAlign: "center",
+            display: "flex",
+            height: "100%",
+            flexDirection: "column",
           }}
         >
-          <Typography variant="h4" sx={{ fontWeight: "bold", mb: 2 }}>
-            Pallet → Shelf Loading Station
+          <Typography
+            variant="h4"
+            sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
+          >
+            Pallet → Shelf Handling
           </Typography>
 
-          <Stack spacing={3} alignItems="center" mt={2}>
-            {/* STRICTLY positioning changes start */}
-            <Box
-              sx={{
-                width: "100%",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Box
-                sx={{
-                  border: "3px solid",
-                  borderColor:
-                    scanMode === "pallet" ? "primary.main" : "success.main",
-                  borderRadius: 2,
-                  p: 2,
-                  width: "100%",
-                  maxWidth: 520,
-                  backgroundColor: "rgba(255, 255, 255, 0.85)",
-                  mx: "auto",
-                }}
+          <Stack spacing={3} alignItems="center">
+            <QRScanner onResult={setScanResult} />
+
+            {/* Order summary – shown when we have it (from box scan or optional pallet summary) */}
+            <CustomerInfoCard customerInfo={orderInfo} countLabel="Box Count" />
+
+            {/* Progress card (needs pallet id to display the frame; order fields fill if available) */}
+            {(palletId || orderInfo.order_id) && (
+              <BoxInfoCard
+                palletId={palletId}
+                orderId={orderInfo.order_id}
+                customerName={orderInfo.name}
+                city={orderInfo.city}
+                expected={expectedCount}
+                scanned={scannedCount}
+              />
+            )}
+
+            {/* Show chosen shelf */}
+            {shelfId && (
+              <Typography variant="body2" color="text.secondary">
+                Shelf: <strong>{shelfId}</strong>
+              </Typography>
+            )}
+
+            <Stack direction="row" spacing={2}>
+              <Button variant="outlined" onClick={handleCancel}>
+                Clear
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleOpenConfirm}
+                disabled={!canSubmit}
               >
-                <Typography variant="h6" mb={1} textAlign="center">
-                  {scanMode === "pallet"
-                    ? "Scan Pallet QR Code"
-                    : "Scan Shelf QR Code"}
-                </Typography>
-
-                {/* This wrapper centers whatever the QRScanner renders (video/canvas/div) */}
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "center",
-                    "& video, & canvas, & > *": {
-                      display: "block",
-                      margin: "0 auto",
-                    },
-                  }}
-                >
-                  <QRScanner onResult={setScanResult} />
-                </Box>
-              </Box>
-            </Box>
-            {/* STRICTLY positioning changes end */}
-
-            <Grow in={!!(scannedPalletIDs.length || shelfId)}>
-              <Paper
-                elevation={2}
-                sx={{
-                  p: 2,
-                  maxWidth: 500,
-                  backgroundColor: "rgba(255,255,255,0.95)",
-                }}
-              >
-                <Typography variant="body1">
-                  Scanned Pallets: {scannedPalletIDs.length}
-                </Typography>
-
-                <Stack spacing={1} mt={2}>
-                  {scannedPalletIDs.map((id, idx) => (
-                    <Paper
-                      key={id}
-                      elevation={0}
-                      sx={{ p: 1, border: "1px solid #eee" }}
-                    >
-                      <Typography variant="body2">
-                        Pallet {idx + 1}: {id}
-                      </Typography>
-                    </Paper>
-                  ))}
-                </Stack>
-
-                {shelfId && (
-                  <Typography variant="subtitle1" mt={2}>
-                    Shelf ID: {shelfId}
-                  </Typography>
-                )}
-              </Paper>
-            </Grow>
-
-            <Stack direction="row" spacing={2} mt={1}>
-              {scannedPalletIDs.length > 0 && (
-                <Button variant="outlined" color="error" onClick={handleCancel}>
-                  Cancel
-                </Button>
-              )}
-              {scannedPalletIDs.length > 0 && shelfId && (
-                <Button variant="contained" color="success" onClick={handleSubmit}>
-                  Submit
-                </Button>
-              )}
+                Assign to Shelf
+              </Button>
             </Stack>
+
+            {!canSubmit && (
+              <Typography variant="caption" color="text.secondary">
+                Tip: scan a <strong>PALLET</strong> and a <strong>SHELF</strong> to enable the
+                button. Scanning a <strong>BOX</strong> is optional (only for showing order details).
+              </Typography>
+            )}
           </Stack>
         </Paper>
-      </Box>
+      </Container>
 
       <Snackbar
-        open={!!snackbarMsg}
+        open={Boolean(snackbarMsg)}
         autoHideDuration={3000}
         onClose={() => setSnackbarMsg("")}
-        message={snackbarMsg}
+      >
+        <Alert severity="info" onClose={() => setSnackbarMsg("")}>
+          {snackbarMsg}
+        </Alert>
+      </Snackbar>
+
+      <SmsConfirmDialog
+        open={smsOpen}
+        onClose={() => setSmsOpen(false)}
+        onChoice={handleSmsChoice}
+        title="Send pickup SMS now?"
+        message="If you choose 'Yes', customers will be notified immediately that their order is ready."
       />
     </>
   );
 }
-
-export default PalletToShelfHandlePage;

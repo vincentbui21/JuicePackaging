@@ -15,7 +15,7 @@ import DrawerComponent from "../components/drawer";
 import CustomerInfoCard from "../components/customerinfoshowcard";
 import BoxInfoCard from "../components/boxinfocard";
 
-// Tiny, inline Box chip UI (index + id)
+// Small chip showing each scanned box id
 function BoxChip({ index, id }) {
   return (
     <Chip
@@ -35,36 +35,42 @@ const InitialOrderInfo = {
   customer_id: "",
 };
 
-function BoxToPalletLoadingPage() {
+export default function BoxToPalletLoadingPage() {
   const [scanResult, setScanResult] = useState(null);
 
-  // order/customer summary (set after first BOX scan)
+  // Basic order summary (locked by first scanned box)
   const [orderInfo, setOrderInfo] = useState(InitialOrderInfo);
 
-  // the pallet to load onto (single pallet per session)
-  const [palletId, setPalletId] = useState(null);
+  // Container targets
+  const [palletId, setPalletId] = useState(null); // normal flow
+  const [shelfId, setShelfId] = useState(null); // Kuopio flow
 
-  // full canonical ids "BOX_<orderUUID>[_<n>]" that belong to this order
-  const [fetchedBoxList, setFetchedBoxList] = useState([]); // [{box_id}, ...]
-  const [scannedBoxes, setScannedBoxes] = useState([]); // ["BOX_<uuid>_<n>", ...]
+  // Canonical list of boxes that belong to this order (from backend)
+  const [fetchedBoxList, setFetchedBoxList] = useState([]); // [{ box_id }, ...]
+  // Boxes scanned in this session (strings like "BOX_<uuid>[_n]")
+  const [scannedBoxes, setScannedBoxes] = useState([]);
 
   const [snackbarMsg, setSnackbarMsg] = useState("");
-  const [submitDisabled, setSubmitDisabled] = useState(true);
 
-  // ====== helpers ======
-  // Normalize to "BOX_<uuid>" or "BOX_<uuid>_<n>"
+  // ──────────────────────────────────────────────────────────────
+  // Derived flags / helpers
+  const isKuopio = useMemo(
+    () => (orderInfo?.city || "").toString().trim().toLowerCase() === "kuopio",
+    [orderInfo?.city]
+  );
+
+  // Normalize inputs like "BOX 123..." → "BOX_<uuid>[_n]"
   const normalizeBoxCode = (raw) => {
     const s = String(raw || "").trim();
     const m = s.match(/([0-9a-fA-F-]{36})(?:_(\d+))?/);
     if (m) return `BOX_${m[1]}${m[2] ? `_${m[2]}` : ""}`;
     if (/^BOX[\s:\-_]/i.test(s)) {
       const t = s.replace(/^BOX[\s:\-_]*/i, "BOX_");
-      return t.replace(/^BOX__/, "BOX_"); // collapse accidental "BOX__"
+      return t.replace(/^BOX__/, "BOX_");
     }
     return s.startsWith("BOX_") ? s : s;
   };
 
-  // Accept with/without suffix
   const extractOrderId = (boxId) => {
     const m = String(boxId).match(/BOX_([0-9a-fA-F-]{36})(?:_\d+)?/);
     return m ? m[1] : null;
@@ -72,10 +78,10 @@ function BoxToPalletLoadingPage() {
 
   const extractSuffix = (boxId) => {
     const m = String(boxId).match(/BOX_[0-9a-fA-F-]{36}_(\d+)/);
-    return m ? m[1] : null; // may be null for "BOX_<uuid>"
+    return m ? m[1] : null;
   };
 
-  // Base compare: treat BOX_<uuid> and BOX_<uuid>_2 as the same family
+  // baseOf("BOX_<uuid>_2") → "BOX_<uuid>"
   const baseOf = (id) => {
     const m = String(id).match(/^(BOX_[0-9a-fA-F-]{36})/i);
     return m ? m[1] : id;
@@ -83,7 +89,8 @@ function BoxToPalletLoadingPage() {
   const belongsToFetchedOrder = (boxId) =>
     fetchedBoxList.some((b) => baseOf(b.box_id) === baseOf(boxId));
 
-  // ====== first-class effect: react to each scan like CrateHandling ======
+  // ──────────────────────────────────────────────────────────────
+  // Handle every scanned QR
   useEffect(() => {
     if (!scanResult) return;
 
@@ -92,7 +99,17 @@ function BoxToPalletLoadingPage() {
     const uuidMatch = raw.match(/[0-9a-fA-F-]{36}/);
     const uuid = uuidMatch ? uuidMatch[0] : null;
 
-    // ---- Pallet detection (one pallet for the session) ----
+    // SHELF: used only in Kuopio direct flow
+    if (/^SHELF[\s_:\-]/i.test(raw) || upper.startsWith("SHELF")) {
+      const id = uuid || raw.replace(/^SHELF[\s_:\-]*/i, "").trim();
+      if (id) {
+        setShelfId(id);
+        setSnackbarMsg("Shelf scanned.");
+        return;
+      }
+    }
+
+    // PALLET: used in normal flow
     if (/^PALLET[\s_:\-]/i.test(raw) || upper.startsWith("PALLET")) {
       const id = uuid || raw.replace(/^PALLET[\s_:\-]*/i, "").trim();
       if (id) {
@@ -101,20 +118,20 @@ function BoxToPalletLoadingPage() {
         return;
       }
     }
-    // bare UUID (not "<uuid>_<n>") and no pallet yet -> treat as pallet
+    // Support legacy “bare UUID” as pallet if none selected yet
     if (!palletId && uuid && !/[0-9a-fA-F-]{36}_\d+/.test(raw)) {
       setPalletId(uuid);
       setSnackbarMsg("Pallet scanned.");
       return;
     }
 
-    // ---- Box detection ----
+    // BOX: "BOX_xxx", "...<uuid>_n", etc.
     if (
       /^BOX[\s_:\-]/i.test(raw) ||
       upper.startsWith("BOX") ||
       /[0-9a-fA-F-]{36}_\d+/.test(raw) ||
       /_[0-9a-fA-F-]{36}_\d+/.test(raw) ||
-      /[0-9a-fA-F-]{36}$/.test(raw) // allow pure uuid if your camera returns that
+      /[0-9a-fA-F-]{36}$/.test(raw)
     ) {
       const normalized = normalizeBoxCode(raw);
       const orderId = extractOrderId(normalized);
@@ -124,20 +141,21 @@ function BoxToPalletLoadingPage() {
       }
 
       const processScan = () => {
-        // enforce same order
+        // Keep a single order locked for the session
         if (orderInfo.order_id && orderInfo.order_id !== orderId) {
-          setSnackbarMsg("This box belongs to a different order. Finish current order first.");
+          setSnackbarMsg(
+            "This box belongs to a different order. Finish current order first."
+          );
           return;
         }
 
-        // must be one of the known boxes for this order (prevents cross-order scans)
-        // Only enforce if backend returned any rows
+        // If backend sent a canonical list, validate membership
         if (fetchedBoxList.length > 0 && !belongsToFetchedOrder(normalized)) {
           setSnackbarMsg("This box does not belong to the current order.");
           return;
         }
 
-        // prevent same suffix twice for this order
+        // Prevent scanning the same suffix twice for this order
         const suffix = extractSuffix(normalized);
         if (suffix) {
           const suffixAlready = scannedBoxes.some(
@@ -149,7 +167,7 @@ function BoxToPalletLoadingPage() {
           }
         }
 
-        // final dedupe by exact id
+        // Final dedupe by exact id
         if (scannedBoxes.includes(normalized)) {
           setSnackbarMsg("Box already scanned.");
           return;
@@ -159,7 +177,7 @@ function BoxToPalletLoadingPage() {
         setSnackbarMsg("Box scanned.");
       };
 
-      // If first box for this flow: fetch order & its boxes, then add this scan
+      // First box → fetch order + canonical box list, then accept the scan
       if (!orderInfo.order_id) {
         api
           .get(`/boxes/scan-info/${encodeURIComponent(normalized)}`)
@@ -171,7 +189,7 @@ function BoxToPalletLoadingPage() {
               return;
             }
 
-            // also fetch authoritative expected to avoid stale zeros
+            // authoritative expected count
             let expected = Number(info.boxes_count || 0);
             try {
               const expRes = await api.get(
@@ -179,21 +197,21 @@ function BoxToPalletLoadingPage() {
               );
               expected = Number(expRes?.data?.expected ?? expected);
             } catch {
-              // ignore; we'll use info.boxes_count
+              /* ignore; use info.boxes_count */
             }
 
             setOrderInfo({
               name: info.name || "",
               created_at: info.created_at || "",
               weight_kg: info.weight_kg || "",
-              boxes_count: expected, // keep numeric
+              boxes_count: expected,
               city: info.city || "",
               order_id: info.order_id,
               customer_id: info.customer_id,
             });
+            setFetchedBoxList(list);
 
-            setFetchedBoxList(list); // [{box_id}, ...]
-            // after we have the list, process the scanned box
+            // process this very scan after we’ve set state
             setTimeout(processScan, 0);
           })
           .catch((e) => {
@@ -201,44 +219,52 @@ function BoxToPalletLoadingPage() {
             setSnackbarMsg("Failed to fetch order info for this box.");
           });
       } else {
-        // already locked to order -> just process
         processScan();
       }
+
       return;
     }
 
     setSnackbarMsg("Unrecognized QR");
   }, [scanResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // enable submit when: have pallet, have order, expected > 0, and scanned == expected
-  useEffect(() => {
-    const expected = Number(orderInfo.boxes_count || 0);
-    const can =
-      Boolean(palletId) &&
-      Boolean(orderInfo.order_id) &&
-      expected > 0 &&
-      scannedBoxes.length === expected;
-    setSubmitDisabled(!can);
-  }, [palletId, orderInfo, scannedBoxes]);
+  // ──────────────────────────────────────────────────────────────
+  // Submit enablement:
+  // We only require: an order, at least ONE scanned box, and
+  //   Kuopio → a shelf
+  //   others → a pallet
+  const canSubmit = useMemo(() => {
+    if (!orderInfo.order_id) return false;
+    if (scannedBoxes.length < 1) return false;
+    return isKuopio ? Boolean(shelfId) : Boolean(palletId);
+  }, [orderInfo.order_id, scannedBoxes.length, isKuopio, shelfId, palletId]);
 
   const handleSubmit = async () => {
-    if (submitDisabled) return;
     try {
-      // load ONLY the scanned boxes (they’re already canonical IDs)
-      const res = await api.post(
-        `/pallets/${encodeURIComponent(palletId)}/load-boxes`,
-        { boxes: scannedBoxes }
-      );
-      setSnackbarMsg(
-        res?.data?.message || `Loaded ${scannedBoxes.length} boxes onto pallet.`
-      );
-    } catch (e) {
-      console.error(e);
-      setSnackbarMsg("Failed to load boxes.");
-      return;
+      if (isKuopio) {
+        // Direct to shelf (Kuopio)
+        await api.post("/shelves/load-boxes", {
+          shelfId,
+          boxes: scannedBoxes,
+        });
+      } else {
+        // Normal pallet flow
+        await api.post(`/pallets/${palletId}/load-boxes`, {
+          boxes: scannedBoxes,
+        });
+      }
+
+      // Reset UI
+      setScannedBoxes([]);
+      setShelfId(null);
+      setPalletId(null);
+      setOrderInfo(InitialOrderInfo);
+      setFetchedBoxList([]);
+      setSnackbarMsg("Submitted successfully.");
+    } catch (err) {
+      console.error(err);
+      setSnackbarMsg("Submit failed. See console for details.");
     }
-    // reset after successful submit
-    handleCancel();
   };
 
   const handleCancel = () => {
@@ -246,14 +272,11 @@ function BoxToPalletLoadingPage() {
     setFetchedBoxList([]);
     setScannedBoxes([]);
     setPalletId(null);
-    setSubmitDisabled(true);
+    setShelfId(null);
   };
 
   const scannedCount = scannedBoxes.length;
   const expectedCount = Number(orderInfo.boxes_count || 0);
-
-  // for display: dedup + order
-  const scannedList = useMemo(() => scannedBoxes, [scannedBoxes]);
 
   return (
     <>
@@ -274,19 +297,20 @@ function BoxToPalletLoadingPage() {
             variant="h4"
             sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
           >
-            Box → Pallet Handling
+            {isKuopio ? "Box → Shelf Handling (Kuopio)" : "Box → Pallet Handling"}
           </Typography>
 
           <Stack spacing={3} alignItems="center">
+            {/* One scanner – the effect decides what was scanned */}
             <QRScanner onResult={setScanResult} />
 
-            {/* Order/customer summary (from first box) */}
+            {/* Order/customer summary (from the first box) */}
             <CustomerInfoCard customerInfo={orderInfo} countLabel="Box Count" />
 
-            {/* Pallet + progress -> BoxInfoCard */}
-            {(palletId || orderInfo.order_id) && (
+            {/* Pallet/Shelf + progress */}
+            {(palletId || shelfId || orderInfo.order_id) && (
               <BoxInfoCard
-                palletId={palletId}
+                palletId={isKuopio ? null : palletId}
                 orderId={orderInfo.order_id}
                 customerName={orderInfo.name}
                 city={orderInfo.city}
@@ -295,25 +319,43 @@ function BoxToPalletLoadingPage() {
               />
             )}
 
+            {/* Show Shelf explicitly for Kuopio */}
+            {isKuopio && shelfId && (
+              <Typography variant="body2" color="text.secondary">
+                Shelf: <strong>{shelfId}</strong>
+              </Typography>
+            )}
+
+            {(orderInfo.order_id || expectedCount > 0) && (
+              <Typography variant="body2" color="text.secondary">
+                Scanned <strong>{scannedCount}</strong> of{" "}
+                <strong>{expectedCount || 0}</strong> boxes&nbsp;·&nbsp;
+                {Math.max((expectedCount || 0) - scannedCount, 0)} to go
+              </Typography>
+            )}
+
             {/* Scanned box chips */}
             <Stack spacing={1} alignItems="stretch" width="100%">
-              {scannedList.map((id, idx) => (
+              {scannedBoxes.map((id, idx) => (
                 <BoxChip key={id} index={idx + 1} id={id} />
               ))}
             </Stack>
 
-            {/* Actions (like CrateHandling) */}
+            {/* Actions */}
             <Stack spacing={2} direction="row">
               {scannedBoxes.length > 0 && (
                 <Button color="error" variant="contained" onClick={handleCancel}>
                   Cancel
                 </Button>
               )}
-              {!submitDisabled && (
+
+              {/* Show the button as soon as we have at least one box; enable only when canSubmit */}
+              {scannedBoxes.length > 0 && (
                 <Button
                   color="success"
                   variant="contained"
                   onClick={handleSubmit}
+                  disabled={!canSubmit}
                   sx={{
                     backgroundColor: "#d6d0b1",
                     color: "black",
@@ -337,5 +379,3 @@ function BoxToPalletLoadingPage() {
     </>
   );
 }
-
-export default BoxToPalletLoadingPage;

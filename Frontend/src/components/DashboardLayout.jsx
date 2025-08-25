@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Toolbar, AppBar, Typography, IconButton, Container } from "@mui/material";
 import AppSidebar from "./AppSidebar";
 import { Settings, Menu } from "lucide-react";
@@ -7,10 +7,23 @@ import NotificationsBell from "./NotificationsBell";
 
 export default function DashboardLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem("sidebarCollapsed") === "1";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("sidebarCollapsed", sidebarCollapsed ? "1" : "0");
+  }, [sidebarCollapsed]);
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "#f3f7f4" }}>
-      <AppSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <AppSidebar
+        mobileOpen={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+      />
+
       <Box component="main" sx={{ flexGrow: 1 }}>
         <AppBar
           elevation={0}
@@ -31,10 +44,9 @@ export default function DashboardLayout({ children }) {
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
               Apple Processing Dashboard
             </Typography>
-            <Box sx={{ ml: "auto" }}>
-              <IconButton aria-label="notifications">
-                <NotificationsBell size={18} />
-              </IconButton>
+
+            <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.5 }}>
+              <NotificationsBell />
               <IconButton aria-label="settings" component={Link} to="/setting">
                 <Settings size={18} />
               </IconButton>

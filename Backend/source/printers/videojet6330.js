@@ -1,79 +1,66 @@
-// source/printers/videojet6330.js (CommonJS)
+// source/printers/videojet6330.js
 const net = require("net");
 const CR = "\r";
 
-function sendAndWait(socket, cmd, { timeoutMs = 3000 } = {}) {
+function sendLine({ host, port, line, connectTimeoutMs = 6000, lingerMs = 200 }) {
   return new Promise((resolve, reject) => {
-    let buffer = "";
-    let done = false;
+    const socket = new net.Socket();
+    let rx = "";
+    let connected = false;
 
-    const finish = (err, val) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      socket.off("data", onData);
-      if (err) reject(err);
-      else resolve(val);
-    };
-
-    const onData = (chunk) => {
-      buffer += chunk.toString("utf8");
-      // Protocol replies are CR-terminated
-      if (buffer.includes("\r")) {
-        finish(null, buffer);
+    const to = setTimeout(() => {
+      if (!connected) {
+        socket.destroy();
+        return reject(new Error(`connect timeout to ${host}:${port}`));
       }
-    };
+      try { socket.destroy(); } catch(_) {}
+      resolve({ rx: rx.trim() });
+    }, connectTimeoutMs);
 
-    const timer = setTimeout(() => {
-      finish(new Error(`Timeout waiting for response to "${cmd}"`));
-    }, timeoutMs);
+    socket.setEncoding("ascii");
+    socket.on("data", d => { rx += d; });
+    socket.on("error", e => { clearTimeout(to); reject(e); });
+    socket.on("close", () => { clearTimeout(to); resolve({ rx: rx.trim() }); });
 
-    socket.on("data", onData);
-    socket.write(cmd + CR);
+    socket.connect(port, host, () => {
+      connected = true;
+      socket.write(line + CR, "ascii", () => setTimeout(() => socket.end(), lingerMs));
+    });
   });
 }
 
-async function printPouch({ host, port = 3003, job = "Mehustaja", customer, productionDate }) {
-  const socket = new net.Socket();
-  socket.setTimeout(8000);
+async function printPouch({
+  host = "192.168.1.139",
+  port = 3003,
+  job = "Mehustaja",
+  customer,
+  productionDate,
+}) {
+  if (!customer || !productionDate) throw new Error("customer & productionDate required");
 
-  await new Promise((resolve, reject) => {
-    socket.once("error", reject);
-    socket.once("timeout", () => reject(new Error("Printer connection timed out")));
-    socket.connect(port, host, resolve);
-  });
+  // 1) Hercules-exact form (note the trailing pipe before CR)
+  const slaOneLine = `SLA|${job}|VarField01=${customer}|VarField02=${productionDate}|`;
+  const rSLA = await sendLine({ host, port, line: slaOneLine });
 
-  try {
-    // Reset parser
-    socket.write(CR);
-
-    // Optional: version — don’t block if silent
-    try {
-      const ver = await sendAndWait(socket, "VER", { timeoutMs: 1500 });
-      if (!/VER\|/.test(ver)) {
-        // continue; some firmwares respond differently
-      }
-    } catch (_) { /* ignore version timeout */ }
-
-    // Update current job fields (JDU). If you prefer SLA, swap back.
-    const jdu = ["JDU", `VarField01=${customer ?? ""}`, `VarField02=${productionDate ?? ""}`].join("|");
-    const jduResp = await sendAndWait(socket, jdu, { timeoutMs: 3000 }).catch(() => "ACK"); // treat silence as OK
-    if (!/^ACK/.test(jduResp)) {
-      throw new Error(`JDU not acknowledged: ${String(jduResp).trim()}`);
-    }
-
-    // Print
-    const prnResp = await sendAndWait(socket, "PRN", { timeoutMs: 3000 }).catch(() => "ACK");
-    if (!/^ACK/.test(prnResp)) {
-      throw new Error(`PRN not acknowledged: ${String(prnResp).trim()}`);
-    }
-
-    socket.end();
-    return { ok: true };
-  } catch (e) {
-    socket.end();
-    throw e;
+  // If the printer ACKs, go straight to PRN.
+  if (!rSLA.rx || /ACK/i.test(rSLA.rx)) {
+    const rPRN = await sendLine({ host, port, line: "PRN" });
+    return { ok: true, host, port, sent: { sla: slaOneLine, prn: "PRN" }, rx: { sla: rSLA.rx, prn: rPRN.rx } };
   }
+
+  // 2) Fallback: split into SLA + VAR + VAR + PRN (very tolerant)
+  const rSLA2 = await sendLine({ host, port, line: `SLA|${job}` });
+  const rV1   = await sendLine({ host, port, line: `VAR|VarField01=${customer}` });
+  const rV2   = await sendLine({ host, port, line: `VAR|VarField02=${productionDate}` });
+  const rPRN2 = await sendLine({ host, port, line: "PRN" });
+
+  return {
+    ok: /ACK/i.test((rSLA2.rx||"") + (rV1.rx||"") + (rV2.rx||"") + (rPRN2.rx||"")),
+    host,
+    port,
+    sent: { sla: `SLA|${job}`, var1: `VAR|VarField01=${customer}`, var2: `VAR|VarField02=${productionDate}`, prn: "PRN" },
+    rx: { sla: rSLA2.rx, var1: rV1.rx, var2: rV2.rx, prn: rPRN2.rx },
+  };
 }
 
 module.exports = { printPouch };

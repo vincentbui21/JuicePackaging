@@ -961,7 +961,16 @@ async function getBoxesByPalletId(pallet_id) {
     return rows;
   }
   
- 
+  async function getCustomerById(customer_id) {
+    const [rows] = await pool.query(
+      `SELECT customer_id, name, phone, email, city
+         FROM Customers
+        WHERE customer_id = ?
+        LIMIT 1`,
+      [customer_id]
+    );
+    return rows[0] || null;
+  }
 
 // Preferred source of truth for "expected": Orders.boxes_count,
 // falling back to a live count if it’s 0/NULL (safety).
@@ -1407,6 +1416,81 @@ async function getRecentActivity(limit = 20) {
 }
 
 
+// --- KUOPIO HELPERS ---
+
+// Put specific boxes onto a shelf (clear pallet_id if present)
+async function assignBoxesToShelf(shelfId, boxIds) {
+  if (!shelfId || !Array.isArray(boxIds) || boxIds.length === 0) {
+    return { updated: 0 };
+  }
+
+  // Use the exact scanned IDs (they include suffix _1, _2, ...)
+  const unique = Array.from(new Set(boxIds.map(String)));
+  const placeholders = unique.map(() => "?").join(", ");
+
+  const [res] = await pool.query(
+    `UPDATE Boxes SET shelf_id = ?, pallet_id = NULL WHERE box_id IN (${placeholders})`,
+    [shelfId, ...unique]
+  );
+
+  return { updated: res.affectedRows || 0 };
+}
+
+
+// Mark orders as "Ready for pickup" based on an array of scanned box IDs.
+async function markOrdersFromBoxesReady(boxIds) {
+  try {
+    if (!Array.isArray(boxIds) || boxIds.length === 0) {
+      return { updated: 0, orderIds: [] };
+    }
+
+    // Extract order UUIDs from the scanned box strings
+    const orderIds = Array.from(new Set(
+      boxIds
+        .map(id => {
+          const m = String(id).match(/BOX_([0-9A-Fa-f-]{36})/);
+          return m ? m[1] : null;
+        })
+        .filter(Boolean)
+    ));
+
+    if (orderIds.length === 0) {
+      return { updated: 0, orderIds: [] };
+    }
+
+    const placeholders = orderIds.map(() => "?").join(", ");
+    const [res] = await pool.query(
+      `UPDATE Orders SET status = 'Ready for pickup' WHERE order_id IN (${placeholders})`,
+      orderIds
+    );
+
+    return { updated: res.affectedRows || 0, orderIds };
+  } catch (e) {
+    console.error("markOrdersFromBoxesReady failed:", e);
+    throw e;
+  }
+}
+
+// Fetch distinct customers for a set of box_ids (to send SMS)
+// Fetch distinct customers for a set of boxes via Boxes.customer_id
+async function getCustomersByBoxIds(boxIds) {
+  if (!Array.isArray(boxIds) || boxIds.length === 0) return [];
+
+  const unique = Array.from(new Set(boxIds.map(String)));
+  const placeholders = unique.map(() => "?").join(", ");
+
+  const [rows] = await pool.query(
+    `
+    SELECT DISTINCT c.customer_id, c.name, c.phone
+      FROM Boxes b
+      JOIN Customers c ON c.customer_id = b.customer_id
+     WHERE b.box_id IN (${placeholders})
+    `,
+    unique
+  );
+
+  return rows || [];
+}
 
 module.exports = {
     update_new_customer_data, 
@@ -1454,4 +1538,8 @@ module.exports = {
     markOrdersOnPalletReady,
     getDashboardSummary,
     getRecentActivity,
+    assignBoxesToShelf,
+    markOrdersFromBoxesReady,
+    getCustomersByBoxIds,
+    getCustomerById,
 }

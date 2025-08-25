@@ -40,24 +40,26 @@ function JuiceHandlePage() {
 
   const printPouchLabels = async (order) => {
     try {
-      // Build values for the label
       const customer = order?.name || order?.customer_name || "Unknown";
   
-      // dd/mm/yyyy (works fine since your job field is text)
+      // Expiry = 1 year from "now"
       const now = new Date();
-      const dd = String(now.getDate()).padStart(2, "0");
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const yyyy = now.getFullYear();
-      const productionDate = `${dd}/${mm}/${yyyy}`;
+      const exp = new Date(now);
+      exp.setFullYear(exp.getFullYear() + 1);
+      const dd = String(exp.getDate()).padStart(2, "0");
+      const mm = String(exp.getMonth() + 1).padStart(2, "0");
+      const yyyy = exp.getFullYear();
+      const expiryDate = `${dd}/${mm}/${yyyy}`;
   
-      // Send to backend printer route
+      // Send to backend. Keep 'productionDate' key for compatibility, but it's the expiry value.
       const { data } = await api.post("/printer/print-pouch", {
         customer,
-        productionDate,
+        productionDate: expiryDate, // ← legacy key, value is the EXPIRY date now
+        expiryDate,                 // ← new explicit key if your backend starts using it
       });
   
-      console.log("Printer response:", data); 
-      setSnackbarMsg("Pouch print sent to Videojet");
+      console.log("Printer response:", data);
+      setSnackbarMsg("Pouch print sent to Videojet (Expiry set +1 year)");
     } catch (err) {
       console.error("Videojet print failed:", err);
       setSnackbarMsg("Failed to print pouch (see console)");
@@ -143,7 +145,11 @@ function JuiceHandlePage() {
             {orders.map((order) => {
               const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);
               const qrCount = Math.ceil(estimatedPouches / 8);
-              const expiryDate = new Date(); expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                // Expiry date (1 year from today), dd/mm/yyyy
+              const exp = new Date();
+              exp.setFullYear(exp.getFullYear() + 1);
+              const expiryUi = `${String(exp.getDate()).padStart(2, "0")}/${String(exp.getMonth() + 1).padStart(2, "0")}/${exp.getFullYear()}`;
+
 
               return (
                 <Accordion key={order.order_id}>
@@ -161,7 +167,8 @@ function JuiceHandlePage() {
                           <Typography><strong>Apple Weight:</strong> {order.weight_kg} kg</Typography>
                           <Typography><strong>Estimated Pouches:</strong> {estimatedPouches}</Typography>
                           <Typography><strong>QR Codes to Print:</strong> {qrCount}</Typography>
-                          <Typography><strong>Expiry Date:</strong> {expiryDate.toISOString().split("T")[0]}</Typography>
+                          <Typography><strong>Expiry Date:</strong> {expiryUi}</Typography>
+
 
                           <TextField
                             label="Comments"

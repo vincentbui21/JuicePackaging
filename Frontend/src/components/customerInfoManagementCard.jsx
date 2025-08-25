@@ -60,6 +60,20 @@ export default function CustomerTable() {
         }
     };
 
+    const handleNotifySMS = async (row) => {
+        try {
+          const res = await api.post(`/customers/${row.customer_id}/notify`, {
+            // optional: custom message. If omitted, server uses default.
+            message: `Hi ${row.name || "there"}, your order is ready for pickup.`,
+          });
+          console.log("SMS notify:", res.data);
+          alert(res.data?.message || "SMS attempted");
+        } catch (e) {
+          console.error("Notify failed", e);
+          alert("SMS failed – check server logs");
+        }
+      };
+      
 
     const columns = [
         { field: 'name', headerName: 'Name', width: 150 },
@@ -85,6 +99,9 @@ export default function CustomerTable() {
 
                     <Button variant="outlined" size="small" color="warning" onClick={() => handleCrateQRPrint(params.row)}>
                         Crate QR
+                    </Button>
+                    <Button variant="outlined" size="small" color="success" onClick={() => handleNotifySMS(params.row)}>
+                        Send SMS
                     </Button>
                 </Stack>
             ),
