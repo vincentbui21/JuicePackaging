@@ -1528,9 +1528,49 @@ async function ping() {
   }
 }
 
+async function getAllCities() {
+    try {
+        const [rows] = await pool.query('SELECT * FROM Cities');
+        return rows;
+    } catch (err) {
+        throw err;
+    }
+}
+
+
+async function updateAdminPassword(adminId, newPassword) {
+    const sql = `UPDATE Accounts SET password = ? WHERE id = ?`;
+    try {
+        await pool.query(sql, [newPassword, adminId]); // store plain string
+    } catch (err) {
+        throw err;
+    }
+}
+
+
+async function addCities(cities) {
+    if (!cities || !cities.length) return;
+
+    const placeholders = cities.map(() => '(?)').join(',');
+    const sql = `
+        INSERT INTO Cities (name)
+        VALUES ${placeholders}
+        ON DUPLICATE KEY UPDATE name = name
+    `;
+
+    try {
+        await pool.query(sql, cities);
+    } catch (err) {
+        throw err;
+    }
+}
+
 
 
 module.exports = {
+    updateAdminPassword,
+    addCities,
+    getAllCities,
     checkPassword,
     update_new_customer_data, 
     get_crate_data, 

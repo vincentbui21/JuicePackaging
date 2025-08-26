@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  MenuItem
 } from "@mui/material";
 import { Print } from "@mui/icons-material";
 import api from "../services/axios";
@@ -23,6 +24,21 @@ function PalletCreationPage() {
   const [error, setError] = useState(false);
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [cities, setCities] = useState([]);
+
+  useEffect(() => {
+  const fetchCities = async () => {
+    try {
+      const res = await api.get("/cities");
+      setCities(res.data); // expects ["Kuopio", "Mikkeli", ...]
+    } catch (err) {
+      console.error("Failed to fetch cities", err);
+      setSnackbarMsg("Failed to load cities");
+    }
+  };
+  fetchCities();
+}, []);
+
 
   const handleCreate = async () => {
     const trimmed = location.trim();
@@ -97,15 +113,23 @@ function PalletCreationPage() {
           </Typography>
 
           <TextField
+            select
             label="Pallet Location"
             variant="filled"
             fullWidth
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            error={error && !location.trim()}
-            helperText={error && !location.trim() ? "Location is required" : ""}
+            error={error && !location}
+            helperText={error && !location ? "Location is required" : ""}
             sx={{ mb: 2 }}
-          />
+          >
+            {cities.map((city) => (
+              <MenuItem key={city} value={city}>
+                {city}
+              </MenuItem>
+            ))}
+          </TextField>
+
 
           <TextField
             label="Capacity"

@@ -33,31 +33,48 @@ function SettingPage() {
 
 
     const handleConfirm = ({ id, password }) => {
-        // console.log("Username:", id); 
-        // console.log("Password:", password);
         setModalOpen(false);
 
-        // Here you can call your POST API with id and password
-        api
-        .post('/default-setting', {...settings, id, password})
-        .then((res) =>{
-            setOpenSnackbar(true);
-        })
-        .catch((err)=>{
-            console.log("Error saving settings:", err);
-        })
+        // Prepare payload
+        const payload = { ...settings, id, password }; // default existing settings
+
+        // Include new cities if user typed anything
+        if (settings.newCites?.trim()) {
+            payload.newCities = settings.newCites.trim();
+        }
+
+        // Include new admin password if user typed anything
+        if (settings.newPass?.trim()) {
+            payload.newAdminPassword = settings.newPass.trim();
+        }
+
+        api.post('/default-setting', payload)
+            .then(() => {
+                setOpenSnackbar(true);
+
+                // Clear optional fields after successful save
+                setSettings(prev => ({
+                    ...prev,
+                    newCites: "",
+                    newPass: ""
+                }));
+            })
+            .catch((err) => {
+                console.error("Error saving settings:", err);
+                setSnackbarMsg("Failed to save settings");
+            });
     };
 
-    const handleButtonClick = () =>{
-        setModalOpen(true);
-    }
+        const handleButtonClick = () =>{
+            setModalOpen(true);
+        }
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setSettings(prev => ({
-            ...prev,
-            [name]: value
-        }));
+        const handleChange = (e) => {
+            const { name, value } = e.target;
+            setSettings(prev => ({
+                ...prev,
+                [name]: value
+            }));
     };
 
 
@@ -133,6 +150,31 @@ function SettingPage() {
                             value={settings.shipping_fee}
                             onChange={handleChange}
                         />
+                        <TextField
+                            name="newCites"
+                            fullWidth
+                            variant="filled"
+                            label="New cities"
+                            onChange={handleChange}
+                        />
+                        <TextField
+                            name="newPass"
+                            type="password"
+                            fullWidth
+                            variant="filled"
+                            label="New admin password"
+                            onChange={handleChange}
+                        />
+
+                        <TextField
+                            name="printer_ip"
+                            fullWidth
+                            variant="filled"
+                            label="Printer IP Address"
+                            value={settings.printer_ip || ""}
+                            onChange={handleChange}
+                        />
+
 
                         <Button variant="contained" onClick={handleButtonClick}>Save</Button>
                     </Stack>
