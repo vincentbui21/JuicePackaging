@@ -247,7 +247,7 @@ function PalletsManagementPage() {
                 </Button>
               </Grid>
 
-              <Grid item xs={12} sm={6} md={5}>
+              {/* <Grid item xs={12} sm={6} md={5}>
                 <TextField
                   label="Add New City"
                   fullWidth
@@ -261,7 +261,7 @@ function PalletsManagementPage() {
                     ),
                   }}
                 />
-              </Grid>
+              </Grid> */}
 
               {/* NEW: search input (purely client-side) */}
               <Grid item xs={12} sm={6} md={5}>

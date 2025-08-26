@@ -682,9 +682,16 @@ app.delete('/shelves/:shelf_id', async (req, res) => {
   }
 });
 
-app.get('/cities', (req, res) => {
-    res.json(["Lahti", "Kuopio", "Joensuu", "Mikkeli", "Varkaus", "Lapinlahti",]);
-  });
+app.get('/cities', async (req, res) => {
+    try {
+        const cities = await database.getAllCities(); 
+        const cityNames = cities.map(city => city.name); 
+        res.json(cityNames);
+    } catch (err) {
+        console.error('Error fetching cities:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 app.get('/shelves/:shelf_id/contents', async (req, res) => {
     const { shelf_id } = req.params;
@@ -888,7 +895,7 @@ app.get("/default-setting", async (req, res) => {
 
 
 app.post("/default-setting", async (req, res) => {
-  const { juice_quantity, no_pouches, price, shipping_fee, id, password } = req.body || {};
+  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip  } = req.body || {};
 
   try {
     // Check credentials in MySQL Account table
@@ -911,8 +918,21 @@ app.post("/default-setting", async (req, res) => {
     if (no_pouches !== undefined) settings.no_pouches = no_pouches;
     if (price !== undefined) settings.price = price;
     if (shipping_fee !== undefined) settings.shipping_fee = shipping_fee;
+    if (printer_ip !== undefined) settings.printer_ip = printer_ip;
+
 
     await fs.writeFile(settingsFilePath, stringifySettings(settings), "utf8");
+
+    if (newAdminPassword?.trim()) {
+    await database.updateAdminPassword(id, newAdminPassword.trim());
+    }
+
+    if (newCities?.trim()) {
+      const cityArray = newCities.split(",").map(c => c.trim()).filter(Boolean);
+      await database.addCities(cityArray);
+    }
+
+
 
     res.json(settings);
   } catch (e) {

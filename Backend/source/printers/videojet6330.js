@@ -2,6 +2,24 @@
 const net = require("net");
 const CR = "\r";
 
+const fs = require("fs");
+const path = require("path");
+
+function getPrinterIP() {
+  try {
+    const content = fs.readFileSync(path.join(__dirname, "../source/default-setting.txt"), "utf8");
+    const lines = content.split("\n");
+    for (const line of lines) {
+      const [key, value] = line.split("=");
+      if (key.trim() === "printer_ip") return value.trim();
+    }
+  } catch (err) {
+    console.error("Failed to read printer IP:", err);
+  }
+  return "192.168.1.139"; // fallback default
+}
+
+
 function sendLine({ host, port, line, connectTimeoutMs = 6000, lingerMs = 200 }) {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
@@ -30,7 +48,7 @@ function sendLine({ host, port, line, connectTimeoutMs = 6000, lingerMs = 200 })
 }
 
 async function printPouch({
-  host = "192.168.1.139",
+  host = getPrinterIP(),
   port = 3003,
   job = "Mehustaja",
   customer,
