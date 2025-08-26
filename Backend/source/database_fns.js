@@ -1492,6 +1492,24 @@ async function getCustomersByBoxIds(boxIds) {
   return rows || [];
 }
 
+// source/database_fns.js
+// ...existing connection setup + helpers...
+
+async function ping() {
+  // use whatever low-level call you already use internally
+  if (typeof query === 'function') {
+    await query('SELECT 1');
+  } else if (pool?.query) {
+    await pool.query('SELECT 1');
+  } else if (conn?.query) {
+    await conn.query('SELECT 1');
+  } else {
+    throw new Error('No underlying query function available for ping()');
+  }
+}
+
+
+
 module.exports = {
     update_new_customer_data, 
     get_crate_data, 
@@ -1542,4 +1560,5 @@ module.exports = {
     markOrdersFromBoxesReady,
     getCustomersByBoxIds,
     getCustomerById,
+    ping,
 }

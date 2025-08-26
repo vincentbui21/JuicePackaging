@@ -294,7 +294,7 @@ function PalletsManagementPage() {
         <DialogTitle>QR Code</DialogTitle>
         <DialogContent>
           <Box display="flex" justifyContent="center">
-            <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+          <img src={qrImage} alt="QR Code" style={{ width: 100 }} />
           </Box>
         </DialogContent>
         <DialogActions>

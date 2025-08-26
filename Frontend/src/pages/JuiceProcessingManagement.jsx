@@ -44,7 +44,7 @@ function JuiceProcessingManagement() {
         <head><title>Print QR Code</title></head>
         <body style="display:flex;flex-direction:column;align-items:center;font-family:Arial;">
           <p style="margin:6px 0;">Box ${index}</p>
-          <img src="${url}" style="width:150px;height:150px;" />
+          <img src="${url}" style="width:100px;height:100px;" />
           <script>
             window.onload = function() {
               window.print();

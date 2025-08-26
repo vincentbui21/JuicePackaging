@@ -1,5 +1,7 @@
 import { Stack, Box, Typography, Chip } from "@mui/material";
 import { Apple, CheckCircle } from "lucide-react";
+import SystemStatusBadge from "../components/SystemStatusBadge";
+
 
 export default function HeroHeader() {
   return (
@@ -39,13 +41,9 @@ export default function HeroHeader() {
           </Box>
         </Stack>
 
-        <Chip
-          variant="outlined"
-          color="success"
-          icon={<CheckCircle size={14} />}
-          label="All Systems Operational"
-          sx={{ fontWeight: 600, height: 30 }}
-        />
+        <Box sx={{ ml: "auto" }}>
+          <SystemStatusBadge />
+        </Box>
       </Stack>
     </Box>
   );

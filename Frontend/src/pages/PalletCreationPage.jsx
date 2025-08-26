@@ -58,7 +58,7 @@ function PalletCreationPage() {
     popup.document.write(`
       <html><head><title>Print QR Code</title></head>
       <body style="text-align:center;padding:20px;">
-        <img src="${qrImage}" style="width:200px;" />
+        <img src="${qrImage}" style="width:100px;" />
         <script>
           window.onload = function() {
             window.print();
@@ -130,7 +130,7 @@ function PalletCreationPage() {
         <DialogTitle>Pallet QR Code</DialogTitle>
         <DialogContent>
           <Box display="flex" justifyContent="center">
-            <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+          <img src={qrImage} alt="QR Code" style={{ width: 100 }} />
           </Box>
         </DialogContent>
         <DialogActions>

@@ -850,6 +850,30 @@ app.post('/customers/:customerId/notify', async (req, res) => {
   }
 });
 
+// Health check
+// server.js
+app.get('/health', async (req, res) => {
+  try {
+    // Try the most common shapes first
+    if (typeof database.query === 'function') {
+      await database.query('SELECT 1 AS ok');
+    } else if (typeof database.execute === 'function') {
+      await database.execute('SELECT 1 AS ok');
+    } else if (typeof database.ping === 'function') {
+      await database.ping();                // if you add the helper below
+    } else if (database.pool?.query) {
+      await database.pool.query('SELECT 1 AS ok'); // some wrappers expose pool
+    } else {
+      throw new Error('No query/execute/ping method found on database wrapper');
+    }
+
+    res.json({ ok: true, db: 'up' });
+  } catch (err) {
+    console.error('Health check failed:', err);
+    res.status(500).json({ ok: false, db: 'down', error: err.message });
+  }
+});
+
 
 
 
