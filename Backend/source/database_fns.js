@@ -605,14 +605,33 @@ async function markOrderAsReady(order_id) {
     }
   }   
     
-    async function updateOrderInfo(order_id, data) {
-        const { weight_kg, estimated_pouches, estimated_boxes } = data;
-      
-        await pool.query(
-          `UPDATE Orders SET weight_kg = ?, estimated_pouches = ?, estimated_boxes = ? WHERE order_id = ?`,
-          [weight_kg, estimated_pouches, estimated_boxes, order_id]
-        );
-      }
+   
+async function updateOrderInfo(order_id, data = {}) {
+  // Map UI fields -> DB columns
+  const sets = [];
+  const vals = [];
+
+  if (data.name != null)            { sets.push('name = ?');          vals.push(String(data.name)); }
+  if (data.status != null)          { sets.push('status = ?');        vals.push(String(data.status)); }
+  if (data.weight_kg != null)       { sets.push('weight_kg = ?');     vals.push(Number(data.weight_kg) || 0); }
+
+  // UI sends these:
+  if (data.estimated_pouches != null) { sets.push('pouches_count = ?'); vals.push(Number(data.estimated_pouches) || 0); }
+  if (data.estimated_boxes != null)   { sets.push('boxes_count = ?');   vals.push(Number(data.estimated_boxes) || 0); }
+
+  // If you also allow editing notes, etc., add them here similarly.
+
+  if (sets.length === 0) {
+    return { affectedRows: 0 }; // nothing to update
+  }
+
+  vals.push(order_id);
+  const [res] = await pool.query(
+    `UPDATE Orders SET ${sets.join(', ')} WHERE order_id = ?`,
+    vals
+  );
+  return res;
+}
       
       async function deleteOrder(order_id) {
         await pool.query("DELETE FROM Orders WHERE order_id = ?", [order_id]);

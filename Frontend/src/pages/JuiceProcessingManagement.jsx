@@ -75,10 +75,12 @@ function JuiceProcessingManagement() {
       const res = await api.get("/orders?status=processing complete");
       const enriched = (res.data || []).map((order) => {
         const { estimatedPouches, estimatedBoxes } = computeFromWeight(order.weight_kg);
+  
         return {
           ...order,
-          estimated_pouches: order?.estimated_pouches ?? estimatedPouches,
-          estimated_boxes: order?.estimated_boxes ?? estimatedBoxes,
+          // Prefer persisted counts if present, otherwise computed fallback
+          estimated_pouches: order?.pouches_count ?? estimatedPouches,
+          estimated_boxes:   order?.boxes_count   ?? estimatedBoxes,
         };
       });
       setOrders(enriched);
@@ -87,6 +89,7 @@ function JuiceProcessingManagement() {
       setSnackbarMsg("Failed to fetch orders");
     }
   };
+  
 
   const printPouchLabels = async (order) => {
     try {

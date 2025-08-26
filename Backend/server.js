@@ -987,6 +987,16 @@ app.get('/shelves/:shelfId/contents', async (req, res) => {
   }
 });
 
+app.put('/orders/:orderId', async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const result = await database.updateOrderInfo(orderId, req.body);
+    return res.json({ ok: true, affected: result.affectedRows || 0 });
+  } catch (e) {
+    console.error('Failed to update order:', e);
+    return res.status(500).json({ ok: false, error: 'update-failed' });
+  }
+});
 
 
 // Start the HTTP server (not just Express)
