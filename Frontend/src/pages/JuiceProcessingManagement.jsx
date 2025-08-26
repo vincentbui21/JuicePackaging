@@ -198,10 +198,11 @@ function JuiceProcessingManagement() {
   };
 
   const statusOptions = [
-  { value: 'Pending', label: 'Pending' },
+  { value: 'Created', label: 'Created' },
+  { value: 'Picked up', label: 'Picked up' },
+  { value: 'Ready for pickup', label: 'Ready for pickup' },
+  { value: 'Processing complete', label: 'processing complete' },
   { value: 'In Progress', label: 'In Progress' },
-  { value: 'Completed', label: 'Completed' },
-  { value: 'Cancelled', label: 'Cancelled' },
 ];
 
   const columns = [
@@ -344,7 +345,7 @@ function JuiceProcessingManagement() {
               onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
               fullWidth
             />
-            
+
             <TextField
             select
             label="Status"

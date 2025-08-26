@@ -8,6 +8,8 @@ import { DataGrid } from "@mui/x-data-grid";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
+import printImage from '../services/send_to_printer'
+
 
 function ShelvesManagementPage() {
   const [shelves, setShelves] = useState([]);
@@ -64,25 +66,30 @@ function ShelvesManagementPage() {
     setQrImage(img);
     setQrShelfName(shelf.shelf_name || ""); // NEW
     setQrDialogOpen(true);
+
+    setPalletContent(shelf.pallet); // if pallet info is part of the row API
+    setSelectedLocation(shelf.location); // city/location
   };
 
-  const handlePrint = () => {
-    if (!qrImage) return;
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html><head><title>Print QR Code</title></head>
-      <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
-        <img src="${qrImage}" style="width:200px;" />
-        ${qrShelfName ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${qrShelfName}</div>` : ""}
-        <script>
-          window.onload = function() {
-            window.print();
-            window.onafterprint = () => window.close();
-          }
-        </script>
-      </body></html>
-    `);
-    popup.document.close();
+  const handlePrint = (name, city) => {
+    // if (!qrImage) return;
+    // const popup = window.open("", "_blank");
+    // popup.document.write(`
+    //   <html><head><title>Print QR Code</title></head>
+    //   <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
+    //     <img src="${qrImage}" style="width:200px;" />
+    //     ${qrShelfName ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${qrShelfName}</div>` : ""}
+    //     <script>
+    //       window.onload = function() {
+    //         window.print();
+    //         window.onafterprint = () => window.close();
+    //       }
+    //     </script>
+    //   </body></html>
+    // `);
+    // popup.document.close();
+
+    printImage(qrImage, `${name || qrShelfName} ${city ? `(${city})` : ""}`.trim())
   };
 
   const handleDelete = async (shelf_id) => {
@@ -176,7 +183,7 @@ function ShelvesManagementPage() {
           </Typography>
 
           <Box component={Paper} elevation={1} sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-            <Grid container spacing={2} alignItems="center">
+            <Grid container spacing={2} alignItems="center" justifyContent="center">
               <Grid item xs={12} sm={6} md={4}>
                 <TextField
                   select
@@ -224,9 +231,13 @@ function ShelvesManagementPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
-            Print
-          </Button>
+          <Button 
+          onClick={() => handlePrint(palletContent?.pallet_id, selectedLocation)} 
+          variant="contained" 
+          startIcon={<Print />}
+        >
+          Print
+        </Button>
         </DialogActions>
       </Dialog>
 

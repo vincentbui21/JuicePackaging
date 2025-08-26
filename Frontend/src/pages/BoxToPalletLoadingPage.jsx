@@ -289,7 +289,7 @@ export default function BoxToPalletLoadingPage() {
             p: 4,
             borderRadius: 2,
             display: "flex",
-            height: "100%",
+            height: "auto",
             flexDirection: "column",
           }}
         >

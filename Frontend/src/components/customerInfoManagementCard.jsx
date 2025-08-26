@@ -4,6 +4,8 @@ import { Box, TextField, Stack, Button } from '@mui/material';
 import api from '../services/axios';
 import EditCustomerDialog from './EditCustomerDialog';
 import QRCodeDialog from './qrcodeDialog';
+import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
+
 
 
 export default function CustomerTable() {
@@ -67,47 +69,47 @@ export default function CustomerTable() {
     };
 
     const handleNotifySMS = async (row) => {
-        try {
-          const res = await api.post(`/customers/${row.customer_id}/notify`, {
-            // optional: custom message. If omitted, server uses default.
-            message: `Hi ${row.name || "there"}, your order is ready for pickup.`,
-          });
-          console.log("SMS notify:", res.data);
-          alert(res.data?.message || "SMS attempted");
-        } catch (e) {
-          console.error("Notify failed", e);
-          alert("SMS failed – check server logs");
-        }
-      };
-      
+    try {
+        const res = await api.post(`/customers/${row.customer_id}/notify`, {
+        // optional: custom message. If omitted, server uses default.
+        message: `Hi ${row.name || "there"}, your order is ready for pickup.`,
+        });
+        console.log("SMS notify:", res.data);
+        alert(res.data?.message || "SMS attempted");
+    } catch (e) {
+        console.error("Notify failed", e);
+        alert("SMS failed – check server logs");
+    }
+    };
+    
 
     const columns = [
         { field: 'name', headerName: 'Name', width: 150 },
         { field: 'email', headerName: 'Email', width: 200 },
         { field: 'phone', headerName: 'Phone', width: 150 },
         { field: 'city', headerName: 'City', width: 120 },
-        { field: 'created_at', headerName: 'Date', width: 180 },
-        { field: 'weight_kg', headerName: 'Weight (kg)', width: 130 },
-        { field: 'crate_count', headerName: 'Crates (kpl)', width: 130 },
+        { field: 'created_at', headerName: 'Date', width: 150 },
+        { field: 'weight_kg', headerName: 'Weight (kg)', width: 100 },
+        { field: 'crate_count', headerName: 'Crates (kpl)', width: 100 },
         { field: 'total_cost', headerName: 'Cost (€)', width: 100 },
-        { field: 'status', headerName: 'Status', width: 120 },
+        { field: 'status', headerName: 'Status', width: 100 },
         { field: 'notes', headerName: 'Notes', width: 200 },
         { field: 'actions', headerName: 'Actions', width: 300, sortable: false, filterable: false,
             renderCell: (params) => (
                 <Stack direction="row" spacing={1} sx={{display:"center", justifyContent: "center", alignItems: "center"}}>
                     <Button variant="outlined" size="small" color="primary" onClick={() => handleEdit(params.row)}>
-                        Edit
+                        <Edit />
                     </Button>
 
                     <Button variant="outlined" size="small" color="error" onClick={() => handleDelete(params.row)}>
-                        Delete
+                        <Delete />
                     </Button>
 
                     <Button variant="outlined" size="small" color="warning" onClick={() => handleCrateQRPrint(params.row)}>
-                        Crate QR
+                        <QrCode />
                     </Button>
                     <Button variant="outlined" size="small" color="success" onClick={() => handleNotifySMS(params.row)}>
-                        Send SMS
+                        <Send />
                     </Button>
                 </Stack>
             ),

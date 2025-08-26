@@ -43,6 +43,14 @@ function EditCustomerDialog({ open, onClose, initialData, onUpdateSuccess }) {
         }
     }, [initialData]);
 
+    const statusOptions = [
+    { value: 'Created', label: 'Created' },
+    { value: 'Picked up', label: 'Picked up' },
+    { value: 'Ready for pickup', label: 'Ready for pickup' },
+    { value: 'Processing complete', label: 'processing complete' },
+    { value: 'In Progress', label: 'In Progress' },
+    ];
+
     const handleChange = (field) => (event) => {
         setFormData((prev) => ({ ...prev, [field]: event.target.value }));
     };
@@ -131,7 +139,21 @@ function EditCustomerDialog({ open, onClose, initialData, onUpdateSuccess }) {
                 onChange={handleChange('total_cost')}
                 fullWidth
             />
-            <TextField label="Status" value={formData.status} onChange={handleChange('status')} fullWidth />
+            {/* <TextField label="Status" value={formData.status} onChange={handleChange('status')} fullWidth /> */}
+            <TextField
+            select
+            label="Status"
+            value={formData.status}
+            onChange={handleChange('status')}
+            fullWidth
+            helperText="Please select the order status"
+            >
+            {statusOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                {option.label}
+                </MenuItem>
+            ))}
+            </TextField>
             <TextField
                 label="Notes"
                 value={formData.notes}

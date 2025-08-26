@@ -9,7 +9,8 @@ function SettingPage() {
         juice_quantity : "",
         no_pouches: "",
         price:"",
-        shipping_fee:""
+        shipping_fee:"",
+        printer_ip: "192.168.1.139"
     }
 
     const [settings, setSettings] = useState(initial_settings)
@@ -22,14 +23,22 @@ function SettingPage() {
     api
         .get('/default-setting')
         .then((res) => {
-        const raw = res.data;
-        const parsed = Object.fromEntries(
-            Object.entries(raw).map(([key, value]) => [key, parseFloat(value)])
-        );
-        setSettings(parsed);
+            const raw = res.data;
+
+            // parse numbers only, keep strings as-is
+            const parsed = {
+                juice_quantity: Number(raw.juice_quantity) || "",
+                no_pouches: Number(raw.no_pouches) || "",
+                price: Number(raw.price) || "",
+                shipping_fee: Number(raw.shipping_fee) || "",
+                printer_ip: raw.printer_ip || "192.168.1.139"
+            };
+
+            setSettings(parsed);
         })
         .catch((err) => console.error(err));
-    }, []);
+}, []);
+
 
 
     const handleConfirm = ({ id, password }) => {
@@ -171,7 +180,7 @@ function SettingPage() {
                             fullWidth
                             variant="filled"
                             label="Printer IP Address"
-                            value={settings.printer_ip || ""}
+                            value={String(settings.printer_ip)}
                             onChange={handleChange}
                         />
 

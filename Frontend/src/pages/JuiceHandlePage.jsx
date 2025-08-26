@@ -19,6 +19,7 @@ function JuiceHandlePage() {
   const [qrCodes, setQrCodes] = useState({});
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [comments, setComments] = useState({});
+  const [maxBox, setMaxBox] = useState("")
 
   useEffect(() => {
     fetchProcessingOrders();
@@ -71,7 +72,8 @@ function JuiceHandlePage() {
 
   const generateQRCodes = async (order) => {
     const estimatedPouches = Math.floor((order.weight_kg * 0.65) / 3);
-    const count = Math.ceil(estimatedPouches / 8);
+    const count = Math.ceil(estimatedPouches / 8); //8 pouches fit in 1 box
+    setMaxBox(count)
     const codes = [];
     for (let i = 0; i < count; i++) {
       const text = `BOX_${order.order_id}_${i + 1}`;
@@ -92,7 +94,7 @@ function JuiceHandlePage() {
     // `);
     // popup.document.close();
     // popup.print();
-    printImage(url, name, `b${index}/${max}`)
+    printImage(url, name, `b${index}/${maxBox}`)
 
   };
 
