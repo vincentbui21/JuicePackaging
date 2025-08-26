@@ -8,6 +8,7 @@ import api from "../services/axios";
 import { io } from "socket.io-client";
 import generateSmallPngQRCode from '../services/qrcodGenerator';
 import DrawerComponent from "../components/drawer";
+import printImage from '../services/send_to_printer'
 
 // build socket URL from the same base as axios
 const WS_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/').replace(/\/+$/,'');
@@ -81,16 +82,18 @@ function JuiceHandlePage() {
     setSnackbarMsg("QR Codes Generated");
   };
 
-  const printSingleQRCode = (url, index) => {
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html><head><title>Print QR Code</title></head><body>
-      <p>Box ${index}</p>
-      <img src="${url}" style="width:100px;" />
-      </body></html>
-    `);
-    popup.document.close();
-    popup.print();
+  const printSingleQRCode = (url, name, index, max) => {
+    // const popup = window.open("", "_blank");
+    // popup.document.write(`
+    //   <html><head><title>Print QR Code</title></head><body>
+    //   <p>Box ${index}</p>
+    //   <img src="${url}" style="width:100px;" />
+    //   </body></html>
+    // `);
+    // popup.document.close();
+    // popup.print();
+    printImage(url, name, `b${index}/${max}`)
+
   };
 
   const markOrderDone = async (orderId) => {
@@ -194,7 +197,7 @@ function JuiceHandlePage() {
                                     <CardContent sx={{ textAlign: "center" }}>
                                       <Typography variant="body2">Box {index}</Typography>
                                       <img src={url} alt={`QR ${index}`} style={{ width: 100, height: 100 }} />
-                                      <Button size="small" sx={{ mt: 1 }} variant="outlined" onClick={() => printSingleQRCode(url, index)}>Print</Button>
+                                      <Button size="small" sx={{ mt: 1 }} variant="outlined" onClick={() => printSingleQRCode(url, order.name, index, order.boxes_count)}>Print</Button>
                                     </CardContent>
                                   </Card>
                                 ))}

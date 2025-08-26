@@ -398,6 +398,7 @@ async function getOrdersByStatus(status) {
             o.order_id,
             o.weight_kg,
             o.status,
+            o.boxes_count,
             c.name
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id

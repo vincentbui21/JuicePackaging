@@ -14,6 +14,7 @@ import {
   Button,
   Card,
   CardContent,
+  MenuItem
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { Edit, QrCode, Delete, Print} from "@mui/icons-material";
@@ -193,6 +194,13 @@ function JuiceProcessingManagement() {
     }
   };
 
+  const statusOptions = [
+  { value: 'Pending', label: 'Pending' },
+  { value: 'In Progress', label: 'In Progress' },
+  { value: 'Completed', label: 'Completed' },
+  { value: 'Cancelled', label: 'Cancelled' },
+];
+
   const columns = [
     { field: "order_id", headerName: "Order ID", flex: 1 },
     { field: "name", headerName: "Customer", flex: 1.5 },
@@ -333,12 +341,24 @@ function JuiceProcessingManagement() {
               onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
               fullWidth
             />
+            
             <TextField
-              label="Status"
-              value={editedFields.status}
-              onChange={(e) => setEditedFields((p) => ({ ...p, status: e.target.value }))}
-              fullWidth
-            />
+            select
+            label="Status"
+            value={editedFields.status}
+            onChange={(e) =>
+              setEditedFields((prev) => ({ ...prev, status: e.target.value }))
+            }
+            fullWidth
+            helperText="Please select the order status"
+          >
+            {statusOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </TextField>
+
             <TextField
               label="Weight (kg)"
               type="number"

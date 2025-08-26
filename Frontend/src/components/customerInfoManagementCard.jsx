@@ -9,6 +9,8 @@ import QRCodeDialog from './qrcodeDialog';
 export default function CustomerTable() {
 
     const [CustomerForwardName, setCustomerForwardName] = useState('')
+    const [maxCrates, setMaxCrates] = useState('')
+
     
     const handleDelete = async (row) => {
         try {
@@ -41,6 +43,10 @@ export default function CustomerTable() {
     };
 
     const handleCrateQRPrint = async (row) => {
+        setMaxCrates(row.crate_count)
+
+        // console.log(row.crate_count);
+
         try {
         // Fetch crate IDs for this customer from your API
         const response = await api.get('/crates', {
@@ -122,6 +128,7 @@ export default function CustomerTable() {
     const [qrDialogOpen, setQrDialogOpen] = useState(false);
     const [crateIds, setCrateIds] = useState([]);
 
+
     useEffect(() => {
         setLoading(true);
         api
@@ -147,7 +154,7 @@ export default function CustomerTable() {
 
     return (
         <>
-            <Box sx={{ width: 'auto',overflowX: 'auto', ml: "250px" }}>
+            <Box sx={{ width: 'auto' }}>
                 
                 <Stack direction="row" spacing={2}
                     sx={{
@@ -204,6 +211,7 @@ export default function CustomerTable() {
                 onClose={() => setQrDialogOpen(false)} 
                 data={crateIds} 
                 name ={CustomerForwardName}
+                max={maxCrates}
             />
 
         </>

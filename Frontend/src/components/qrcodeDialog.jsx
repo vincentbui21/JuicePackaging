@@ -12,7 +12,7 @@ import generateSmallPngQRCode from '../services/qrcodGenerator';
 import printImage from '../services/send_to_printer'
 
 
-function QRCodeDialog({ open, onClose, data, name }) {
+function QRCodeDialog({ open, onClose, data, name, max }) {
     const [qrCodes, setQrCodes] = useState([]);
 
     useEffect(() => {
@@ -26,9 +26,9 @@ function QRCodeDialog({ open, onClose, data, name }) {
         }
     }, [data, open]);
 
-    const handlePrint = (src) => {
+    const handlePrint = (src, index, max) => {
         // console.log('Send to printer:');
-        printImage(src, name)
+        printImage(src, name, `c${index}/${max}`)
     };
 
     return (
@@ -41,7 +41,7 @@ function QRCodeDialog({ open, onClose, data, name }) {
                 <img src={src} alt={`QR code ${index}`} width={100} height={100} />
                 <Stack spacing={1}>
                     <Typography variant="body2">{`QR Code for Crate ${index+1}`}</Typography>
-                    <Button variant="outlined" onClick={ ()=> handlePrint(qrCodes[index])}>
+                    <Button variant="outlined" onClick={ ()=> handlePrint(qrCodes[index], index+1, max)}>
                         Send to Printer
                     </Button>
                 </Stack>

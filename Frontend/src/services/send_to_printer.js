@@ -1,10 +1,8 @@
-
-
-function printImage(url, label='') {
+function printImage(url, label = '', index) {
     const win = window.open('', '_blank', 'width=400,height=400');
     const doc = win.document;
 
-    const container = doc.createElement('div')
+    const container = doc.createElement('div');
     const img = doc.createElement('img');
     img.src = url;
     img.style = 'width: 100px; height: 100px; object-fit: contain;';
@@ -42,7 +40,10 @@ function printImage(url, label='') {
     if (label && label.trim() !== '') {
         const labelEl = doc.createElement('div');
         labelEl.className = 'label';
-        labelEl.textContent = label;
+
+        // Append index if provided
+        labelEl.textContent = index !== undefined ? `${label} (${index})` : label;
+
         container.appendChild(labelEl);
     }
 
@@ -56,5 +57,4 @@ function printImage(url, label='') {
     };
 }
 
-
-export default printImage
+export default printImage;
