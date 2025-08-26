@@ -1509,6 +1509,37 @@ async function ping() {
 }
 
 
+// --- Shelves: details + contents -------------------------------------------
+async function getShelfDetails(shelfId) {
+  const [rows] = await pool.query(
+    `SELECT shelf_id, shelf_name, location, status, capacity, holding, created_at
+       FROM Shelves
+      WHERE shelf_id = ?
+      LIMIT 1`,
+    [shelfId]
+  );
+  return rows[0] || null;
+}
+
+async function getShelfContents(shelfId) {
+  const [rows] = await pool.query(
+    `SELECT 
+        b.box_id,
+        b.customer_id,
+        b.city,
+        b.pallet_id,
+        b.shelf_id,
+        b.pouch_count,
+        b.created_at
+       FROM Boxes b
+      WHERE b.shelf_id = ?
+         OR b.pallet_id IN (SELECT p.pallet_id FROM Pallets p WHERE p.shelf_id = ?)
+      ORDER BY b.created_at DESC`,
+    [shelfId, shelfId]
+  );
+  return rows;
+}
+
 
 module.exports = {
     update_new_customer_data, 
@@ -1561,4 +1592,8 @@ module.exports = {
     getCustomersByBoxIds,
     getCustomerById,
     ping,
+    getShelfContents,
+    getShelfDetails,
 }
+
+module.exports.pool = pool;

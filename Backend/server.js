@@ -8,12 +8,11 @@ const { publishDirectSMS } = require('./utils/aws_sns');
 const fs = require('fs').promises;
 const path = require('path');
 const { printPouch } = require("./source/printers/videojet6330");
-
 const net = require("net");
 
 const app = express();
 const server = http.createServer(app);
-
+const pool = database.pool;
 function emitActivity(type, message, extra = {}) {
   io.emit("activity", {
     type,         // "customer" | "processing" | "warehouse" | "ready" | "pickup"
@@ -687,14 +686,14 @@ app.get('/cities', (req, res) => {
 app.get('/shelves/:shelf_id/contents', async (req, res) => {
     const { shelf_id } = req.params;
     try {
-      const [pallet] = await pool.query(
+      const [pallet] = await database.pool.query(
         'SELECT * FROM Pallets WHERE shelf_id = ? LIMIT 1',
         [shelf_id]
       );
   
       if (!pallet.length) return res.status(404).json({ error: "No pallet on this shelf" });
   
-      const [boxes] = await pool.query(
+      const [boxes] = await database.pool.query(
         'SELECT * FROM Boxes WHERE pallet_id = ?',
         [pallet[0].pallet_id]
       );
@@ -874,6 +873,25 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// NEW
+app.get('/shelves/:shelfId/contents', async (req, res) => {
+  try {
+    const { shelfId } = req.params;
+    if (!shelfId) return res.status(400).json({ ok: false, error: 'Missing shelfId' });
+
+    const [shelf, boxes] = await Promise.all([
+      database.getShelfDetails(shelfId),
+      database.getShelfContents(shelfId),
+    ]);
+
+    if (!shelf) return res.status(404).json({ ok: false, error: 'Shelf not found' });
+
+    return res.json({ ok: true, shelf, boxes });
+  } catch (err) {
+    console.error('GET /shelves/:shelfId/contents failed:', err);
+    return res.status(500).json({ ok: false, error: err.message || 'Server error' });
+  }
+});
 
 
 
