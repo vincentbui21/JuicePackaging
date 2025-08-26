@@ -2,7 +2,7 @@ import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert } fro
 import DrawerComponent from "../components/drawer";
 import { useState, useEffect } from "react";
 import api from '../services/axios';
-
+import PasswordModal from "../components/PasswordModal";
 
 function SettingPage() {
     var initial_settings ={
@@ -14,34 +14,42 @@ function SettingPage() {
 
     const [settings, setSettings] = useState(initial_settings)
     const [openSnackbar, setOpenSnackbar] = useState(false);
+    const [modalOpen, setModalOpen] = useState(false);
+
 
 
     useEffect(() => {
     api
         .get('/default-setting')
         .then((res) => {
-            const raw = res.data;
-            const parsed = Object.fromEntries(
-                raw
-                    .trim()
-                    .split(',') 
-                    .map(pair => pair.split(':')) 
-                    .map(([key, value]) => [key.trim(), parseFloat(value)]) 
-            );
-
-            setSettings(parsed);
-        });
+        const raw = res.data;
+        const parsed = Object.fromEntries(
+            Object.entries(raw).map(([key, value]) => [key, parseFloat(value)])
+        );
+        setSettings(parsed);
+        })
+        .catch((err) => console.error(err));
     }, []);
 
-    const handleButtonClick = () =>{
+
+    const handleConfirm = ({ id, password }) => {
+        // console.log("Username:", id); 
+        // console.log("Password:", password);
+        setModalOpen(false);
+
+        // Here you can call your POST API with id and password
         api
-        .post('/default-setting', settings)
+        .post('/default-setting', {...settings, id, password})
         .then((res) =>{
             setOpenSnackbar(true);
         })
         .catch((err)=>{
             console.log("Error saving settings:", err);
         })
+    };
+
+    const handleButtonClick = () =>{
+        setModalOpen(true);
     }
 
     const handleChange = (e) => {
@@ -142,7 +150,13 @@ function SettingPage() {
             <Alert onClose={() => setOpenSnackbar(false)} severity="success" sx={{ width: '100%' }}>
                 Settings saved successfully!
             </Alert>
-</Snackbar>
+            </Snackbar>
+
+            <PasswordModal
+                open={modalOpen}
+                onClose={() => setModalOpen(false)}
+                onConfirm={handleConfirm}
+            />
 
         </>
     );

@@ -10,6 +10,9 @@ const path = require('path');
 const { printPouch } = require("./source/printers/videojet6330");
 const net = require("net");
 
+const settingsFilePath = path.join(__dirname, "default-setting.txt");
+
+
 const app = express();
 const server = http.createServer(app);
 const pool = database.pool;
@@ -848,6 +851,77 @@ app.post('/customers/:customerId/notify', async (req, res) => {
     return res.status(500).json({ ok: false, error: e.code || 'notify_failed', details: e.message });
   }
 });
+
+// Helper: Parse file content into object
+function parseSettingsFile(content) {
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reduce((acc, line) => {
+      const [key, value] = line.split(":");
+      if (key && value) acc[key.trim()] = value.trim();
+      return acc;
+    }, {});
+}
+
+
+// Helper: Convert object back to file format
+// Convert object to file format with each setting on a new line
+function stringifySettings(obj) {
+  return Object.entries(obj)
+    .map(([key, value]) => `${key}:${value}`)
+    .join("\n"); // use newline instead of comma
+}
+
+
+app.get("/default-setting", async (req, res) => {
+  try {
+    const content = await fs.readFile(settingsFilePath, "utf8");
+    const settings = parseSettingsFile(content);
+    res.json(settings);
+  } catch (e) {
+    console.error("Failed to read default-setting.txt:", e);
+    res.status(500).json({ error: "read_failed", details: e.message });
+  }
+});
+
+
+app.post("/default-setting", async (req, res) => {
+  const { juice_quantity, no_pouches, price, shipping_fee, id, password } = req.body || {};
+
+  try {
+    // Check credentials in MySQL Account table
+    const isValid = await database.checkPassword(id, password);
+    if (!isValid) {
+      return res.status(401).json({ error: "Incorrect username or password" });
+    }
+
+    // Credentials are correct, proceed to update settings
+    let currentContent = "";
+    try {
+      currentContent = await fs.readFile(settingsFilePath, "utf8");
+    } catch {
+      currentContent = "";
+    }
+
+    const settings = parseSettingsFile(currentContent);
+
+    if (juice_quantity !== undefined) settings.juice_quantity = juice_quantity;
+    if (no_pouches !== undefined) settings.no_pouches = no_pouches;
+    if (price !== undefined) settings.price = price;
+    if (shipping_fee !== undefined) settings.shipping_fee = shipping_fee;
+
+    await fs.writeFile(settingsFilePath, stringifySettings(settings), "utf8");
+
+    res.json(settings);
+  } catch (e) {
+    console.error("Failed to update default-setting.txt:", e);
+    res.status(500).json({ error: "write_failed", details: e.message });
+  }
+});
+
+
 
 // Health check
 // server.js

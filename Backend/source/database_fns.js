@@ -1492,6 +1492,26 @@ async function getCustomersByBoxIds(boxIds) {
   return rows || [];
 }
 
+async function checkPassword(id, inputPassword) {
+    try {
+        const [rows] = await pool.query(
+            "SELECT password FROM Accounts WHERE id = ?",
+            [id]
+        );
+
+        if (rows.length === 0) {
+            return false; // Account not found
+        }
+
+        const storedPassword = rows[0].password;
+        return storedPassword === inputPassword;
+    } catch (error) {
+        console.error("Error checking password:", error);
+        return false;
+    }
+}
+
+
 // source/database_fns.js
 // ...existing connection setup + helpers...
 
@@ -1542,6 +1562,7 @@ async function getShelfContents(shelfId) {
 
 
 module.exports = {
+    checkPassword,
     update_new_customer_data, 
     get_crate_data, 
     update_crates_status, 
