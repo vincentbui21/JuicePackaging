@@ -1,3 +1,4 @@
+// src/components/AppSidebar.jsx
 import { useMemo } from "react";
 import {
   Drawer, Toolbar, List, ListItemButton, ListItemIcon, ListItemText,
@@ -5,8 +6,7 @@ import {
 } from "@mui/material";
 import {
   Home, Users, Package, Droplets, Boxes, Archive, MapPin,
-  UserCog, Grid3X3, Layers, Plus, Bell, Settings, Apple as AppleIcon,
-  ChevronLeft, ChevronRight, LogOut
+  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut
 } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import companyLogo from "../assets/company_logo.png";
@@ -29,7 +29,6 @@ const management = [
   { label: "Pallets Management", to: "/pallets-management", icon: <Grid3X3 size={18} /> },
   { label: "Shelves Management", to: "/shelve-management", icon: <Layers size={18} /> },
   { label: "Juice Processing Management", to: "/juice-processing-management", icon: <Droplets size={18} /> },
-  { label: "Settings", to: "/setting", icon: <Settings size={18} /> },
 ];
 
 const createNew = [
@@ -37,10 +36,16 @@ const createNew = [
   { label: "Create Shelf", to: "/create-shelve", icon: <Plus size={18} /> },
 ];
 
-export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onToggleCollapsed }) {
+export default function AppSidebar({
+  mobileOpen,
+  onClose,
+  collapsed = false,
+  onToggleCollapsed,
+}) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const isActive = useMemo(() => (p) => pathname === p, [pathname]);
+  const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
 
   const handleLogout = () => {
     try {
@@ -51,8 +56,6 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
     navigate("/");
   };
 
-  const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
-
   const Section = ({ title, items }) => (
     <>
       {!collapsed && (
@@ -62,7 +65,7 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
       )}
       <List dense sx={{ py: collapsed ? 0.5 : 0 }}>
         {items.map((it) => {
-          const li = (
+          const content = (
             <ListItemButton
               key={it.label}
               component={Link}
@@ -74,6 +77,7 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
                 borderRadius: 9999,
                 py: 1,
                 justifyContent: collapsed ? "center" : "flex-start",
+                whiteSpace: "nowrap",
                 "&.Mui-selected": {
                   bgcolor: "rgba(46,125,50,0.12)",
                   color: "primary.main",
@@ -93,64 +97,55 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
                 {it.icon}
               </ListItemIcon>
               {!collapsed && (
-                <ListItemText primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }} primary={it.label} />
+                <ListItemText
+                  primary={it.label}
+                  primaryTypographyProps={{
+                    fontSize: 14,
+                    fontWeight: 500,
+                    noWrap: true,
+                  }}
+                  sx={{ ".MuiListItemText-primary": { overflow: "hidden", textOverflow: "ellipsis" } }}
+                />
               )}
             </ListItemButton>
           );
-
           return collapsed ? (
             <Tooltip key={it.label} title={it.label} placement="right">
-              <span>{li}</span>
+              <span>{content}</span>
             </Tooltip>
           ) : (
-            li
+            content
           );
         })}
       </List>
     </>
   );
 
-  // Shared drawer content
   const DrawerContent = (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <Toolbar sx={{ px: 1.25 }}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={1.25}
-          sx={{ width: "100%", minHeight: 48 }}
-        >
+        <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: "100%", minHeight: 48 }}>
+          {/* Company logo only (Apple icon removed) */}
           <Avatar
             src={companyLogo}
-            sx={{ width: 32, height: 32, display: collapsed ? "none" : "inline-flex" }}
+            alt="Company"
+            sx={{ width: 32, height: 32, flexShrink: 0 }}
           />
-          <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
-            <AppleIcon size={18} color="#fff" />
-          </Avatar>
 
+          {/* Name and sublabel (hidden in collapsed mode) */}
           {!collapsed && (
             <Box sx={{ overflow: "hidden", whiteSpace: "nowrap" }}>
-              <Typography variant="subtitle2" fontWeight={700}>
+              <Typography variant="subtitle2" fontWeight={700} noWrap>
                 Mehustaja
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" noWrap>
                 Processing Dashboard
               </Typography>
             </Box>
           )}
 
-          <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.25 }}>
-            {!collapsed && (
-              <IconButton aria-label="notifications" size="small">
-                <Bell size={16} />
-              </IconButton>
-            )}
-            {!collapsed && (
-              <IconButton aria-label="settings" component={Link} to="/setting" size="small">
-                <Settings size={16} />
-              </IconButton>
-            )}
-            {/* Collapse/Expand toggle */}
+          {/* Only the collapse/expand arrow on the right */}
+          <Box sx={{ ml: "auto" }}>
             <IconButton aria-label="collapse sidebar" size="small" onClick={onToggleCollapsed}>
               {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </IconButton>
@@ -160,7 +155,7 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
 
       <Divider />
 
-      <Box sx={{ overflowY: "auto", pb: 1, flexGrow: 1 }}>
+      <Box sx={{ overflowY: "auto", overflowX: "hidden", pb: 1, flexGrow: 1 }}>
         <Section title="Operations" items={operations} />
         <Section title="Management" items={management} />
         <Section title="Create New" items={createNew} />
@@ -185,7 +180,7 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
           {!collapsed && (
             <ListItemText
               primary="Logout"
-              primaryTypographyProps={{ fontSize: 14, fontWeight: 600, color: "error.main" }}
+              primaryTypographyProps={{ fontSize: 14, fontWeight: 600, color: "error.main", noWrap: true }}
             />
           )}
         </ListItemButton>
@@ -195,7 +190,7 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
 
   return (
     <>
-      {/* Mobile (temporary) */}
+      {/* Mobile drawer */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
@@ -209,13 +204,14 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
             borderRight: "1px solid",
             borderColor: "divider",
             backgroundColor: "#fafdf9",
+            overflowX: "hidden",
           },
         }}
       >
         {DrawerContent}
       </Drawer>
 
-      {/* Desktop (permanent + collapsible) */}
+      {/* Desktop drawer (collapsible) */}
       <Drawer
         variant="permanent"
         sx={{
@@ -229,6 +225,7 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
             borderColor: "divider",
             backgroundColor: "#fafdf9",
             transition: "width 200ms ease",
+            overflowX: "hidden", // prevent horizontal scroll
           },
         }}
         open
@@ -238,9 +235,3 @@ export default function AppSidebar({ mobileOpen, onClose, collapsed = false, onT
     </>
   );
 }
-
-
-
-// This code defines the sidebar for the application, including sections for operations, management, and creating new items. 
-// I used it to replace the original sidebar code in the AppSidebar component. The sidebar includes links to various pages, each with an icon and label. The active link is highlighted, and the sidebar is styled to fit within the application's layout. 
-// The sections are dynamically generated based on the provided arrays of items, making it easy to maintain and update. 
