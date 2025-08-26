@@ -86,7 +86,7 @@ function JuiceHandlePage() {
     popup.document.write(`
       <html><head><title>Print QR Code</title></head><body>
       <p>Box ${index}</p>
-      <img src="${url}" style="width:150px;" />
+      <img src="${url}" style="width:100px;" />
       </body></html>
     `);
     popup.document.close();
@@ -193,7 +193,7 @@ function JuiceHandlePage() {
                                   <Card key={index} sx={{ p: 1, backgroundColor: "#fff" }}>
                                     <CardContent sx={{ textAlign: "center" }}>
                                       <Typography variant="body2">Box {index}</Typography>
-                                      <img src={url} alt={`QR ${index}`} style={{ width: 120, height: 120 }} />
+                                      <img src={url} alt={`QR ${index}`} style={{ width: 100, height: 100 }} />
                                       <Button size="small" sx={{ mt: 1 }} variant="outlined" onClick={() => printSingleQRCode(url, index)}>Print</Button>
                                     </CardContent>
                                   </Card>

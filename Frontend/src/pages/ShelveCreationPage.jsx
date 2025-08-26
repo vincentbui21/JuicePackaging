@@ -74,7 +74,7 @@ function ShelveCreationPage() {
     popup.document.write(`
       <html><head><title>Print QR Code</title></head>
       <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
-        <img src="${qrImage}" style="width:200px;" />
+        <img src="${qrImage}" style="width:100px;" />
         ${
           createdShelfName
             ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${createdShelfName}</div>`
@@ -161,7 +161,7 @@ function ShelveCreationPage() {
         <DialogTitle>Shelf QR Code</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" alignItems="center" gap={1} mt={1}>
-            <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
+            <img src={qrImage} alt="QR Code" style={{ width: 100 }} />
             {/* NEW: show readable name beneath QR */}
             {createdShelfName ? (
               <Typography variant="h6" sx={{ mt: 1, fontWeight: "bold" }}>
