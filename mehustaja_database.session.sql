@@ -17,7 +17,6 @@ SET p.holding = IFNULL(b.cnt, 0),
                   ELSE 'available'
                 END;
 
-
 SELECT *FROM Orders;
 
 ALTER TABLE Orders

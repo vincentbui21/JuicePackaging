@@ -17,10 +17,11 @@ import {
   MenuItem
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Edit, QrCode, Delete, Print} from "@mui/icons-material";
+import { Edit, QrCode, Delete, Print } from "@mui/icons-material";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
+import printImage from "../services/send_to_printer";
 
 function JuiceProcessingManagement() {
   const [orders, setOrders] = useState([]);
@@ -28,7 +29,14 @@ function JuiceProcessingManagement() {
   const [search, setSearch] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+
+  // Store generated codes: { [orderId]: { pouches, boxes, codes:[{index,url}] } }
   const [qrCodes, setQrCodes] = useState({});
+
+  // QR popup/dialog
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrDialogOrderId, setQrDialogOrderId] = useState(null);
+
   const [editedFields, setEditedFields] = useState({
     name: "",
     status: "",
@@ -37,27 +45,7 @@ function JuiceProcessingManagement() {
     estimated_boxes: "",
   });
 
-  /** -------- PRINT -------- */
-  const printSingleQRCode = (url, index) => {
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html>
-        <head><title>Print QR Code</title></head>
-        <body style="display:flex;flex-direction:column;align-items:center;font-family:Arial;">
-          <p style="margin:6px 0;">Box ${index}</p>
-          <img src="${url}" style="width:100px;height:100px;" />
-          <script>
-            window.onload = function() {
-              window.print();
-              window.close();
-            }
-          </script>
-        </body>
-      </html>
-    `);
-    popup.document.close();
-  };
-  /** -------------------------------- */
+  const getOrderById = (id) => orders.find((o) => o.order_id === id) || null;
 
   useEffect(() => {
     fetchOrders();
@@ -75,12 +63,11 @@ function JuiceProcessingManagement() {
       const res = await api.get("/orders?status=processing complete");
       const enriched = (res.data || []).map((order) => {
         const { estimatedPouches, estimatedBoxes } = computeFromWeight(order.weight_kg);
-  
         return {
           ...order,
-          // Prefer persisted counts if present, otherwise computed fallback
+          // prefer persisted counts if present, otherwise computed fallback
           estimated_pouches: order?.pouches_count ?? estimatedPouches,
-          estimated_boxes:   order?.boxes_count   ?? estimatedBoxes,
+          estimated_boxes: order?.boxes_count ?? estimatedBoxes,
         };
       });
       setOrders(enriched);
@@ -89,12 +76,10 @@ function JuiceProcessingManagement() {
       setSnackbarMsg("Failed to fetch orders");
     }
   };
-  
 
   const printPouchLabels = async (order) => {
     try {
       const customer = order?.name || order?.customer_name || "Unknown";
-  
       const now = new Date();
       const exp = new Date(now);
       exp.setFullYear(exp.getFullYear() + 1);
@@ -102,20 +87,20 @@ function JuiceProcessingManagement() {
       const mm = String(exp.getMonth() + 1).padStart(2, "0");
       const yyyy = exp.getFullYear();
       const expiryDate = `${dd}/${mm}/${yyyy}`;
-  
+
       await api.post("/printer/print-pouch", {
         customer,
-        productionDate: expiryDate, // keep legacy param name for server compatibility
+        productionDate: expiryDate, // legacy param name for server compatibility
         expiryDate,
       });
-  
+
       setSnackbarMsg("Pouch print sent (Expiry +1 year)");
     } catch (e) {
       console.error("printPouchLabels failed", e);
       setSnackbarMsg("Failed to print pouch");
     }
   };
-  
+
   const handleShowQR = async (order) => {
     try {
       const boxesToUse = Number(order.estimated_boxes) || 0;
@@ -134,10 +119,44 @@ function JuiceProcessingManagement() {
           codes,
         },
       }));
+
+      // open dialog for this order
+      setQrDialogOrderId(order.order_id);
+      setQrDialogOpen(true);
       setSnackbarMsg("QR Codes generated");
     } catch (e) {
       console.error(e);
       setSnackbarMsg("Failed to generate QR Codes");
+    }
+  };
+
+  // Use device print management for single QR too
+  const printSingleQRCode = async (orderId, url, index) => {
+    const order = getOrderById(orderId);
+    try {
+      await printImage(url, order?.name || "Customer", `b${index}/1`);
+      setSnackbarMsg(`Box ${index} sent to printer`);
+    } catch (e) {
+      console.error("Single print failed", e);
+      setSnackbarMsg("Failed to print QR");
+    }
+  };
+
+  // Use device print management for ALL QRs
+  const printAllQRCodes = async (orderId) => {
+    const order = getOrderById(orderId);
+    const data = qrCodes[orderId];
+    if (!data || !data.codes?.length) return;
+
+    try {
+      const total = data.codes.length;
+      for (const { index, url } of data.codes) {
+        await printImage(url, order?.name || "Customer", `b${index}/${total}`);
+      }
+      setSnackbarMsg("All QR codes sent to printer");
+    } catch (e) {
+      console.error("Print all failed", e);
+      setSnackbarMsg("Failed to print all QRs");
     }
   };
 
@@ -198,12 +217,12 @@ function JuiceProcessingManagement() {
   };
 
   const statusOptions = [
-  { value: 'Created', label: 'Created' },
-  { value: 'Picked up', label: 'Picked up' },
-  { value: 'Ready for pickup', label: 'Ready for pickup' },
-  { value: 'Processing complete', label: 'processing complete' },
-  { value: 'In Progress', label: 'In Progress' },
-];
+    { value: "Created", label: "Created" },
+    { value: "Picked up", label: "Picked up" },
+    { value: "Ready for pickup", label: "Ready for pickup" },
+    { value: "Processing complete", label: "processing complete" },
+    { value: "In Progress", label: "In Progress" },
+  ];
 
   const columns = [
     { field: "order_id", headerName: "Order ID", flex: 1 },
@@ -216,8 +235,8 @@ function JuiceProcessingManagement() {
       field: "actions",
       headerName: "Actions",
       sortable: false,
-      flex: 0,                 // don't let it shrink
-      minWidth: 280,           // room for 4 icons
+      flex: 0,
+      minWidth: 280,
       disableColumnMenu: true,
       renderCell: (params) => (
         <Stack direction="row" spacing={1}>
@@ -240,12 +259,14 @@ function JuiceProcessingManagement() {
           </IconButton>
         </Stack>
       ),
-    }
+    },
   ];
 
   const filteredRows = orders.filter((o) =>
     (o?.name || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  const currentQrData = qrDialogOrderId ? qrCodes[qrDialogOrderId] : null;
 
   return (
     <>
@@ -259,7 +280,7 @@ function JuiceProcessingManagement() {
           pb: 4,
           display: "flex",
           justifyContent: "center",
-          overflowX: "auto"
+          overflowX: "auto",
         }}
       >
         <Paper
@@ -271,11 +292,8 @@ function JuiceProcessingManagement() {
             borderRadius: 2,
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
-          >
-            Order Management
+          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
+            Juice Processing Management
           </Typography>
 
           <TextField
@@ -287,54 +305,79 @@ function JuiceProcessingManagement() {
             sx={{ mb: 2, backgroundColor: "white", borderRadius: 1 }}
           />
 
-        <DataGrid
-          autoHeight
-          rows={filteredRows}
-          columns={columns}
-          getRowId={(row) => row.order_id}
-          pageSize={10}
-          rowsPerPageOptions={[10, 20, 50]}
-          sx={{
-            backgroundColor: "white",
-            borderRadius: 2,
-            boxShadow: 3,
-            // ensure the Actions column doesn't clip last buttons on tight layouts
-            '& .MuiDataGrid-cell[data-field="actions"]': { overflow: "visible" },
-         }}
-        />
-
+          <DataGrid
+            autoHeight
+            rows={filteredRows}
+            columns={columns}
+            getRowId={(row) => row.order_id}
+            pageSize={10}
+            rowsPerPageOptions={[10, 20, 50]}
+            sx={{
+              backgroundColor: "white",
+              borderRadius: 2,
+              boxShadow: 3,
+              '& .MuiDataGrid-cell[data-field="actions"]': { overflow: "visible" },
+            }}
+          />
         </Paper>
       </Box>
 
-      {/* QR sections */}
-      {Object.entries(qrCodes).map(([orderId, data]) => (
-        <Box key={orderId} mt={2} p={2} component={Paper} sx={{ width: "min(1200px, 95%)", mx: "auto",overflowX: "auto" }}>
-          <Typography variant="h6">QR Codes for Order: {orderId}</Typography>
-          <Typography>Pouches: {data.pouches}</Typography>
-          <Typography>Boxes: {data.boxes}</Typography>
+      {/* QR dialog (uses device printer for single + all) */}
+      <Dialog
+        open={qrDialogOpen}
+        onClose={() => setQrDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>
+          {qrDialogOrderId ? `QR Codes — Order ${qrDialogOrderId}` : "QR Codes"}
+        </DialogTitle>
+        <DialogContent dividers>
+          {currentQrData ? (
+            <>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Pouches: {currentQrData.pouches} &nbsp; • &nbsp; Boxes: {currentQrData.boxes}
+              </Typography>
+              <Stack direction="row" spacing={2} flexWrap="wrap">
+                {currentQrData.codes.map(({ index, url }) => (
+                  <Card key={index} sx={{ p: 1, backgroundColor: "#fff" }}>
+                    <CardContent sx={{ textAlign: "center" }}>
+                      <Typography variant="body2">Box {index}</Typography>
+                      <img
+                        src={url}
+                        alt={`QR ${index}`}
+                        style={{ width: 120, height: 120 }}
+                      />
+                      <Button
+                        size="small"
+                        sx={{ mt: 1 }}
+                        variant="outlined"
+                        onClick={() => printSingleQRCode(qrDialogOrderId, url, index)}
+                      >
+                        Print this
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Stack>
+            </>
+          ) : (
+            <Typography variant="body2">No QR codes generated.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
+          <Button
+            variant="contained"
+            onClick={() => qrDialogOrderId && printAllQRCodes(qrDialogOrderId)}
+            disabled={!qrDialogOrderId || !currentQrData?.codes?.length}
+          >
+            Print All
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-          <Stack direction="row" spacing={2} flexWrap="wrap" mt={2}>
-            {data.codes.map(({ index, url }) => (
-              <Card key={index} sx={{ p: 1, backgroundColor: "#fff" }}>
-                <CardContent sx={{ textAlign: "center" }}>
-                  <Typography variant="body2">Box {index}</Typography>
-                  <img src={url} alt={`QR ${index}`} style={{ width: 120, height: 120 }} />
-                  <Button
-                    size="small"
-                    sx={{ mt: 1 }}
-                    variant="outlined"
-                    onClick={() => printSingleQRCode(url, index)}
-                  >
-                    Print
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </Stack>
-        </Box>
-      ))}
-
-      {/* Edit Dialog */}
+      {/* Edit Dialog (unchanged) */}
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} fullWidth>
         <DialogTitle>Edit Order</DialogTitle>
         <DialogContent>
@@ -345,24 +388,26 @@ function JuiceProcessingManagement() {
               onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
               fullWidth
             />
-
             <TextField
-            select
-            label="Status"
-            value={editedFields.status}
-            onChange={(e) =>
-              setEditedFields((prev) => ({ ...prev, status: e.target.value }))
-            }
-            fullWidth
-            helperText="Please select the order status"
-          >
-            {statusOptions.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </TextField>
-
+              select
+              label="Status"
+              value={editedFields.status}
+              onChange={(e) => setEditedFields((prev) => ({ ...prev, status: e.target.value }))}
+              fullWidth
+              helperText="Please select the order status"
+            >
+              {[
+                { value: "Created", label: "Created" },
+                { value: "Picked up", label: "Picked up" },
+                { value: "Ready for pickup", label: "Ready for pickup" },
+                { value: "Processing complete", label: "processing complete" },
+                { value: "In Progress", label: "In Progress" },
+              ].map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               label="Weight (kg)"
               type="number"
@@ -390,7 +435,9 @@ function JuiceProcessingManagement() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleEditSave}>Save</Button>
+          <Button variant="contained" onClick={handleEditSave}>
+            Save
+          </Button>
         </DialogActions>
       </Dialog>
 

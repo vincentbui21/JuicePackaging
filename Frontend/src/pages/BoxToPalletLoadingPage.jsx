@@ -1,3 +1,4 @@
+// src/pages/BoxToPalletLoadingPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -8,12 +9,17 @@ import {
   Paper,
   Container,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import QRScanner from "../components/qrcamscanner";
 import api from "../services/axios";
 import DrawerComponent from "../components/drawer";
 import CustomerInfoCard from "../components/customerinfoshowcard";
 import BoxInfoCard from "../components/boxinfocard";
+import SmsConfirmDialog from "../components/SmsConfirmDialog";
 
 // Small chip showing each scanned box id
 function BoxChip({ index, id }) {
@@ -33,6 +39,7 @@ const InitialOrderInfo = {
   city: "",
   order_id: "",
   customer_id: "",
+  status: "",
 };
 
 export default function BoxToPalletLoadingPage() {
@@ -51,6 +58,12 @@ export default function BoxToPalletLoadingPage() {
   const [scannedBoxes, setScannedBoxes] = useState([]);
 
   const [snackbarMsg, setSnackbarMsg] = useState("");
+
+  // “Order not done” dialog
+  const [notDoneOpen, setNotDoneOpen] = useState(false);
+
+  // SMS confirm (Kuopio only)
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // ──────────────────────────────────────────────────────────────
   // Derived flags / helpers
@@ -88,6 +101,15 @@ export default function BoxToPalletLoadingPage() {
   };
   const belongsToFetchedOrder = (boxId) =>
     fetchedBoxList.some((b) => baseOf(b.box_id) === baseOf(boxId));
+
+  // Quick reset
+  const resetAll = () => {
+    setScannedBoxes([]);
+    setShelfId(null);
+    setPalletId(null);
+    setOrderInfo(InitialOrderInfo);
+    setFetchedBoxList([]);
+  };
 
   // ──────────────────────────────────────────────────────────────
   // Handle every scanned QR
@@ -189,6 +211,19 @@ export default function BoxToPalletLoadingPage() {
               return;
             }
 
+            // Treat "processing complete" (any case/spacing) as done
+            const done = (info.status || "")
+              .toString()
+              .trim()
+              .toLowerCase() === "processing complete";
+
+            if (!done) {
+              // show a blocking modal and reset any partial state
+              setNotDoneOpen(true);
+              resetAll();
+              return;
+            }
+
             // authoritative expected count
             let expected = Number(info.boxes_count || 0);
             try {
@@ -208,6 +243,7 @@ export default function BoxToPalletLoadingPage() {
               city: info.city || "",
               order_id: info.order_id,
               customer_id: info.customer_id,
+              status: info.status || "",
             });
             setFetchedBoxList(list);
 
@@ -239,41 +275,40 @@ export default function BoxToPalletLoadingPage() {
     return isKuopio ? Boolean(shelfId) : Boolean(palletId);
   }, [orderInfo.order_id, scannedBoxes.length, isKuopio, shelfId, palletId]);
 
+  // Normal (non-Kuopio) submit
+  const submitToPallet = async () => {
+    await api.post(`/pallets/${palletId}/load-boxes`, { boxes: scannedBoxes });
+    resetAll();
+    setSnackbarMsg("Submitted successfully.");
+  };
+
+  // Kuopio submit + optional SMS (controlled by confirm dialog)
+  const submitKuopio = async (sendNow) => {
+    // backend reads ?notifyNow=1|0
+    const q = sendNow ? "?notifyNow=1" : "?notifyNow=0";
+    await api.post(`/shelves/load-boxes${q}`, {
+      shelfId,
+      boxes: scannedBoxes,
+    });
+    resetAll();
+    setSnackbarMsg(sendNow ? "Submitted; SMS queued." : "Submitted without SMS.");
+  };
+
   const handleSubmit = async () => {
     try {
       if (isKuopio) {
-        // Direct to shelf (Kuopio)
-        await api.post("/shelves/load-boxes", {
-          shelfId,
-          boxes: scannedBoxes,
-        });
+        // Ask before sending SMS
+        setConfirmOpen(true);
       } else {
-        // Normal pallet flow
-        await api.post(`/pallets/${palletId}/load-boxes`, {
-          boxes: scannedBoxes,
-        });
+        await submitToPallet();
       }
-
-      // Reset UI
-      setScannedBoxes([]);
-      setShelfId(null);
-      setPalletId(null);
-      setOrderInfo(InitialOrderInfo);
-      setFetchedBoxList([]);
-      setSnackbarMsg("Submitted successfully.");
     } catch (err) {
       console.error(err);
       setSnackbarMsg("Submit failed. See console for details.");
     }
   };
 
-  const handleCancel = () => {
-    setOrderInfo(InitialOrderInfo);
-    setFetchedBoxList([]);
-    setScannedBoxes([]);
-    setPalletId(null);
-    setShelfId(null);
-  };
+  const handleCancel = () => resetAll();
 
   const scannedCount = scannedBoxes.length;
   const expectedCount = Number(orderInfo.boxes_count || 0);
@@ -369,6 +404,44 @@ export default function BoxToPalletLoadingPage() {
           </Stack>
         </Paper>
       </Container>
+
+      {/* Kuopio SMS confirm */}
+      <SmsConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onChoice={async (sendNow) => {
+          setConfirmOpen(false);
+          try {
+            await submitKuopio(sendNow);
+          } catch (e) {
+            console.error(e);
+            setSnackbarMsg("Submit failed. See console for details.");
+          }
+        }}
+        title="Send SMS to customer now?"
+        message={`Order: ${orderInfo.name || "—"} · City: ${
+          orderInfo.city || "—"
+        }`}
+      />
+
+      {/* Not-done dialog */}
+      <Dialog
+        open={notDoneOpen}
+        onClose={() => setNotDoneOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Order not marked as done</DialogTitle>
+        <DialogContent>
+          Please mark this order as <strong>Processing complete</strong> before
+          loading boxes to a pallet or shelf.
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setNotDoneOpen(false)}>
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={!!snackbarMsg}
