@@ -1644,8 +1644,126 @@ async function getShelfContents(shelfId) {
   );
   return rows;
 }
+async function getOrderStatus(order_id) {
+  const [rows] = await pool.query(
+    `SELECT status /*, is_done */ FROM Orders WHERE order_id = ? LIMIT 1`,
+    [order_id]
+  );
+  return rows[0] || null;
+}
+
+async function getPalletBoxes(palletId) {
+  const [rows] = await pool.query(
+    `
+    SELECT
+      b.box_id,
+      b.customer_id,
+      CASE
+        WHEN b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}'
+          THEN SUBSTRING(b.box_id, 5, 36)
+        ELSE NULL
+      END AS order_id
+    FROM Boxes b
+    WHERE b.pallet_id = ?
+    `,
+    [palletId]
+  );
+  return rows;
+}
+
+async function getOrdersOnPallet(palletId) {
+  const [rows] = await pool.query(
+    `
+    SELECT
+      o.order_id,
+      o.status,
+      o.customer_id,
+      c.name,
+      c.city,
+      COUNT(*) AS box_count
+    FROM Boxes b
+    JOIN Orders o
+      ON o.order_id = SUBSTRING(b.box_id, 5, 36)
+    LEFT JOIN Customers c
+      ON c.customer_id = o.customer_id
+    WHERE b.pallet_id = ?
+      AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}'
+    GROUP BY o.order_id, o.status, o.customer_id, c.name, c.city
+    ORDER BY MIN(b.created_at) ASC
+    `,
+    [palletId]
+  );
+  return rows;
+}
+
+async function getPalletBoxes(palletId) {
+  const [rows] = await pool.query(
+    `
+    SELECT
+      b.box_id,
+      b.customer_id,
+      b.city,
+      b.pallet_id,
+      b.created_at,
+      b.pouch_count,
+      b.shelf_id,
+      /* Derive order id from the QR pattern when available */
+      CASE
+        WHEN b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+          THEN SUBSTRING(b.box_id, 5, 36)
+        ELSE NULL
+      END AS order_id
+    FROM Boxes b
+    WHERE b.pallet_id = ?
+    ORDER BY b.created_at DESC
+    `,
+    [palletId]
+  );
+  return rows;
+}
 
 
+async function getOrdersOnPallet(palletId) {
+  const [rows] = await pool.query(
+    `
+    /* From encoded order id in box_id */
+    SELECT DISTINCT
+      o.order_id,
+      c.name,
+      c.city,
+      o.status,
+      o.created_at
+    FROM Boxes b
+    JOIN Orders o
+      ON o.order_id = SUBSTRING(b.box_id, 5, 36)
+    LEFT JOIN Customers c
+      ON c.customer_id = o.customer_id
+    WHERE b.pallet_id = ?
+      AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+
+    UNION
+
+    /* Fallback: from customer linkage (older boxes) */
+    SELECT DISTINCT
+      o.order_id,
+      c.name,
+      c.city,
+      o.status,
+      o.created_at
+    FROM Boxes b
+    JOIN Orders o
+      ON o.customer_id = b.customer_id
+    LEFT JOIN Customers c
+      ON c.customer_id = o.customer_id
+    WHERE b.pallet_id = ?
+      AND b.box_id NOT REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+
+    ORDER BY created_at DESC
+    `,
+    [palletId, palletId]
+  );
+  return rows;
+}
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -1703,6 +1821,10 @@ module.exports = {
     ping,
     getShelfContents,
     getShelfDetails,
+    getOrderStatus,
+    getPalletBoxes,
+    getOrdersOnPallet,
+    
 }
 
 module.exports.pool = pool;

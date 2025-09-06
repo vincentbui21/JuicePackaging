@@ -145,6 +145,16 @@ function resolveLocationForSMS({ shelf, customers, fallback }) {
   return fallback || "";
 }
 
+// Add near your other helpers in server.js
+async function getCurrentSettings() {
+  try {
+    const content = await fs.readFile(settingsFilePath, "utf8");
+    return parseSettingsFile(content);
+  } catch {
+    return {};
+  }
+}
+
 // Simple test route
 app.get('/', (req, res) => {
   res.send('hi');
@@ -504,50 +514,76 @@ app.post('/orders/:order_id/ready', async (req, res) => {
   });
   
 
-  // ─── Pallet → Shelf (mark orders ready; optionally SMS) ─────────────
+  // ─── Pallet → Shelf ────────────────────────────────────────────────────────────
   app.post('/pallets/assign-shelf', async (req, res) => {
-    const { palletId, shelfId } = req.body || {};
+    const { palletId, shelfId, sendSms, send_sms, notifyNow } = req.body || {};
+  
+    // Accept any of these field names from the client
+    const shouldNotify = !!(sendSms ?? send_sms ?? notifyNow);
+  
     if (!palletId || !shelfId) {
       return res.status(400).json({ ok: false, error: 'palletId and shelfId are required' });
     }
   
-    console.error('assign-shelf failed:', e);
     try {
       // 1) Link pallet to shelf
       const assignResult = await database.assignPalletToShelf(palletId, shelfId);
   
-      // 2) Mark orders ready
+      // 2) Mark orders on that pallet as "Ready for pickup"
       let ready = { updated: 0, orderIds: [] };
       if (typeof database.markOrdersOnPalletReady === 'function') {
         ready = await database.markOrdersOnPalletReady(palletId);
       }
   
-      // 3) SMS notify customers (location-specific)
-      let customers = [];
-      if (typeof database.getCustomersByPalletId === 'function') {
-      customers = await database.getCustomersByPalletId(palletId);
-      }
-
-      const results = [];
-      for (const c of customers) {
-      const phone = (c && c.phone) ? String(c.phone) : '';
-      if (!phone) continue;
-
-      // Use location-specific template
-      const msg = buildPickupSMSText(c.city);
-
-      try {
-        const messageId = await publishDirectSMS(phone, msg);
-        results.push({ ok: true, phone, messageId });
-      } catch (e) {
-        results.push({ ok: false, phone, error: e.message });
-      }
-    }
+      // 3) Optionally notify by SMS
+      let sms = [];
+      let notified = 0;
+      if (shouldNotify) {
+        let customers = [];
+        if (typeof database.getCustomersByPalletId === 'function') {
+          customers = await database.getCustomersByPalletId(palletId);
+        }
   
-      // 4) Broadcast + activity
+        // Resolve shelf label for message (best effort)
+        let placeText = 'the store';
+        if (typeof database.getShelfById === 'function') {
+          try {
+            const shelf = await database.getShelfById(shelfId);
+            if (shelf) {
+              placeText = shelf.shelf_name
+                ? `${shelf.shelf_name}${shelf.location ? ` (${shelf.location})` : ''}`
+                : (shelf.location || placeText);
+            }
+          } catch (_) {}
+        }
+  
+        // Build location-specific text if you have that helper; else a generic fallback
+        const msgFor = (c) => {
+          if (typeof buildPickupSMSText === 'function') {
+            return buildPickupSMSText(c?.city || '');
+          }
+          return `Hi ${c?.name || 'there'}, your order is ready for pickup at ${placeText}.`;
+        };
+  
+        const seen = new Set();
+        for (const c of customers) {
+          const phone = (c && c.phone) ? String(c.phone).trim() : '';
+          if (!phone || seen.has(phone)) continue;
+          seen.add(phone);
+  
+          try {
+            const id = await publishDirectSMS(phone, msgFor(c));
+            sms.push({ ok: true, phone, messageId: id });
+          } catch (e) {
+            sms.push({ ok: false, phone, error: e.message });
+          }
+        }
+        notified = sms.filter(x => x.ok).length;
+      }
+  
+      // 4) Broadcast + activity (keep your existing events)
       io.emit("order-status-updated");
       io.emit("pallet-updated", { pallet_id: palletId, shelfId });
-  
       emitActivity('warehouse', `Pallet ${palletId} assigned to shelf ${shelfId}`, { pallet_id: palletId, shelf_id: shelfId });
       if (ready.updated > 0) {
         emitActivity('ready', `${ready.updated} order(s) ready for pickup (pallet ${palletId})`, { pallet_id: palletId });
@@ -555,18 +591,19 @@ app.post('/orders/:order_id/ready', async (req, res) => {
   
       return res.json({
         ok: true,
-        message: 'Pallet assigned; orders ready; SMS attempted',
+        message: `Pallet assigned${shouldNotify ? ' and SMS attempted' : ''}`,
         assignResult,
         ready,
-        notified: results.filter(r => r.ok).length,
-        sms: results,
+        notified,
+        sms,
+        notifySkipped: !shouldNotify
       });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: 'assign-shelf failed', details: e.message });
+    } catch (err) {
+      console.error('assign-shelf failed:', err);
+      return res.status(500).json({ ok: false, error: 'assign_shelf_failed', details: err.message });
     }
   });
   
-
   
 // ─── Boxes → Shelf (Kuopio direct) (mark ready; optionally SMS) ─────
 app.post('/shelves/load-boxes', async (req, res) => {
@@ -765,7 +802,6 @@ app.post("/printer/test-print", async (req, res) => {
     try { s.destroy(); } catch {}
   };
 
-  // 3s fallback if printer returns no data
   const timer = setTimeout(() => {
     if (replied) return;
     replied = true;
@@ -784,32 +820,45 @@ app.post("/printer/test-print", async (req, res) => {
     return res.status(500).json({ status: "error", message: err.message });
   });
 
-  s.connect(3001, "192.168.1.149", () => {
-    // Send CR + TPR
-    s.write("\rTPR\r");
-
-    // If printer does send data, reply immediately
-    s.once("data", (buf) => {
-      if (replied) return;
+  try {
+    const { printer_ip = "192.168.1.149" } = await getCurrentSettings(); // <-- dynamic IP
+    s.connect(3001, printer_ip, () => {
+      s.write("\rTPR\r");
+      s.once("data", (buf) => {
+        if (replied) return;
+        replied = true;
+        clearTimeout(timer);
+        cleanup();
+        return res.json({ status: "ok", response: buf.toString("utf8").trim() });
+      });
+    });
+  } catch (e) {
+    if (!replied) {
       replied = true;
       clearTimeout(timer);
       cleanup();
-      return res.json({ status: "ok", response: buf.toString("utf8").trim() });
-    });
-  });
+      return res.status(500).json({ status: "error", message: e.message });
+    }
+  }
 });
+
 
 
 app.post("/printer/print-pouch", async (req, res) => {
   try {
     const { customer, productionDate } = req.body;
+
+    // Read the latest printer IP from the settings file
+    const { printer_ip = "192.168.1.139" } = await getCurrentSettings();
+
     const result = await printPouch({
-      host: "192.168.1.139",
+      host: printer_ip,     // <-- dynamic IP
       port: 3003,
       job: "Mehustaja",
       customer,
       productionDate,
     });
+
     console.log("Sent to printer:", result);
     res.json({ status: "ok", ...result });
   } catch (err) {
@@ -817,6 +866,7 @@ app.post("/printer/print-pouch", async (req, res) => {
     res.status(500).json({ status: "error", message: err.message });
   }
 });
+
 
 
 app.get('/dashboard/summary', async (req, res) => {
@@ -1026,7 +1076,61 @@ app.put('/orders/:orderId', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'update-failed' });
   }
 });
+// --- GET current order status / "is done" check ---
+app.get('/orders/:orderId/status', async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    if (typeof database.getOrderStatus !== 'function') {
+      return res.status(500).json({ ok: false, error: 'getOrderStatus not available' });
+    }
 
+    const row = await database.getOrderStatus(orderId); // { status, is_done? }
+    if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const raw = String(row.status || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const done =
+      raw === 'processing complete' ||
+      raw === 'processed' ||
+      raw === 'complete' ||
+      raw === 'completed' ||
+      raw === 'ready for pallet' ||
+      raw === 'ready for pickup' ||
+      raw === 'ready' ||
+      raw === 'done' ||
+      row.is_done === 1 || row.is_done === true;
+
+    res.json({ ok: true, status: row.status || '', done });
+  } catch (e) {
+    console.error('get /orders/:orderId/status failed:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// GET /pallets/:palletId/context
+app.get('/pallets/:palletId/order-context', async (req, res) => {
+  const { palletId } = req.params;
+  try {
+    const boxes = await database.getPalletBoxes(palletId);
+    const orderIds = Array.from(
+      new Set(boxes.map(b => b.order_id).filter(Boolean))
+    );
+    return res.json({ boxes, orderIds });
+  } catch (err) {
+    console.error('pallet context failed:', err);
+    return res.status(500).json({ error: 'pallet_context_failed' });
+  }
+});
+
+app.get('/pallets/:palletId/orders', async (req, res) => {
+  const { palletId } = req.params;
+  try {
+    const rows = await database.getOrdersOnPallet(palletId);
+    return res.json(rows);
+  } catch (err) {
+    console.error('orders-on-pallet failed:', err);
+    return res.status(500).json({ error: 'orders_on_pallet_failed' });
+  }
+});
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {

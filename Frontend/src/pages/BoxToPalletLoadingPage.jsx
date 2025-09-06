@@ -42,6 +42,52 @@ const InitialOrderInfo = {
   status: "",
 };
 
+// ── helpers to avoid false “mark as done” prompts ─────────────────────────────
+function normalizeStatus(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Returns true if an order can proceed to box loading.
+ * Accepts many variants to avoid false negatives:
+ *  - "processing complete", "processed", "complete", "completed"
+ *  - "ready for pallet", "ready for pickup", "ready", "done"
+ * Also accepts boolean-ish flags if your API exposes them:
+ *  - info.is_done / info.done / info.completed / info.isCompleted
+ */
+function isOrderReadyForLoading(info) {
+  const s = normalizeStatus(info?.status);
+  const allowed =
+    s === "processing complete" ||
+    s === "processed" ||
+    s === "complete" ||
+    s === "completed" ||
+    s === "ready for pallet" ||
+    s === "ready for pickup" ||
+    s === "ready" ||
+    s === "done";
+
+  const flag =
+    info?.is_done === true ||
+    info?.is_done === 1 ||
+    info?.done === true ||
+    info?.done === 1 ||
+    info?.completed === true ||
+    info?.completed === 1 ||
+    info?.isCompleted === true;
+
+  return allowed || flag;
+}
+
+async function fetchOrderDone(api, orderId) {
+  try {
+    const { data } = await api.get(`/orders/${encodeURIComponent(orderId)}/status`);
+    if (data?.ok) return data.done === true;
+  } catch (_) {}
+  return null; // unknown
+}
+
+
 export default function BoxToPalletLoadingPage() {
   const [scanResult, setScanResult] = useState(null);
 
@@ -205,26 +251,30 @@ export default function BoxToPalletLoadingPage() {
           .get(`/boxes/scan-info/${encodeURIComponent(normalized)}`)
           .then(async (res) => {
             const info = res?.data?.order;
+            console.log("scan-info status:", info?.status, info);
             const list = Array.isArray(res?.data?.boxes) ? res.data.boxes : [];
+          
             if (!info || !info.order_id) {
               setSnackbarMsg("Order not found for this box.");
               return;
             }
-
-            // Treat "processing complete" (any case/spacing) as done
-            const done = (info.status || "")
-              .toString()
-              .trim()
-              .toLowerCase() === "processing complete";
-
-            if (!done) {
-              // show a blocking modal and reset any partial state
+          
+            // 1) Decide readiness using scan-info (if present)…
+            let ready = isOrderReadyForLoading(info);
+          
+            // 2) …otherwise ask the backend for status and use that.
+            if (!ready) {
+              const serverSaysDone = await fetchOrderDone(api, info.order_id);
+              if (serverSaysDone === true) ready = true;
+            }
+          
+            if (!ready) {
               setNotDoneOpen(true);
               resetAll();
               return;
             }
-
-            // authoritative expected count
+          
+            // authoritative expected count (if your server exposes it)
             let expected = Number(info.boxes_count || 0);
             try {
               const expRes = await api.get(
@@ -234,7 +284,7 @@ export default function BoxToPalletLoadingPage() {
             } catch {
               /* ignore; use info.boxes_count */
             }
-
+          
             setOrderInfo({
               name: info.name || "",
               created_at: info.created_at || "",
@@ -243,11 +293,11 @@ export default function BoxToPalletLoadingPage() {
               city: info.city || "",
               order_id: info.order_id,
               customer_id: info.customer_id,
-              status: info.status || "",
+              status: info.status || "", // may still be ""
             });
             setFetchedBoxList(list);
-
-            // process this very scan after we’ve set state
+          
+            // process the current scan after state has been set
             setTimeout(processScan, 0);
           })
           .catch((e) => {
@@ -419,9 +469,7 @@ export default function BoxToPalletLoadingPage() {
           }
         }}
         title="Send SMS to customer now?"
-        message={`Order: ${orderInfo.name || "—"} · City: ${
-          orderInfo.city || "—"
-        }`}
+        message={`Order: ${orderInfo.name || "—"} · City: ${orderInfo.city || "—"}`}
       />
 
       {/* Not-done dialog */}

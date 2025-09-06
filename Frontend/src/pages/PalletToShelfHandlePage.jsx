@@ -1,3 +1,4 @@
+// Frontend/src/pages/PalletToShelfHandlePage.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -8,13 +9,22 @@ import {
   Button,
   Snackbar,
   Alert,
+  Divider,
+  Chip,
+  List,
+  ListItem,
+  ListItemText,
+  LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import DrawerComponent from "../components/drawer";
 import QRScanner from "../components/qrcamscanner";
 import CustomerInfoCard from "../components/customerinfoshowcard";
-import BoxInfoCard from "../components/boxinfocard";
-import api from "../services/axios";
 import SmsConfirmDialog from "../components/SmsConfirmDialog";
+import api from "../services/axios";
 
 export default function PalletToShelfHandlePage() {
   const InitialOrderInfo = {
@@ -29,6 +39,7 @@ export default function PalletToShelfHandlePage() {
   // Context we show (optional, but nice when available)
   const [orderInfo, setOrderInfo] = useState(InitialOrderInfo);
   const [fetchedBoxList, setFetchedBoxList] = useState([]);
+  const [ordersOnPallet, setOrdersOnPallet] = useState([]);
 
   // What we actually need to submit
   const [palletId, setPalletId] = useState("");
@@ -38,51 +49,69 @@ export default function PalletToShelfHandlePage() {
   // but they are NOT required to submit.
   const [scannedBoxes, setScannedBoxes] = useState([]);
 
+  // UI state
   const [snackbarMsg, setSnackbarMsg] = useState("");
-
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   // SMS confirmation dialog state
   const [smsOpen, setSmsOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState(null); // function to call after choice
+  const [pendingAction, setPendingAction] = useState(null);
 
-  // Try to enrich page with order context based on PALLET id (optional)
-  async function tryFetchOrderContextForPallet(id) {
-    // All of this is best-effort; if your backend doesn’t have these
-    // endpoints yet, it will silently fail and the page still works.
-    const tryEndpoints = [
-      `/pallets/${encodeURIComponent(id)}/order-context`,
-      `/pallets/${encodeURIComponent(id)}/orders`,
-      `/pallets/${encodeURIComponent(id)}/boxes`,
-    ];
-    for (const url of tryEndpoints) {
-      try {
-        const res = await api.get(url);
-        const d = res?.data || {};
-        // normalize a few common shapes
-        const boxes =
-          Array.isArray(d.boxes)
-            ? d.boxes
-            : Array.isArray(d.items)
-            ? d.items
-            : [];
-        const boxes_count =
-          typeof d.boxes_count === "number"
-            ? d.boxes_count
-            : boxes.length || 0;
+  const short = (id) => (id ? `${id.slice(0, 6)}…${id.slice(-6)}` : "—");
 
-        const name = d.name || d.customer_name || "";
-        const city = d.city || d.location || "";
-        const order_id = d.order_id || d.orderId || "";
+  // ---------- Pallet context fetch (boxes + orders) ----------
+  async function fetchPalletContext(pId) {
+    if (!pId) return;
+    try {
+      const enc = encodeURIComponent(pId);
+      const [{ data: ctx }, { data: orders }] = await Promise.all([
+        api.get(`/pallets/${enc}/order-context`), // <-- exact route
+        api.get(`/pallets/${enc}/orders`),        // <-- exact route
+      ]);
 
-        setOrderInfo({ order_id, name, city, boxes_count });
-        setFetchedBoxList(boxes);
-        return; // success – stop trying further endpoints
-      } catch {
-        // ignore and try next
+      const boxes = Array.isArray(ctx?.boxes) ? ctx.boxes : [];
+      const orderList = Array.isArray(orders) ? orders : [];
+
+      setFetchedBoxList(boxes);
+      setOrdersOnPallet(orderList);
+
+      // Show one "primary" order in the summary card if available
+      if (orderList.length) {
+        const o = orderList[0];
+        setOrderInfo((prev) => ({
+          ...prev,
+          order_id: o.order_id || "",
+          name: o.name || prev.name,
+          city: o.city || prev.city,
+          boxes_count:
+            typeof ctx?.boxes_count === "number"
+              ? ctx.boxes_count
+              : prev.boxes_count,
+        }));
+      } else {
+        // Still let the chip show box count from context if present
+        setOrderInfo((prev) => ({
+          ...prev,
+          boxes_count:
+            typeof ctx?.boxes_count === "number"
+              ? ctx.boxes_count
+              : prev.boxes_count,
+        }));
       }
+    } catch (err) {
+      console.error("Failed to load pallet context", err);
+      // Don’t kill the UI; just show a small toast
+      setSnackbarMsg("Failed to fetch pallet context");
     }
   }
 
-  // Handle scanner results
+  // Fetch context whenever a pallet is linked
+  useEffect(() => {
+    if (palletId) fetchPalletContext(palletId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [palletId]);
+
+  // ---------- Scanner handling ----------
   useEffect(() => {
     if (!scanResult) return;
 
@@ -91,7 +120,7 @@ export default function PalletToShelfHandlePage() {
     const uuidMatch = raw.match(/[0-9a-fA-F-]{36}/);
     const uuid = uuidMatch ? uuidMatch[0] : null;
 
-    // PALLET (supports "PALLET_xxx" or a bare UUID)
+    // PALLET (“PALLET_…” or bare UUID)
     if (upper.startsWith("PALLET") || (!!uuid && !raw.includes("_"))) {
       const id = upper.startsWith("PALLET")
         ? raw.replace(/^PALLET[\s_:\-]*/i, "").trim()
@@ -100,10 +129,10 @@ export default function PalletToShelfHandlePage() {
       if (id) {
         setPalletId(id);
         setSnackbarMsg("Pallet linked");
-        // Best-effort fetch of context (optional)
-        if (!orderInfo.order_id) {
-          tryFetchOrderContextForPallet(id);
-        }
+        // reset context until fetched
+        setFetchedBoxList([]);
+        setOrdersOnPallet([]);
+        setOrderInfo((prev) => ({ ...prev, order_id: "" }));
       }
       return;
     }
@@ -118,13 +147,21 @@ export default function PalletToShelfHandlePage() {
       return;
     }
 
-    // BOX – optional here, but if scanned we’ll show order summary/progress
+    // BOX – optional on this page (we don’t require it to submit)
     if (upper.startsWith("BOX")) {
-      const parts = raw.split("_");
-      // Accept formats like "BOX_<orderId>_<n>" or "BOX <orderId> <n>"
-      const normalizedParts = parts.length >= 3 ? parts : raw.replace(/\s+/g, "_").split("_");
-      if (normalizedParts.length >= 3) {
-        const order_id = normalizedParts[1];
+      // Normalize like BOX_<orderId>_<n>
+      const normalized = raw.replace(/\s+/g, "_");
+      const parts = normalized.split("_");
+      if (parts.length >= 3) {
+        const order_id = parts[1];
+
+        // reflect an order in the top chip list
+        setOrdersOnPallet((prev) => {
+          if (prev.some((o) => o.order_id === order_id)) return prev;
+          return [...prev, { order_id }];
+        });
+
+        // If we still don’t have a visible order on the card, try to fetch it
         if (order_id && !orderInfo.order_id) {
           api
             .get(`/orders/${order_id}/boxes`)
@@ -144,36 +181,38 @@ export default function PalletToShelfHandlePage() {
             .catch(() => setSnackbarMsg("Failed to fetch order/boxes"));
         }
       }
+
       setScannedBoxes((prev) => (prev.includes(raw) ? prev : [...prev, raw]));
       return;
     }
 
     setSnackbarMsg("Unrecognized QR");
-  }, [scanResult]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanResult]);
 
-  // ✅ Enable submit as soon as we have pallet + shelf (no box scan required)
-  const canSubmit = useMemo(() => {
-    return Boolean(palletId) && Boolean(shelfId);
-  }, [palletId, shelfId]);
+  // ---------- Submit flow (review → SMS confirm → POST) ----------
+  const canSubmit = useMemo(() => Boolean(palletId) && Boolean(shelfId), [palletId, shelfId]);
 
-  const handleOpenConfirm = () => {
+  const handleOpenConfirm = () => setConfirmOpen(true);
+  const handleConfirmCancel = () => setConfirmOpen(false);
+  const handleConfirmContinue = () => {
+    setConfirmOpen(false);
     setPendingAction(() => submitWithFlag);
     setSmsOpen(true);
   };
 
   const handleSmsChoice = async (sendNow) => {
     setSmsOpen(false);
-    if (pendingAction) {
-      await pendingAction(sendNow);
-    }
+    if (pendingAction) await pendingAction(sendNow);
   };
 
   const submitWithFlag = async (sendSms) => {
     try {
+      setSubmitting(true);
       await api.post("/pallets/assign-shelf", {
         palletId,
         shelfId,
-        sendSms, // backend will respect or ignore depending on your implementation
+        sendSms,
       });
 
       // Reset UI
@@ -181,19 +220,21 @@ export default function PalletToShelfHandlePage() {
       setShelfId("");
       setOrderInfo(InitialOrderInfo);
       setFetchedBoxList([]);
+      setOrdersOnPallet([]);
       setScannedBoxes([]);
-      setSnackbarMsg(
-        sendSms ? "Assigned & SMS sent (if available)" : "Assigned (SMS skipped)"
-      );
+      setSnackbarMsg(sendSms ? "Assigned & SMS sent (if available)" : "Assigned (SMS skipped)");
     } catch (err) {
-      console.error(err);
+      console.error("Assign to shelf failed:", err);
       setSnackbarMsg("Submit failed. See console for details.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleCancel = () => {
+  const handleClear = () => {
     setOrderInfo(InitialOrderInfo);
     setFetchedBoxList([]);
+    setOrdersOnPallet([]);
     setScannedBoxes([]);
     setPalletId("");
     setShelfId("");
@@ -215,49 +256,91 @@ export default function PalletToShelfHandlePage() {
             display: "flex",
             height: "auto",
             flexDirection: "column",
+            position: "relative",
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
-          >
+          {submitting && (
+            <Box sx={{ position: "absolute", left: 0, right: 0, top: 0 }}>
+              <LinearProgress />
+            </Box>
+          )}
+
+          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
             Pallet → Shelf Handling
           </Typography>
 
           <Stack spacing={3} alignItems="center">
             <QRScanner onResult={setScanResult} />
 
-            {/* Order summary – shown when we have it (from box scan or optional pallet summary) */}
-            {/* <CustomerInfoCard customerInfo={orderInfo} countLabel="Box Count" /> */}
+            {/* Quick link summary */}
+            <Paper variant="outlined" sx={{ p: 2, width: "100%" }}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap flexWrap="wrap">
+                <Chip label={`Pallet: ${palletId ? short(palletId) : "—"}`} color={palletId ? "success" : "default"} />
+                <Chip label={`Shelf: ${shelfId ? shelfId : "—"}`} color={shelfId ? "success" : "default"} />
+                <Chip
+                  label={`Orders on pallet: ${ordersOnPallet.length}`}
+                  color={ordersOnPallet.length ? "success" : "default"}
+                />
+                <Chip
+                  label={`Boxes (fetched): ${fetchedBoxList.length}`}
+                  color={fetchedBoxList.length ? "success" : "default"}
+                />
+                <Chip label={`Scanned boxes here: ${scannedCount}`} />
+              </Stack>
 
-            {/* Progress card (needs pallet id to display the frame; order fields fill if available) */}
-            {(palletId || orderInfo.order_id) && (
-              <BoxInfoCard
-                palletId={palletId}
-                orderId={orderInfo.order_id}
-                customerName={orderInfo.name}
-                city={orderInfo.city}
-                expected={expectedCount}
-                scanned={scannedCount}
-              />
-            )}
+              {!!ordersOnPallet.length && (
+                <>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" gutterBottom>
+                    Orders on this pallet
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    {ordersOnPallet.map((o, i) => (
+                      <Chip
+                        key={i}
+                        variant="outlined"
+                        label={
+                          o.name ? `${o.name} • ${short(o.order_id)}` : short(o.order_id)
+                        }
+                      />
+                    ))}
+                  </Stack>
+                </>
+              )}
+            </Paper>
 
-            {/* Show chosen shelf */}
-            {shelfId && (
-              <Typography variant="body2" color="text.secondary">
-                Shelf: <strong>{shelfId}</strong>
-              </Typography>
+
+            {/* Optional: show fetched box list (from order/pallet context) */}
+            {!!fetchedBoxList.length && (
+              <Paper variant="outlined" sx={{ p: 2, width: "100%" }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Boxes on context ({fetchedBoxList.length})
+                </Typography>
+                <List dense>
+                  {fetchedBoxList.slice(0, 8).map((b, idx) => (
+                    <ListItem key={idx} disableGutters>
+                      <ListItemText
+                        primary={String(b.box_id || b.id || b)}
+                        secondary={
+                          b.order_id ? `Order: ${short(b.order_id)}` : undefined
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                  {fetchedBoxList.length > 8 && (
+                    <ListItem disableGutters>
+                      <ListItemText primary={`…and ${fetchedBoxList.length - 8} more`} />
+                    </ListItem>
+                  )}
+                </List>
+              </Paper>
             )}
 
             <Stack direction="row" spacing={2}>
-              <Button variant="outlined" onClick={handleCancel}>
+              <Button variant="outlined" onClick={handleClear} disabled={submitting}>
                 Clear
               </Button>
-              <Button
-                variant="contained"
-                onClick={handleOpenConfirm}
-                disabled={!canSubmit}
-              >
+              <Button variant="contained" onClick={handleOpenConfirm} disabled={!canSubmit || submitting}>
                 Assign to Shelf
               </Button>
             </Stack>
@@ -282,6 +365,41 @@ export default function PalletToShelfHandlePage() {
         </Alert>
       </Snackbar>
 
+      {/* Review/confirm dialog */}
+      <Dialog open={confirmOpen} onClose={handleConfirmCancel} maxWidth="sm" fullWidth>
+        <DialogTitle>Review assignment</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1}>
+            <Typography variant="body2">
+              <strong>Pallet:</strong> {palletId || "—"}
+            </Typography>
+            <Typography variant="body2">
+              <strong>Shelf:</strong> {shelfId || "—"}
+            </Typography>
+            <Typography variant="body2">
+              <strong>Orders on pallet:</strong> {ordersOnPallet.length}
+            </Typography>
+            <Typography variant="body2">
+              <strong>Order (context):</strong> {orderInfo.order_id || "—"}
+            </Typography>
+            <Typography variant="body2">
+              <strong>Customer:</strong> {orderInfo.name || "—"}{" "}
+              {orderInfo.city ? `(${orderInfo.city})` : ""}
+            </Typography>
+            <Typography variant="body2">
+              <strong>Boxes (context):</strong> {fetchedBoxList.length}
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleConfirmCancel}>Back</Button>
+          <Button variant="contained" onClick={handleConfirmContinue}>
+            Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* SMS confirm */}
       <SmsConfirmDialog
         open={smsOpen}
         onClose={() => setSmsOpen(false)}
