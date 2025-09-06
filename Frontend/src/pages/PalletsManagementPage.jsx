@@ -23,6 +23,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
+import printImage from '../services/send_to_printer'
 
 function PalletsManagementPage() {
   const [pallets, setPallets] = useState([]);
@@ -108,19 +109,22 @@ function PalletsManagementPage() {
   const handleShowQR = async (pallet_id) => {
     const img = await generateSmallPngQRCode(`PALLET_${pallet_id}`);
     setQrImage(img);
+    setSelectedPalletId(pallet_id); // <-- ADD THIS
     setQrDialogOpen(true);
   };
 
-  const handlePrint = () => {
-    if (!qrImage) return;
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html><head><title>Print QR Code</title></head><body style="text-align:center;">
-      <img src="${qrImage}" style="width: 120px; height: 120px; object-fit: contain;" />
-      <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
-      </body></html>
-    `);
-    popup.document.close();
+  const handlePrint = (id) => {
+    // if (!qrImage) return;
+    // const popup = window.open("", "_blank");
+    // popup.document.write(`
+    //   <html><head><title>Print QR Code</title></head><body style="text-align:center;">
+    //   <img src="${qrImage}" style="width: 120px; height: 120px; object-fit: contain;" />
+    //   <script>window.onload = function() { window.print(); window.onafterprint = () => window.close(); }</script>
+    //   </body></html>
+    // `);
+    // popup.document.close();
+
+    printImage(qrImage, id)
   };
 
   const handleDelete = async (pallet_id) => {
@@ -231,7 +235,7 @@ function PalletsManagementPage() {
                 </TextField>
               </Grid>
 
-              <Grid item xs={6} sm={3} md={2}>
+              {/* <Grid item xs={6} sm={3} md={2}>
                 <TextField
                   label="Capacity"
                   fullWidth
@@ -239,13 +243,13 @@ function PalletsManagementPage() {
                   value={capacity}
                   onChange={(e) => setCapacity(Number(e.target.value))}
                 />
-              </Grid>
+              </Grid> */}
 
-              <Grid item xs={6} sm={3} md={2}>
+              {/* <Grid item xs={6} sm={3} md={2}>
                 <Button fullWidth variant="contained" onClick={handleCreatePallet}>
                   Create Pallet
                 </Button>
-              </Grid>
+              </Grid> */}
 
               {/* <Grid item xs={12} sm={6} md={5}>
                 <TextField
@@ -264,14 +268,14 @@ function PalletsManagementPage() {
               </Grid> */}
 
               {/* NEW: search input (purely client-side) */}
-              <Grid item xs={12} sm={6} md={5}>
+              {/* <Grid item xs={12} sm={6} md={5}>
                 <TextField
                   label="Search pallets (id / status / city)"
                   fullWidth
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                 />
-              </Grid>
+              </Grid> */}
             </Grid>
           </Box>
 
@@ -299,7 +303,7 @@ function PalletsManagementPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
+          <Button onClick={()=> {handlePrint(selectedPalletId)}} variant="contained" startIcon={<Print />}>
             Print
           </Button>
         </DialogActions>

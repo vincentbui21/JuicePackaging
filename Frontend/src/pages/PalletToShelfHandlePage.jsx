@@ -213,7 +213,7 @@ export default function PalletToShelfHandlePage() {
             p: 4,
             borderRadius: 2,
             display: "flex",
-            height: "100%",
+            height: "auto",
             flexDirection: "column",
           }}
         >
@@ -228,7 +228,7 @@ export default function PalletToShelfHandlePage() {
             <QRScanner onResult={setScanResult} />
 
             {/* Order summary – shown when we have it (from box scan or optional pallet summary) */}
-            <CustomerInfoCard customerInfo={orderInfo} countLabel="Box Count" />
+            {/* <CustomerInfoCard customerInfo={orderInfo} countLabel="Box Count" /> */}
 
             {/* Progress card (needs pallet id to display the frame; order fields fill if available) */}
             {(palletId || orderInfo.order_id) && (

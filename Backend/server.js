@@ -52,61 +52,88 @@ io.on('connection', (socket) => {
 // Usage: const smsText = buildPickupSMSText(locationString);
 // If location is unknown, returns a sensible default.
 // ─────────────────────────────────────────────────────────────────────────────
+// Location-based pickup SMS templates (Finnish)
 function buildPickupSMSText(locationRaw) {
   const l = (locationRaw || "").trim().toLowerCase();
-
   switch (l) {
     case "lapinlahti":
-      return (
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne, Anjan Pihaputiikki, Lapinlahti\n" +
-        "puh. 044 073 3447\n" +
+      return [
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne, Anjan Pihaputiikki, Lapinlahti",
+        "puh. 044 073 3447",
         "Avoinna. Maanantai-Perjantai 09-17, Lauantai 09-13"
-      );
+      ].join("\n");
 
     case "kuopio":
-      return (
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne Mehustajalla. " +
-        "Olemme avoinna Ma klo 8-17 ja Ti - Pe klo 9-17\n" +
+      return [
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne Mehustajalla.",
+        "Olemme avoinna Ma klo 8-17 ja Ti - Pe klo 9-17",
         "Ystävällisin terveisin, Mehustajat"
-      );
+      ].join("\n");
 
     case "lahti":
-      return (
-        "Hei, mehunne ovat valmiina noudettavaksi Vihertalo Varpulasta\n" +
-        "Rajakatu 2, Lahti\n" +
-        "Olemme avoinna Ma-Pe klo 10-18  ja La 9-15\n" +
+      return [
+        "Hei, mehunne ovat valmiina noudettavaksi Vihertalo Varpulasta",
+        "Rajakatu 2, Lahti",
+        "Olemme avoinna Ma-Pe klo 10-18  ja La 9-15",
         "Terveisin Mehustaja"
-      );
+      ].join("\n");
 
     case "joensuu":
-      return (
-        "Hei, Mehunne ovat valmiina osoitteessa\n" +
-        "Joensuu Nuorisoverstas\n" +
-        "Tulliportinkatu 54\n" +
-        "Mehut voi noutaa Ti ja To 9-14\n" +
+      return [
+        "Hei, Mehunne ovat valmiina osoitteessa",
+        "Joensuu Nuorisoverstas",
+        "Tulliportinkatu 54",
+        "Mehut voi noutaa Ti ja To 9-14",
         "puh: 050 4395406 Terveisin Mehustaja"
-      );
+      ].join("\n");
 
     case "mikkeli":
-      return (
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa Nuorten Työpajat Mikkeli.\n" +
-        "Noutopiste on avoinna Ma 09.30-14.00, Ti 8-16, Ke 8-16, To 09.30-14.00\n" +
+      return [
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa Nuorten Työpajat Mikkeli.",
+        "Noutopiste on avoinna Ma 09.30-14.00, Ti 8-16, Ke 8-16, To 09.30-14.00",
         "Ystävällisin terveisin Mehustaja."
-      );
+      ].join("\n");
 
     case "varkaus":
-      return (
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa XXX Varkaus, " +
-        "paikka on sama jonne omanat on jätetty.\n" +
-        "HUOM! Noutopiste on avoinna XXXXXX\n" +
+      return [
+        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omanat on jätetty.",
+        "HUOM! Noutopiste on avoinna XXXXXX",
         "Ystävällisin terveisin, Mehustaja"
-      );
+      ].join("\n");
 
     default:
-      // Generic fallback
       return "Hei! Mehunne ovat valmiina noudettavaksi. Ystävällisin terveisin, Mehustaja";
   }
 }
+
+// --- Force account-level SMS defaults (no change to aws_sns.js needed) ---
+const AWS = require("aws-sdk");
+
+(async () => {
+  try {
+    const sns = new AWS.SNS({
+      region: process.env.AWS_REGION,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    });
+
+    // 1–11 chars, letters/digits only, must start with a letter
+    const SENDER_ID = (process.env.SNS_SENDER_ID || "Mehustaja")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .slice(0, 11);
+
+    await sns.setSMSAttributes({
+      attributes: {
+        DefaultSenderID: SENDER_ID,
+        DefaultSMSType: "Transactional",
+      },
+    }).promise();
+
+    console.log(`[SNS] Default SenderID set to "${SENDER_ID}" (Transactional)`);
+  } catch (e) {
+    console.warn("[SNS] Could not set account SMS attributes:", e.message);
+  }
+})();
 
 // Small helper: try to pick a location string from known objects
 function resolveLocationForSMS({ shelf, customers, fallback }) {
@@ -484,6 +511,7 @@ app.post('/orders/:order_id/ready', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'palletId and shelfId are required' });
     }
   
+    console.error('assign-shelf failed:', e);
     try {
       // 1) Link pallet to shelf
       const assignResult = await database.assignPalletToShelf(palletId, shelfId);
@@ -497,32 +525,24 @@ app.post('/orders/:order_id/ready', async (req, res) => {
       // 3) SMS notify customers (location-specific)
       let customers = [];
       if (typeof database.getCustomersByPalletId === 'function') {
-        customers = await database.getCustomersByPalletId(palletId);
+      customers = await database.getCustomersByPalletId(palletId);
       }
-  
-      // Get shelf to infer location text
-      let shelf = null;
-      if (typeof database.getShelfById === 'function') {
-        try { shelf = await database.getShelfById(shelfId); } catch (_) {}
-      }
-  
-      const locationForSMS = resolveLocationForSMS({ shelf, customers, fallback: '' });
-      const smsText = buildPickupSMSText(locationForSMS);
-  
-      // Deduplicate phones
-      const uniquePhones = Array.from(
-        new Set(customers.map(c => (c && c.phone ? String(c.phone).trim() : '')).filter(Boolean))
-      );
-  
+
       const results = [];
-      for (const phone of uniquePhones) {
-        try {
-          const messageId = await publishDirectSMS(phone, smsText);
-          results.push({ ok: true, phone, messageId });
-        } catch (e) {
-          results.push({ ok: false, phone, error: e.message });
-        }
+      for (const c of customers) {
+      const phone = (c && c.phone) ? String(c.phone) : '';
+      if (!phone) continue;
+
+      // Use location-specific template
+      const msg = buildPickupSMSText(c.city);
+
+      try {
+        const messageId = await publishDirectSMS(phone, msg);
+        results.push({ ok: true, phone, messageId });
+      } catch (e) {
+        results.push({ ok: false, phone, error: e.message });
       }
+    }
   
       // 4) Broadcast + activity
       io.emit("order-status-updated");
@@ -542,7 +562,6 @@ app.post('/orders/:order_id/ready', async (req, res) => {
         sms: results,
       });
     } catch (e) {
-      console.error('assign-shelf failed:', e);
       return res.status(500).json({ ok: false, error: 'assign-shelf failed', details: e.message });
     }
   });
@@ -565,30 +584,25 @@ app.post('/shelves/load-boxes', async (req, res) => {
 
     // 3) SMS notify customers
     const customers = await database.getCustomersByBoxIds(boxes);
-
-    // Resolve shelf and location
-    let shelf = null;
-    if (typeof database.getShelfById === 'function') {
-      try { shelf = await database.getShelfById(shelfId); } catch (_) {}
-    }
-    const locationForSMS = resolveLocationForSMS({ shelf, customers, fallback: '' });
-    const smsText = buildPickupSMSText(locationForSMS);
-
-    // De-dup & send
     const smsResults = [];
     const uniquePhones = Array.from(
-      new Set(customers.map(c => (c && c.phone ? String(c.phone).trim() : "")).filter(Boolean))
+      new Set(
+        customers.map(c => (c && c.phone ? String(c.phone).trim() : "")).filter(Boolean)
+      )
     );
 
     for (const phone of uniquePhones) {
+      // Find any one record for this phone to read its city
+      const sample = customers.find(c => String(c.phone).trim() === phone);
+      const msg = buildPickupSMSText(sample?.city);
+
       try {
-        const messageId = await publishDirectSMS(phone, smsText);
+        const messageId = await publishDirectSMS(phone, msg);
         smsResults.push({ ok: true, phone, messageId });
       } catch (e) {
         smsResults.push({ ok: false, phone, error: e.message });
       }
     }
-
     // 4) Broadcast + activity
     io.emit("order-status-updated");
     io.emit("shelf-updated", { shelf_id: shelfId });
@@ -826,36 +840,51 @@ app.get('/dashboard/activity', async (req, res) => {
   }
 });
 
-// Manual SMS from Customer Management
+// Manual SMS from Customer Management (uses location-specific templates by default)
 app.post('/customers/:customerId/notify', async (req, res) => {
   const { customerId } = req.params;
-  const { phone, message, location } = req.body || {};
+  const { phone: bodyPhone, message, location: bodyLocation } = req.body || {};
 
   try {
-    let targetPhone = phone;
-    if (!targetPhone) {
-      // If not provided, try to fetch from DB
-      if (typeof database.getCustomerById === 'function') {
-        const c = await database.getCustomerById(customerId);
-        targetPhone = c?.phone || '';
-      }
+    // Fetch customer once if we need phone and/or city
+    let customer = null;
+    if (typeof database.getCustomerById === 'function') {
+      customer = await database.getCustomerById(customerId);
     }
+
+    // Pick phone: body override > DB
+    const targetPhone = String(bodyPhone || customer?.phone || '').trim();
     if (!targetPhone) {
       return res.status(400).json({ ok: false, error: 'No phone number found' });
     }
 
-    // If caller didn’t send a message, build from location (or generic)
-    const smsText = message && String(message).trim().length
-      ? message
-      : buildPickupSMSText(location || '');
+    // Pick location: body override > DB city
+    const locationForTemplate = (bodyLocation || customer?.city || '').trim();
+
+    // If caller sent a non-empty custom message, use it; otherwise build from location
+    const smsText =
+      message && String(message).trim().length
+        ? String(message)
+        : buildPickupSMSText(locationForTemplate);
 
     const messageId = await publishDirectSMS(targetPhone, smsText);
-    emitActivity('notify', `Manual SMS sent to ${customerId}`, { customer_id: customerId });
 
-    return res.json({ ok: true, messageId });
+    // Optional activity log
+    if (typeof emitActivity === 'function') {
+      emitActivity('notify', `Manual SMS sent to ${customer?.name || 'customer'}`, {
+        customer_id: customerId,
+        city: locationForTemplate || null,
+      });
+    }
+
+    return res.json({ ok: true, message: 'SMS attempted', messageId });
   } catch (e) {
     console.error('manual notify failed:', e);
-    return res.status(500).json({ ok: false, error: e.code || 'notify_failed', details: e.message });
+    return res.status(500).json({
+      ok: false,
+      error: e.code || 'notify_failed',
+      details: e.message,
+    });
   }
 });
 

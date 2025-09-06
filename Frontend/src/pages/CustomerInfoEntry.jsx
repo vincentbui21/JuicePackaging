@@ -35,6 +35,7 @@ function CustomerInfoEntry() {
     const [open_QrDialog, set_OpenQrDialog] = useState(false)
     const [qrcodes, setQrcodes] = useState("")
     const [customerForwardName, setCustomerForwardName] = useState("")
+    const [maxCrate, setMaxCrate] = useState("")
 
 
     function resetData(){
@@ -60,7 +61,7 @@ function CustomerInfoEntry() {
             catch (error){
                 console.log(error);
             }
-    
+            setMaxCrate(orderdata.No_of_Crates)
             resetData()
         }
 
@@ -117,7 +118,7 @@ function CustomerInfoEntry() {
 
             <RequiredInputReminder open={open_reminder} setOpen={set_Openreminder}></RequiredInputReminder>
             <QRCodeDialog open={open_QrDialog} onClose={()=>{set_OpenQrDialog(false)}} 
-            data={qrcodes} name={customerForwardName}></QRCodeDialog>
+            data={qrcodes} name={customerForwardName} max={maxCrate}></QRCodeDialog>
         </>
     );
 }

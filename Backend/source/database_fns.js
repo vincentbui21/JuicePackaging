@@ -398,6 +398,7 @@ async function getOrdersByStatus(status) {
             o.order_id,
             o.weight_kg,
             o.status,
+            o.boxes_count,
             c.name
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
@@ -806,33 +807,61 @@ async function updatePalletHolding(pallet_id, connOrPool = pool) {
         );
       }
 
-      async function searchOrdersWithShelfInfo(query) {
-        const [rows] = await pool.query(`
-          SELECT 
-            o.order_id, o.status, o.customer_id, o.created_at,
-            c.name, c.phone, c.city,
-            (SELECT COUNT(*) FROM Boxes b WHERE b.customer_id = o.customer_id) AS box_count,
-            (
-              SELECT s.location FROM Boxes b
-              JOIN Pallets p ON b.pallet_id = p.pallet_id
-              JOIN Shelves s ON p.shelf_id = s.shelf_id
-              WHERE b.customer_id = o.customer_id
-              LIMIT 1
-            ) AS shelf_location,
-            (
-              SELECT s.shelf_name FROM Boxes b
-              JOIN Pallets p ON b.pallet_id = p.pallet_id
-              JOIN Shelves s ON p.shelf_id = s.shelf_id
-              WHERE b.customer_id = o.customer_id
-              LIMIT 1
-            ) AS shelf_name
-          FROM Orders o
-          JOIN Customers c ON o.customer_id = c.customer_id
-          WHERE c.name LIKE ? OR c.phone LIKE ?
-          ORDER BY o.created_at DESC
-        `, [`%${query}%`, `%${query}%`]);
-        return rows;
-      }
+
+async function searchOrdersWithShelfInfo(query) {
+  const like = `%${query}%`;
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      o.order_id,
+      o.status,
+      o.customer_id,
+      o.created_at,
+      c.name,
+      c.phone,
+      c.city,
+
+      /* prefer persisted count; otherwise count distinct boxes for this order */
+      COALESCE(o.boxes_count, COUNT(DISTINCT b.box_id)) AS box_count,
+
+      /* shelf via pallet OR via box (Kuopio) */
+      COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name))   AS shelf_name,
+      COALESCE(MAX(sp.location),   MAX(sb.location))     AS shelf_location
+
+    FROM Orders o
+    JOIN Customers c
+      ON c.customer_id = o.customer_id
+
+    /* Link boxes that belong to this order (parse BOX_<orderUUID>_n) */
+    LEFT JOIN Boxes b
+      ON SUBSTRING(b.box_id, 5, 36) = o.order_id
+
+    /* Normal flow: boxes -> pallet -> shelf */
+    LEFT JOIN Pallets p
+      ON p.pallet_id = b.pallet_id
+    LEFT JOIN Shelves sp
+      ON sp.shelf_id = p.shelf_id
+
+    /* Kuopio flow: boxes -> shelf directly */
+    LEFT JOIN Shelves sb
+      ON sb.shelf_id = b.shelf_id
+
+    WHERE c.name  LIKE ?
+       OR c.phone LIKE ?
+
+    GROUP BY
+      o.order_id, o.status, o.customer_id, o.created_at,
+      c.name, c.phone, c.city, o.boxes_count
+
+    ORDER BY o.created_at DESC
+    `,
+    [like, like]
+  );
+
+  return rows;
+}
+
       
       
       async function getAllCities() {

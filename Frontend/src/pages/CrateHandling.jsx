@@ -111,7 +111,7 @@ function CrateHandling() {
                         p: 4, 
                         borderRadius: 2, 
                         display: "flex", 
-                        height: "100%",
+                        height: "auto",
                         flexDirection: "column"
                         }}>
                     <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
