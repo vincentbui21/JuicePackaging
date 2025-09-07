@@ -3,10 +3,21 @@ import backgroundomena from "../assets/backgroundomena.jpg"
 import {Box, Typography, TextField, Button, Stack, Grid} from '@mui/material'
 import CustomerInfoManagementCard from "../components/customerInfoManagementCard";
 import DrawerComponent from "../components/drawer";
+import { Container, Box } from "@mui/material";
 
+function PageShell({ children }) {
+    return (
+      <Container maxWidth="md" sx={{ px: { xs: 2, md: 4 }, py: { xs: 2, md: 3 } }}>
+        <Box sx={{ display: "grid", gap: { xs: 2, md: 3 } }}>{children}</Box>
+      </Container>
+    );
+  }
+  
 function CustomerInfoManagement() {
 
     return (
+        <PageShell>
+            {
         <>
             <DrawerComponent></DrawerComponent>
 
@@ -31,6 +42,7 @@ function CustomerInfoManagement() {
             
 
         </>
+}        </PageShell>
     );
 }
 

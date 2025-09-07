@@ -40,7 +40,7 @@ function JuiceHandlePage() {
       console.error("Error fetching orders:", err);
     }
   };
-
+ 
   // Pouch label printing — expiry = 1 year from today
   const printPouchLabels = async (order) => {
     try {
@@ -129,8 +129,9 @@ function JuiceHandlePage() {
     }
   };
 
-  // UI
+
   return (
+
     <>
       <DrawerComponent />
       <Box
@@ -238,6 +239,7 @@ function JuiceHandlePage() {
           />
         </Paper>
       </Box>
+
 
       {/* QR preview + "Print All" dialog (device printer) */}
       <Dialog
