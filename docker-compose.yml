@@ -11,11 +11,12 @@ services:
       - NODE_ENV=development
     env_file:
       - ./Backend/.env
+    network_mode: "host"
 
   frontend:
     build: ./Frontend
     ports:
-      - "5173:5173"
+      - "80:5173"
     volumes:
       - ./Frontend:/app
       - /app/node_modules

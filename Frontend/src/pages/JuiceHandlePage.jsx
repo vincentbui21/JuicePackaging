@@ -12,7 +12,7 @@ import DrawerComponent from "../components/drawer";
 import printImage from "../services/send_to_printer";
 
 // build socket URL from the same base as axios
-const WS_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/").replace(/\/+$/, "");
+const WS_URL = (import.meta.env.VITE_API_BASE_URL || "https://api.mehustaja.fi/").replace(/\/+$/, "");
 const socket = io(WS_URL);
 
 function JuiceHandlePage() {
