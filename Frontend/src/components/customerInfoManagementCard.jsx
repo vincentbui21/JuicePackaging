@@ -5,7 +5,6 @@ import api from '../services/axios';
 import EditCustomerDialog from './EditCustomerDialog';
 import QRCodeDialog from './qrcodeDialog';
 import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
-import { Container, Box } from "@mui/material";
 
 
 export default function CustomerTable() {
@@ -44,13 +43,7 @@ export default function CustomerTable() {
     // reload table after update
     setButtonClicked(true);
   };
-  function PageShell({ children }) {
-    return (
-      <Container maxWidth="md" sx={{ px: { xs: 2, md: 4 }, py: { xs: 2, md: 3 } }}>
-        <Box sx={{ display: "grid", gap: { xs: 2, md: 3 } }}>{children}</Box>
-      </Container>
-    );
-  }
+ 
   
   const handleCrateQRPrint = async (row) => {
     setMaxCrates(row.crate_count);
@@ -111,7 +104,7 @@ export default function CustomerTable() {
         const ready = isReadyForPickup(params.row?.status);
 
         return (
-          <PageShell>{
+         
             
           <Stack direction="row" spacing={1} sx={{ display: "center", justifyContent: "center", alignItems: "center" }}>
             <Button variant="outlined" size="small" color="primary" onClick={() => handleEdit(params.row)}>
@@ -140,8 +133,8 @@ export default function CustomerTable() {
                 </Button>
               </span>
             </Tooltip>
-          </Stack>}
-          </PageShell>
+          </Stack>
+         
         );
       },
     }

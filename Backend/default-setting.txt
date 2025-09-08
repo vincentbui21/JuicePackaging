@@ -1,5 +1,5 @@
-juice_quantity:0.65
-no_pouches:6
+juice_quantity:0.6
+no_pouches:3
 price:8
 shipping_fee:1.9
 printer_ip:192.168.8.107
