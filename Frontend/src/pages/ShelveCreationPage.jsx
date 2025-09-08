@@ -16,6 +16,8 @@ import { Print } from "@mui/icons-material";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
+import printImage from '../services/send_to_printer'
+
 
 function ShelveCreationPage() {
   const [location, setLocation] = useState("");
@@ -72,7 +74,6 @@ function ShelveCreationPage() {
       setCreatedShelfName(returned_name || shelfName || ""); // NEW
       setQrDialogOpen(true);
       setSnackbarMsg("Shelf created successfully!");
-      setLocation("");
       setCapacity(8);
       setShelfName(""); // NEW
       setError(false);
@@ -83,27 +84,28 @@ function ShelveCreationPage() {
     }
   };
 
-  const handlePrint = () => {
-    if (!qrImage) return;
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html><head><title>Print QR Code</title></head>
-      <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
-        <img src="${qrImage}" style="width:100px;" />
-        ${
-          createdShelfName
-            ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${createdShelfName}</div>`
-            : ""
-        }
-        <script>
-          window.onload = function() {
-            window.print();
-            window.onafterprint = () => window.close();
-          }
-        </script>
-      </body></html>
-    `);
-    popup.document.close();
+  const handlePrint = (name, city) => {
+    // if (!qrImage) return;
+    // const popup = window.open("", "_blank");
+    // popup.document.write(`
+    //   <html><head><title>Print QR Code</title></head>
+    //   <body style="text-align:center;padding:20px;font-family:Arial, Helvetica, sans-serif;">
+    //     <img src="${qrImage}" style="width:100px;" />
+    //     ${
+    //       createdShelfName
+    //         ? `<div style="margin-top:12px;font-size:18px;font-weight:bold;">${createdShelfName}</div>`
+    //         : ""
+    //     }
+    //     <script>
+    //       window.onload = function() {
+    //         window.print();
+    //         window.onafterprint = () => window.close();
+    //       }
+    //     </script>
+    //   </body></html>
+    // `);
+    // popup.document.close();
+    printImage(qrImage, `${name || qrShelfName} ${city ? `(${city})` : ""}`.trim())
   };
 
   return (
@@ -195,7 +197,7 @@ function ShelveCreationPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
+          <Button onClick={()=> handlePrint(createdShelfName, location)} variant="contained" startIcon={<Print />}>
             Print
           </Button>
         </DialogActions>
