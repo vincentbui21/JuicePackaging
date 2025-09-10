@@ -1594,6 +1594,15 @@ async function updateAdminPassword(adminId, newPassword) {
         throw err;
     }
 }
+async function updateEmployeePassword(newPassword) {
+  console.log("testing employee password update");
+    const sql = `UPDATE Accounts SET password = ? WHERE id = "employee"`;
+    try {
+        await pool.query(sql, [newPassword]); // store plain string
+    } catch (err) {
+        throw err;
+    }
+}
 
 
 async function addCities(cities) {
@@ -1824,6 +1833,7 @@ module.exports = {
     getOrderStatus,
     getPalletBoxes,
     getOrdersOnPallet,
+    updateEmployeePassword
     
 }
 

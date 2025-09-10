@@ -974,7 +974,12 @@ app.get("/default-setting", async (req, res) => {
 
 
 app.post("/default-setting", async (req, res) => {
-  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip  } = req.body || {};
+  
+  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword} = req.body;
+  console.log(req.body);
+
+  console.log("Received body:", req.body);
+  console.log("Keys:", Object.keys(req.body));
 
   try {
     // Check credentials in MySQL Account table
@@ -1003,8 +1008,13 @@ app.post("/default-setting", async (req, res) => {
     await fs.writeFile(settingsFilePath, stringifySettings(settings), "utf8");
 
     if (newAdminPassword?.trim()) {
-    await database.updateAdminPassword(id, newAdminPassword.trim());
+      await database.updateAdminPassword(id, newAdminPassword.trim());
     }
+    if (newEmployeePassword?.trim()) {
+      console.log("Updating employee password to:", newEmployeePassword);
+      await database.updateEmployeePassword(newEmployeePassword.trim());
+    }
+
 
     if (newCities?.trim()) {
       const cityArray = newCities.split(",").map(c => c.trim()).filter(Boolean);

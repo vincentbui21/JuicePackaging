@@ -27,7 +27,7 @@ export default function PasswordModal({ open, onClose, onConfirm }) {
 
     return (
         <Dialog open={open} onClose={handleCancel}>
-        <DialogTitle>Enter Credentials</DialogTitle>
+        <DialogTitle>Enter Admin Credentials</DialogTitle>
         <DialogContent>
             <TextField
             label="Username"
