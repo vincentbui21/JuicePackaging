@@ -3,7 +3,7 @@ import backgroundomena from "../assets/backgroundomena.jpg"
 import {Box, Typography, TextField, Button, Stack, Grid} from '@mui/material'
 import CustomerInfoManagementCard from "../components/customerInfoManagementCard";
 import DrawerComponent from "../components/drawer";
-  
+
 function CustomerInfoManagement() {
 
     return (

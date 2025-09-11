@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Box, TextField, Stack, Button, Tooltip } from '@mui/material';
+import { Box, TextField, Stack, Button, Tooltip, Paper } from '@mui/material';
 import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
 import api from '../services/axios';
 import EditCustomerDialog from './EditCustomerDialog';
 import QRCodeDialog from './qrcodeDialog';
 import PasswordModal from './PasswordModal';
 
-export default function CustomerTable() {
-
+export default function CustomerInfoManagementCard() {
   const [CustomerForwardName, setCustomerForwardName] = useState('');
   const [maxCrates, setMaxCrates] = useState('');
 
@@ -75,9 +74,7 @@ export default function CustomerTable() {
     setMaxCrates(row.crate_count);
 
     try {
-      const response = await api.get('/crates', {
-        params: { customer_id: row.customer_id }
-      });
+      const response = await api.get('/crates', { params: { customer_id: row.customer_id } });
 
       if (response.data && Array.isArray(response.data.crates)) {
         setCrateIds(response.data.crates.map(c => c.crate_id));
@@ -114,7 +111,6 @@ export default function CustomerTable() {
 
   const handlePasswordConfirm = async ({ id, password }) => {
     try {
-      // Verify admin credentials
       await api.post('/auth/login', { id, password }); // backend expects id='admin'
 
       if (rowToDelete) {
@@ -157,7 +153,7 @@ export default function CustomerTable() {
         const ready = isReadyForPickup(params.row?.status);
 
         return (
-          <Stack direction="row" spacing={1} sx={{ display: "center", justifyContent: "center", alignItems: "center" }}>
+          <Stack direction="row" spacing={1} sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
             <Button variant="outlined" size="small" color="primary" onClick={() => handleEdit(params.row)}>
               <Edit />
             </Button>
@@ -191,53 +187,45 @@ export default function CustomerTable() {
 
   return (
     <>
-      <Box sx={{ width: 'auto' }}>
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{
-            justifySelf: "center",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "min(1200px, 90%)",
-            padding: "5px",
-            borderRadius: "10px",
-            marginBottom: "10px"
-          }}
-        >
-          <TextField
-            label="Customer name"
-            variant="filled"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            size="small"
-            sx={{ mb: 2, width: "80%" }}
-            fullWidth
-            placeholder="Search by customer Name"
-          />
+      <Box sx={{ width: '100%', overflowX: 'hidden' }}>
+  <Box sx={{ width: "100%", maxWidth: 1200, mt: 2 }}>
+    <Stack direction="row" spacing={2} sx={{ mb: 2, justifyContent: "flex-start", alignItems: "center" }}>
+      <TextField
+        label="Customer name"
+        variant="filled"
+        value={customerName}
+        onChange={(e) => setCustomerName(e.target.value)}
+        size="small"
+        fullWidth
+        placeholder="Search by customer Name"
+      />
+      <Button variant="contained" onClick={() => setButtonClicked(true)}>OK</Button>
+    </Stack>
 
-          <Button variant="contained" onClick={() => { setButtonClicked(true); }}>OK</Button>
-        </Stack>
+    <DataGrid
+      rows={rows}
+      columns={columns}
+      rowCount={rowCount}
+      loading={loading}
+      pagination
+      paginationMode="server"
+      paginationModel={{ page, pageSize }}
+      onPaginationModelChange={(model) => {
+        setPage(model.page);
+        setPageSize(model.pageSize);
+      }}
+      getRowId={(row) => row.customer_id}
+      autoHeight={false}
+      disableRowSelectionOnClick
+      hideFooterSelectedRowCount
+      sx={{
+        width: '100%',
+        '& .MuiDataGrid-viewport': { overflowX: 'auto' },
+      }}
+    />
+  </Box>
+</Box>
 
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          rowCount={rowCount}
-          loading={loading}
-          pagination
-          paginationMode="server"
-          paginationModel={{ page, pageSize }}
-          onPaginationModelChange={(model) => {
-            setPage(model.page);
-            setPageSize(model.pageSize);
-          }}
-          getRowId={(row) => row.customer_id}
-          checkboxSelection={false}
-          disableRowSelectionOnClick={true}
-          hideFooterSelectedRowCount={true}
-        />
-      </Box>
 
       <EditCustomerDialog
         open={editOpen}
