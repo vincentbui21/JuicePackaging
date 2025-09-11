@@ -9,6 +9,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const { printPouch } = require("./source/printers/videojet6330");
 const net = require("net");
+const { router: authRouter, authenticateToken } = require("./auth");
+
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
 
@@ -46,6 +48,8 @@ app.use(express.json());
 io.on('connection', (socket) => {
   console.log('New client connected');
 });
+
+app.use("/auth", authRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Location-specific pickup SMS templates

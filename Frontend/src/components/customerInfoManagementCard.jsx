@@ -1,38 +1,65 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Box, TextField, Stack, Button, Tooltip } from '@mui/material';
+import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
 import api from '../services/axios';
 import EditCustomerDialog from './EditCustomerDialog';
 import QRCodeDialog from './qrcodeDialog';
-import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
-
+import PasswordModal from './PasswordModal';
 
 export default function CustomerTable() {
 
   const [CustomerForwardName, setCustomerForwardName] = useState('');
   const [maxCrates, setMaxCrates] = useState('');
 
-  // helper: strict check (adjust here if your spelling varies)
   const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pickup';
 
-  const handleDelete = async (row) => {
-    try {
-      const response = await api.delete('/customer', {
-        data: { customer_id: row.customer_id },
-      });
-      console.log('Deleted successfully:', response.data);
-      setButtonClicked(true);
-      return response.data;
-    } catch (error) {
-      console.error('Delete failed:', error);
-      throw error;
-    }
-  };
+  const [rows, setRows] = useState([]);
+  const [rowCount, setRowCount] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [buttonClicked, setButtonClicked] = useState(false);
 
-  function handleEdit (row) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState(null);
+
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [crateIds, setCrateIds] = useState([]);
+
+  // Password modal state
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    api
+      .get('/customer', {
+        params: {
+          page: page + 1,
+          limit: pageSize,
+          customerName: customerName || undefined,
+        },
+      })
+      .then((res) => {
+        const data = res.data;
+        setRows(data.rows);
+        setRowCount(data.total);
+        setLoading(false);
+        setButtonClicked(false);
+      })
+      .catch((err) => {
+        console.error('API error:', err);
+        setLoading(false);
+      });
+  }, [page, pageSize, buttonClicked]);
+
+  // Edit handlers
+  const handleEdit = (row) => {
     setSelectedRow(row);
     setEditOpen(true);
-  }
+  };
 
   const handleEditClose = () => {
     setEditOpen(false);
@@ -40,16 +67,14 @@ export default function CustomerTable() {
   };
 
   const handleUpdateSuccess = () => {
-    // reload table after update
     setButtonClicked(true);
   };
- 
-  
+
+  // QR code handlers
   const handleCrateQRPrint = async (row) => {
     setMaxCrates(row.crate_count);
 
     try {
-      // Fetch crate IDs for this customer from your API
       const response = await api.get('/crates', {
         params: { customer_id: row.customer_id }
       });
@@ -66,22 +91,50 @@ export default function CustomerTable() {
     }
   };
 
+  // SMS handler
   const handleNotifySMS = async (row) => {
     if (!isReadyForPickup(row?.status)) {
       alert("Can only send SMS when status is 'Ready for pickup'.");
       return;
     }
     try {
-      // No message in body → server will use the location-based template
       const res = await api.post(`/customers/${row.customer_id}/notify`, {});
-      console.log("SMS notify:", res.data);
       alert(res.data?.message || "SMS attempted");
     } catch (e) {
       console.error("Notify failed", e);
       alert("SMS failed – check server logs");
     }
   };
-  
+
+  // Delete handlers
+  const handleDeleteClick = (row) => {
+    setRowToDelete(row);
+    setPasswordModalOpen(true);
+  };
+
+  const handlePasswordConfirm = async ({ id, password }) => {
+    try {
+      // Verify admin credentials
+      await api.post('/auth/login', { id, password }); // backend expects id='admin'
+
+      if (rowToDelete) {
+        await api.delete('/customer', { data: { customer_id: rowToDelete.customer_id } });
+        setRowToDelete(null);
+        setButtonClicked(true);
+        alert('Customer deleted successfully!');
+      }
+    } catch (err) {
+      console.error('Admin verification failed:', err);
+      alert('Invalid admin password!');
+    } finally {
+      setPasswordModalOpen(false);
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setRowToDelete(null);
+    setPasswordModalOpen(false);
+  };
 
   const columns = [
     { field: 'name', headerName: 'Name', width: 150 },
@@ -104,14 +157,12 @@ export default function CustomerTable() {
         const ready = isReadyForPickup(params.row?.status);
 
         return (
-         
-            
           <Stack direction="row" spacing={1} sx={{ display: "center", justifyContent: "center", alignItems: "center" }}>
             <Button variant="outlined" size="small" color="primary" onClick={() => handleEdit(params.row)}>
               <Edit />
             </Button>
 
-            <Button variant="outlined" size="small" color="error" onClick={() => handleDelete(params.row)}>
+            <Button variant="outlined" size="small" color="error" onClick={() => handleDeleteClick(params.row)}>
               <Delete />
             </Button>
 
@@ -119,9 +170,8 @@ export default function CustomerTable() {
               <QrCode />
             </Button>
 
-            {/* Message button only active when status is "Ready for pickup" */}
             <Tooltip title={ready ? "Send SMS" : "Only available when status is 'Ready for pickup'."}>
-              <span> {/* span wrapper so Tooltip works with disabled Button */}
+              <span>
                 <Button
                   variant="outlined"
                   size="small"
@@ -134,48 +184,10 @@ export default function CustomerTable() {
               </span>
             </Tooltip>
           </Stack>
-         
         );
       },
     }
   ];
-
-  const [rows, setRows] = useState([]);
-  const [rowCount, setRowCount] = useState(0);
-  const [page, setPage] = useState(0);         // 0-based for MUI
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [buttonClicked, setButtonClicked] = useState(false);
-
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedRow, setSelectedRow] = useState(null);
-
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [crateIds, setCrateIds] = useState([]);
-
-  useEffect(() => {
-    setLoading(true);
-    api
-      .get('/customer', {
-        params: {
-          page: page + 1, // backend expects 1-based
-          limit: pageSize,
-          customerName: customerName || undefined, // skip param if empty
-        },
-      })
-      .then((res) => {
-        const data = res.data;
-        setRows(data.rows);
-        setRowCount(data.total);
-        setLoading(false);
-        setButtonClicked(false);
-      })
-      .catch((err) => {
-        console.error('API error:', err);
-        setLoading(false);
-      });
-  }, [page, pageSize, buttonClicked]);
 
   return (
     <>
@@ -220,7 +232,7 @@ export default function CustomerTable() {
             setPage(model.page);
             setPageSize(model.pageSize);
           }}
-          getRowId={(row) => row.customer_id} // very important
+          getRowId={(row) => row.customer_id}
           checkboxSelection={false}
           disableRowSelectionOnClick={true}
           hideFooterSelectedRowCount={true}
@@ -240,6 +252,12 @@ export default function CustomerTable() {
         data={crateIds}
         name={CustomerForwardName}
         max={maxCrates}
+      />
+
+      <PasswordModal
+        open={passwordModalOpen}
+        onClose={handlePasswordCancel}
+        onConfirm={handlePasswordConfirm}
       />
     </>
   );

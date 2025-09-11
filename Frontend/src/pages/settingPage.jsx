@@ -92,32 +92,162 @@ function SettingPage() {
     const handleButtonClick = () => setModalOpen(true);
 
     const handleChange = (e) => {
-        const { name, value } = e.target;
-        setSettings(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
+    const { name, value } = e.target;
+
+    let newValue = value;
+
+    if (name === "newCites") {
+        // Capitalize first letter
+        newValue = value.charAt(0).toUpperCase() + value.slice(1);
+
+        // Prevent "admin" or "Admin" as input
+        if (newValue.toLowerCase() === "admin") {
+            newValue = "";
+        }
+    }
+
+    setSettings(prev => ({
+        ...prev,
+        [name]: newValue
+    }));
+};
+
+
 
     return (
         <>
             <DrawerComponent />
-            <Box sx={{ backgroundColor: "#ffffff", minHeight: "90vh", paddingTop: 4, paddingBottom: 4, display: "flex", justifyContent: "center" }}>
-                <Paper elevation={3} sx={{ width: "min(90%, 600px)", padding: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
-                    <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>Setting</Typography>
-                    <Stack spacing={3}>
-                        <TextField name="juice_quantity" type="number" required fullWidth variant="filled" label="Juice Quantity (L/Kilo)" value={settings.juice_quantity} onChange={handleChange} />
-                        <TextField name="no_pouches" type="number" required fullWidth variant="filled" label="Number of Pouches (L/Pouch)" value={settings.no_pouches} onChange={handleChange} />
-                        <TextField name="price" type="number" required fullWidth variant="filled" label="Price (€/L)" value={settings.price} onChange={handleChange} />
-                        <TextField name="shipping_fee" type="number" required fullWidth variant="filled" label="Shipping fee (€/L)" value={settings.shipping_fee} onChange={handleChange} />
-                        <TextField name="newCites" fullWidth variant="filled" label="New cities" value={settings.newCites} onChange={handleChange} />
-                        <TextField name="newPass" type="password" fullWidth variant="filled" label="New admin password" value={settings.newPass} onChange={handleChange} />
-                        <TextField name="newEmployeePass" type="password" fullWidth variant="filled" label="New Employee password" value={settings.newEmployeePass} onChange={handleChange} />
-                        <TextField name="printer_ip" fullWidth variant="filled" label="Printer IP Address" value={settings.printer_ip} onChange={handleChange} />
-                        <Button variant="contained" onClick={handleButtonClick}>Save</Button>
-                    </Stack>
-                </Paper>
+            <Box
+            sx={{
+                backgroundColor: "#ffffff",
+                minHeight: "90vh",
+                paddingTop: 4,
+                paddingBottom: 4,
+                display: "flex",
+                justifyContent: "center",
+            }}
+            >
+            <Paper
+                elevation={3}
+                sx={{
+                width: "min(90%, 600px)",
+                padding: 4,
+                backgroundColor: "#ffffff",
+                borderRadius: 2,
+                }}
+            >
+                <Typography
+                variant="h4"
+                sx={{ textAlign: "center", marginBottom: 3, fontWeight: "bold" }}
+                >
+                Setting
+                </Typography>
+
+                <form autoComplete="off">
+                {/* Hidden dummy inputs to prevent autofill */}
+                <input
+                    type="text"
+                    name="fakeusernameremembered"
+                    style={{ display: "none" }}
+                />
+                <input
+                    type="password"
+                    name="fakepasswordremembered"
+                    style={{ display: "none" }}
+                />
+
+                <Stack spacing={3}>
+                    <TextField
+                    name="juice_quantity"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Juice Quantity (L/Kilo)"
+                    value={settings.juice_quantity}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="no_pouches"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Number of Pouches (L/Pouch)"
+                    value={settings.no_pouches}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="price"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Price (€/L)"
+                    value={settings.price}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="shipping_fee"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Shipping fee (€/L)"
+                    value={settings.shipping_fee}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="newCites"
+                    type="text"
+                    fullWidth
+                    variant="filled"
+                    label="New cities"
+                    value={settings.newCites}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="newPass"
+                    type="password"
+                    fullWidth
+                    variant="filled"
+                    label="New admin password"
+                    value={settings.newPass}
+                    onChange={handleChange}
+                    autoComplete="new-password"
+                    />
+                    <TextField
+                    name="newEmployeePass"
+                    type="password"
+                    fullWidth
+                    variant="filled"
+                    label="New Employee password"
+                    value={settings.newEmployeePass}
+                    onChange={handleChange}
+                    autoComplete="new-password"
+                    />
+                    <TextField
+                    name="printer_ip"
+                    fullWidth
+                    variant="filled"
+                    label="Printer IP Address"
+                    value={settings.printer_ip}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <Button variant="contained" onClick={handleButtonClick}>
+                    Save
+                    </Button>
+                </Stack>
+                </form>
+            </Paper>
             </Box>
+
 
             <Snackbar open={openSnackbar} autoHideDuration={3000} onClose={() => setOpenSnackbar(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
                 <Alert onClose={() => setOpenSnackbar(false)} severity="success" sx={{ width: '100%' }}>Settings saved successfully!</Alert>
