@@ -340,6 +340,14 @@ export default function BoxToPalletLoadingPage() {
       shelfId,
       boxes: scannedBoxes,
     });
+    try {
+      if (orderInfo?.order_id) {
+        await api.post(`/orders/${encodeURIComponent(orderInfo.order_id)}/sms-status`, {
+          sent: !!sendNow,
+          source: 'box-to-shelf', // optional metadata; ignored by server
+        });
+      }
+    } catch (_) {}
     resetAll();
     setSnackbarMsg(sendNow ? "Submitted; SMS queued." : "Submitted without SMS.");
   };

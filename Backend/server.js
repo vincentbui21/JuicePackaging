@@ -516,11 +516,7 @@ app.post('/orders/:order_id/ready', async (req, res) => {
 
   // ─── Pallet → Shelf ────────────────────────────────────────────────────────────
   app.post('/pallets/assign-shelf', async (req, res) => {
-    const { palletId, shelfId, sendSms, send_sms, notifyNow } = req.body || {};
-  
-    // Accept any of these field names from the client
-    const shouldNotify = !!(sendSms ?? send_sms ?? notifyNow);
-  
+    const { palletId, shelfId, sendSms } = req.body || {};
     if (!palletId || !shelfId) {
       return res.status(400).json({ ok: false, error: 'palletId and shelfId are required' });
     }
@@ -529,61 +525,73 @@ app.post('/orders/:order_id/ready', async (req, res) => {
       // 1) Link pallet to shelf
       const assignResult = await database.assignPalletToShelf(palletId, shelfId);
   
-      // 2) Mark orders on that pallet as "Ready for pickup"
+      // 2) Mark orders ready
       let ready = { updated: 0, orderIds: [] };
       if (typeof database.markOrdersOnPalletReady === 'function') {
         ready = await database.markOrdersOnPalletReady(palletId);
       }
   
-      // 3) Optionally notify by SMS
-      let sms = [];
-      let notified = 0;
-      if (shouldNotify) {
-        let customers = [];
-        if (typeof database.getCustomersByPalletId === 'function') {
-          customers = await database.getCustomersByPalletId(palletId);
-        }
-  
-        // Resolve shelf label for message (best effort)
-        let placeText = 'the store';
-        if (typeof database.getShelfById === 'function') {
-          try {
-            const shelf = await database.getShelfById(shelfId);
-            if (shelf) {
-              placeText = shelf.shelf_name
-                ? `${shelf.shelf_name}${shelf.location ? ` (${shelf.location})` : ''}`
-                : (shelf.location || placeText);
-            }
-          } catch (_) {}
-        }
-  
-        // Build location-specific text if you have that helper; else a generic fallback
-        const msgFor = (c) => {
-          if (typeof buildPickupSMSText === 'function') {
-            return buildPickupSMSText(c?.city || '');
-          }
-          return `Hi ${c?.name || 'there'}, your order is ready for pickup at ${placeText}.`;
-        };
-  
-        const seen = new Set();
-        for (const c of customers) {
-          const phone = (c && c.phone) ? String(c.phone).trim() : '';
-          if (!phone || seen.has(phone)) continue;
-          seen.add(phone);
-  
-          try {
-            const id = await publishDirectSMS(phone, msgFor(c));
-            sms.push({ ok: true, phone, messageId: id });
-          } catch (e) {
-            sms.push({ ok: false, phone, error: e.message });
-          }
-        }
-        notified = sms.filter(x => x.ok).length;
+      // 3) Collect customers (id, name, phone, city/location) on this pallet
+      let customers = [];
+      if (typeof database.getCustomersByPalletId === 'function') {
+        customers = await database.getCustomersByPalletId(palletId);
       }
   
-      // 4) Broadcast + activity (keep your existing events)
+      // Shelf label for message
+      let placeText = 'the store';
+      if (typeof database.getShelfById === 'function') {
+        try {
+          const shelf = await database.getShelfById(shelfId);
+          if (shelf) {
+            placeText = shelf.shelf_name
+              ? `${shelf.shelf_name}${shelf.location ? ` (${shelf.location})` : ''}`
+              : (shelf.location || placeText);
+          }
+        } catch (_) {}
+      }
+  
+      // 4) Optional SMS
+      const sms = [];
+      if (sendSms === true) {
+        // de-dup by customer_id
+        const seen = new Set();
+        for (const c of customers) {
+          if (!c?.customer_id || seen.has(c.customer_id)) continue;
+          seen.add(c.customer_id);
+  
+          const phone = c?.phone ? String(c.phone).trim() : '';
+          if (!phone) continue;
+  
+          // Build location-specific text
+          const msg = buildPickupSMSText(c?.city || '');
+          try {
+            const messageId = await publishDirectSMS(phone, msg);
+            sms.push({ ok: true, customer_id: c.customer_id, phone, messageId });
+  
+            // NEW: record as sent
+            if (typeof database.incrementSmsSent === 'function') {
+              await database.incrementSmsSent(c.customer_id);
+            }
+          } catch (e) {
+            sms.push({ ok: false, customer_id: c.customer_id, phone, error: e.message });
+          }
+        }
+      } else if (sendSms === false) {
+        // User explicitly chose "No" → mark as not_sent
+        const seen = new Set();
+        for (const c of customers) {
+          if (!c?.customer_id || seen.has(c.customer_id)) continue;
+          seen.add(c.customer_id);
+          if (typeof database.markSmsSkipped === 'function') {
+            await database.markSmsSkipped(c.customer_id);
+          }
+        }
+      }
+  
+      // 5) Broadcast + activity
       io.emit("order-status-updated");
       io.emit("pallet-updated", { pallet_id: palletId, shelfId });
+  
       emitActivity('warehouse', `Pallet ${palletId} assigned to shelf ${shelfId}`, { pallet_id: palletId, shelf_id: shelfId });
       if (ready.updated > 0) {
         emitActivity('ready', `${ready.updated} order(s) ready for pickup (pallet ${palletId})`, { pallet_id: palletId });
@@ -591,56 +599,84 @@ app.post('/orders/:order_id/ready', async (req, res) => {
   
       return res.json({
         ok: true,
-        message: `Pallet assigned${shouldNotify ? ' and SMS attempted' : ''}`,
+        message: 'Pallet assigned; orders ready; SMS processed',
         assignResult,
         ready,
-        notified,
+        notified: sms.filter(r => r.ok).length,
         sms,
-        notifySkipped: !shouldNotify
       });
     } catch (err) {
       console.error('assign-shelf failed:', err);
-      return res.status(500).json({ ok: false, error: 'assign_shelf_failed', details: err.message });
+      return res.status(500).json({ ok: false, error: 'assign-shelf failed', details: err.message });
     }
   });
   
   
 // ─── Boxes → Shelf (Kuopio direct) (mark ready; optionally SMS) ─────
 app.post('/shelves/load-boxes', async (req, res) => {
-  const { shelfId, boxes } = req.body || {};
+  const { shelfId, boxes, sendSms } = req.body || {};
   if (!shelfId || !Array.isArray(boxes) || boxes.length === 0) {
     return res.status(400).json({ ok: false, error: 'shelfId and non-empty boxes[] are required' });
   }
 
   try {
-    // 1) Place boxes on shelf directly
+    // 1) Place boxes
     const placed = await database.assignBoxesToShelf(shelfId, boxes);
 
-    // 2) Mark orders ready (based on those boxes)
+    // 2) Mark orders ready
     const ready = await database.markOrdersFromBoxesReady(boxes);
 
-    // 3) SMS notify customers
+    // 3) Get customers for those boxes
     const customers = await database.getCustomersByBoxIds(boxes);
-    const smsResults = [];
-    const uniquePhones = Array.from(
-      new Set(
-        customers.map(c => (c && c.phone ? String(c.phone).trim() : "")).filter(Boolean)
-      )
-    );
 
-    for (const phone of uniquePhones) {
-      // Find any one record for this phone to read its city
-      const sample = customers.find(c => String(c.phone).trim() === phone);
-      const msg = buildPickupSMSText(sample?.city);
-
+    // 3b) Shelf display name
+    let placeText = 'the store';
+    if (typeof database.getShelfById === 'function') {
       try {
-        const messageId = await publishDirectSMS(phone, msg);
-        smsResults.push({ ok: true, phone, messageId });
-      } catch (e) {
-        smsResults.push({ ok: false, phone, error: e.message });
+        const shelf = await database.getShelfById(shelfId);
+        if (shelf) {
+          placeText = shelf.shelf_name
+            ? `${shelf.shelf_name}${shelf.location ? ` (${shelf.location})` : ''}`
+            : (shelf.location || placeText);
+        }
+      } catch (_) {}
+    }
+
+    // 4) Optional SMS
+    const sms = [];
+    if (sendSms === true) {
+      const seen = new Set();
+      for (const c of customers) {
+        if (!c?.customer_id || seen.has(c.customer_id)) continue;
+        seen.add(c.customer_id);
+
+        const phone = c?.phone ? String(c.phone).trim() : '';
+        if (!phone) continue;
+
+        const msg = buildPickupSMSText(c?.city || '');
+        try {
+          const messageId = await publishDirectSMS(phone, msg);
+          sms.push({ ok: true, customer_id: c.customer_id, phone, messageId });
+
+          if (typeof database.incrementSmsSent === 'function') {
+            await database.incrementSmsSent(c.customer_id);
+          }
+        } catch (e) {
+          sms.push({ ok: false, customer_id: c.customer_id, phone, error: e.message });
+        }
+      }
+    } else if (sendSms === false) {
+      const seen = new Set();
+      for (const c of customers) {
+        if (!c?.customer_id || seen.has(c.customer_id)) continue;
+        seen.add(c.customer_id);
+        if (typeof database.markSmsSkipped === 'function') {
+          await database.markSmsSkipped(c.customer_id);
+        }
       }
     }
-    // 4) Broadcast + activity
+
+    // 5) Broadcast + activity
     io.emit("order-status-updated");
     io.emit("shelf-updated", { shelf_id: shelfId });
 
@@ -653,14 +689,15 @@ app.post('/shelves/load-boxes', async (req, res) => {
       ok: true,
       placed,
       ready,
-      notified: smsResults.filter(r => r.ok).length,
-      sms: smsResults,
+      notified: sms.filter(r => r.ok).length,
+      sms,
     });
-  } catch (e) {
-    console.error('shelves/load-boxes failed:', e);
-    return res.status(500).json({ ok: false, error: 'shelves/load-boxes failed', details: e.message });
+  } catch (err) {
+    console.error('shelves/load-boxes failed:', err);
+    return res.status(500).json({ ok: false, error: 'shelves/load-boxes failed', details: err.message });
   }
 });
+
 
 
   app.get("/pallets/:pallet_id/customers", async (req, res) => {
@@ -896,30 +933,33 @@ app.post('/customers/:customerId/notify', async (req, res) => {
   const { phone: bodyPhone, message, location: bodyLocation } = req.body || {};
 
   try {
-    // Fetch customer once if we need phone and/or city
+    // Fetch customer once if we need phone and/or city (kept from your version)
     let customer = null;
     if (typeof database.getCustomerById === 'function') {
-      customer = await database.getCustomerById(customerId);
+      try {
+        customer = await database.getCustomerById(customerId);
+      } catch (_) {}
     }
 
-    // Pick phone: body override > DB
+    // Pick phone: body override > DB (kept)
     const targetPhone = String(bodyPhone || customer?.phone || '').trim();
     if (!targetPhone) {
       return res.status(400).json({ ok: false, error: 'No phone number found' });
     }
 
-    // Pick location: body override > DB city
-    const locationForTemplate = (bodyLocation || customer?.city || '').trim();
+    // Pick location for templating: body override > DB city (kept)
+    const locationForTemplate = String(bodyLocation || customer?.city || '').trim();
 
-    // If caller sent a non-empty custom message, use it; otherwise build from location
+    // Custom message wins; otherwise build from location (kept)
     const smsText =
       message && String(message).trim().length
         ? String(message)
         : buildPickupSMSText(locationForTemplate);
 
+    // Send SMS (kept)
     const messageId = await publishDirectSMS(targetPhone, smsText);
 
-    // Optional activity log
+    // Activity log (kept)
     if (typeof emitActivity === 'function') {
       emitActivity('notify', `Manual SMS sent to ${customer?.name || 'customer'}`, {
         customer_id: customerId,
@@ -927,7 +967,16 @@ app.post('/customers/:customerId/notify', async (req, res) => {
       });
     }
 
-    return res.json({ ok: true, message: 'SMS attempted', messageId });
+    // NEW: persist per-customer SMS status (Sent +1)
+    try {
+      if (typeof database.incrementSmsSent === 'function') {
+        await database.incrementSmsSent(customerId);
+      }
+    } catch (e) {
+      console.warn('sms-status update after manual notify failed (non-blocking):', e?.message);
+    }
+
+    return res.json({ ok: true, message: 'SMS sent', messageId });
   } catch (e) {
     console.error('manual notify failed:', e);
     return res.status(500).json({
@@ -1131,6 +1180,45 @@ app.get('/pallets/:palletId/orders', async (req, res) => {
     return res.status(500).json({ error: 'orders_on_pallet_failed' });
   }
 });
+
+// Get current SMS status for an order
+app.get('/orders/:orderId/sms-status', async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const row = await database.getSmsStatus(orderId);
+    // Default if not recorded yet
+    return res.json(
+      row || { order_id: orderId, sent_count: 0, last_status: 'not_sent', last_at: null }
+    );
+  } catch (err) {
+    console.error('sms-status get failed:', err);
+    return res.status(500).json({ ok: false, error: 'sms_status_failed' });
+  }
+});
+
+// Record a status decision for an order (sent:true/false)
+app.post('/orders/:orderId/sms-status', async (req, res) => {
+  const { orderId } = req.params;
+  const { sent } = req.body || {};
+  try {
+    const row = await database.upsertSmsStatus(orderId, !!sent);
+    return res.json({ ok: true, status: row });
+  } catch (err) {
+    console.error('sms-status post failed:', err);
+    return res.status(500).json({ ok: false, error: 'sms_status_failed' });
+  }
+});
+
+app.get('/customers/:customerId/sms-status', async (req, res) => {
+  try {
+    const status = await database.getSmsStatusForCustomer(req.params.customerId);
+    return res.json(status);
+  } catch (err) {
+    console.error('sms-status failed:', err);
+    return res.status(500).json({ error: 'sms_status_failed' });
+  }
+});
+
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {

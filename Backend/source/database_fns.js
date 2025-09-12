@@ -1764,6 +1764,102 @@ async function getOrdersOnPallet(palletId) {
   );
   return rows;
 }
+
+// ───────────────── SMS STATUS HELPERS ─────────────────
+async function upsertSmsStatus(orderId, wasSent) {
+  if (!orderId) return null;
+  const now = new Date();
+
+  if (wasSent) {
+    await pool.query(
+      `
+      INSERT INTO SMSStatus (order_id, sent_count, last_status, last_at)
+      VALUES (?, 1, 'sent', ?)
+      ON DUPLICATE KEY UPDATE
+        sent_count = sent_count + 1,
+        last_status = 'sent',
+        last_at = VALUES(last_at)
+      `,
+      [orderId, now]
+    );
+  } else {
+    await pool.query(
+      `
+      INSERT INTO SMSStatus (order_id, sent_count, last_status, last_at)
+      VALUES (?, 0, 'not_sent', ?)
+      ON DUPLICATE KEY UPDATE
+        last_status = 'not_sent',
+        last_at = VALUES(last_at)
+      `,
+      [orderId, now]
+    );
+  }
+
+  const [rows] = await pool.query(
+    `SELECT order_id, sent_count, last_status, last_at FROM SMSStatus WHERE order_id = ?`,
+    [orderId]
+  );
+  return rows[0] || null;
+}
+
+async function getSmsStatus(orderId) {
+  const [rows] = await pool.query(
+    `SELECT order_id, sent_count, last_status, last_at FROM SMSStatus WHERE order_id = ?`,
+    [orderId]
+  );
+  return rows[0] || null;
+}
+
+// If you need to get the most recent order for a customer (for manual SMS fallback)
+async function getLatestOrderByCustomerId(customerId) {
+  const [rows] = await pool.query(
+    `
+    SELECT o.order_id
+    FROM Orders o
+    WHERE o.customer_id = ?
+    ORDER BY o.created_at DESC
+    LIMIT 1
+    `,
+    [customerId]
+  );
+  return rows[0] || null;
+}
+
+async function getSmsStatusForCustomer(customerId) {
+  const [rows] = await pool.query(
+    `SELECT customer_id, sent_count, last_status, updated_at
+       FROM SmsStatus WHERE customer_id = ?`,
+    [customerId]
+  );
+  if (rows.length) return rows[0];
+  // default shape when none exists yet
+  return { customer_id: customerId, sent_count: 0, last_status: 'not_sent', updated_at: null };
+}
+
+async function incrementSmsSent(customerId) {
+  await pool.query(
+    `INSERT INTO SmsStatus (customer_id, sent_count, last_status)
+     VALUES (?, 1, 'sent')
+     ON DUPLICATE KEY UPDATE
+       sent_count = sent_count + 1,
+       last_status = 'sent',
+       updated_at = CURRENT_TIMESTAMP`,
+    [customerId]
+  );
+}
+
+async function markSmsSkipped(customerId) {
+  await pool.query(
+    `INSERT INTO SmsStatus (customer_id, sent_count, last_status)
+     VALUES (?, 0, 'not_sent')
+     ON DUPLICATE KEY UPDATE
+       last_status = 'not_sent',
+       updated_at = CURRENT_TIMESTAMP`,
+    [customerId]
+  );
+}
+
+
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -1824,7 +1920,12 @@ module.exports = {
     getOrderStatus,
     getPalletBoxes,
     getOrdersOnPallet,
-    
+    upsertSmsStatus,
+    getSmsStatus,
+    getLatestOrderByCustomerId,
+    getSmsStatusForCustomer,
+    incrementSmsSent,
+    markSmsSkipped,
 }
 
 module.exports.pool = pool;
