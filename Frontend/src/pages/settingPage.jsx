@@ -5,210 +5,255 @@ import api from '../services/axios';
 import PasswordModal from "../components/PasswordModal";
 
 function SettingPage() {
-    var initial_settings ={
-        juice_quantity : "",
+    const initialSettings = {
+        juice_quantity: "",
         no_pouches: "",
-        price:"",
-        shipping_fee:"",
-        printer_ip: "192.168.1.139"
-    }
+        price: "",
+        shipping_fee: "",
+        printer_ip: "192.168.1.139",
+        newCites: "",
+        newPass: "",
+        newEmployeePass: ""
+    };
 
-    const [settings, setSettings] = useState(initial_settings)
+    const [settings, setSettings] = useState(initialSettings);
     const [openSnackbar, setOpenSnackbar] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
-
-
+    const [snackbarMsg, setSnackbarMsg] = useState("");
 
     useEffect(() => {
-    api
-        .get('/default-setting')
-        .then((res) => {
-            const raw = res.data;
-
-            // parse numbers only, keep strings as-is
-            const parsed = {
-                juice_quantity: Number(raw.juice_quantity) || "",
-                no_pouches: Number(raw.no_pouches) || "",
-                price: Number(raw.price) || "",
-                shipping_fee: Number(raw.shipping_fee) || "",
-                printer_ip: raw.printer_ip || "192.168.1.139"
-            };
-
-            setSettings(parsed);
-        })
-        .catch((err) => console.error(err));
-}, []);
-
-
+        api.get('/default-setting')
+            .then((res) => {
+                const raw = res.data;
+                const parsed = {
+                    juice_quantity: Number(raw.juice_quantity) || "",
+                    no_pouches: Number(raw.no_pouches) || "",
+                    price: Number(raw.price) || "",
+                    shipping_fee: Number(raw.shipping_fee) || "",
+                    printer_ip: raw.printer_ip || "192.168.1.139",
+                    newCites: "",
+                    newPass: "",
+                    newEmployeePass: ""
+                };
+                setSettings(parsed);
+            })
+            .catch((err) => console.error(err));
+    }, []);
 
     const handleConfirm = ({ id, password }) => {
-        setModalOpen(false);
+    setModalOpen(false);
 
-        // Prepare payload
-        const payload = { ...settings, id, password }; // default existing settings
+    // Log current settings for debugging
+    console.log("Current settings before sending:", settings);
 
-        // Include new cities if user typed anything
-        if (settings.newCites?.trim()) {
-            payload.newCities = settings.newCites.trim();
-        }
-
-        // Include new admin password if user typed anything
-        if (settings.newPass?.trim()) {
-            payload.newAdminPassword = settings.newPass.trim();
-        }
-
-        api.post('/default-setting', payload)
-            .then(() => {
-                setOpenSnackbar(true);
-
-                // Clear optional fields after successful save
-                setSettings(prev => ({
-                    ...prev,
-                    newCites: "",
-                    newPass: ""
-                }));
-            })
-            .catch((err) => {
-                console.error("Error saving settings:", err);
-                setSnackbarMsg("Failed to save settings");
-            });
+    // Construct payload explicitly to match backend
+    const payload = {
+        juice_quantity: Number(settings.juice_quantity),
+        no_pouches: Number(settings.no_pouches),
+        price: Number(settings.price),
+        shipping_fee: Number(settings.shipping_fee),
+        printer_ip: settings.printer_ip,
+        id,
+        password
     };
 
-        const handleButtonClick = () =>{
-            setModalOpen(true);
-        }
+    if (settings.newCites?.trim()) payload.newCities = settings.newCites.trim();
+    if (settings.newPass?.trim()) payload.newAdminPassword = settings.newPass.trim();
+    if (settings.newEmployeePass?.trim()) payload.newEmployeePassword = settings.newEmployeePass.trim();
 
-        const handleChange = (e) => {
-            const { name, value } = e.target;
+    // Debug log the payload
+    console.log("Payload to send:", JSON.stringify(payload, null, 2));
+
+    api.post("/default-setting", JSON.stringify(payload), { headers: { "Content-Type": "application/json" } })
+        .then((res) => {
+            console.log("Settings saved successfully. Response:", res.data);
+
+            setOpenSnackbar(true);
+            setSnackbarMsg("Settings saved successfully!");
+
+            // Clear only password and new cities fields
             setSettings(prev => ({
                 ...prev,
-                [name]: value
+                newCites: "",
+                newPass: "",
+                newEmployeePass: ""
             }));
-    };
+        })
+        .catch((err) => {
+            console.error("Error saving settings:", err.response?.data || err);
+
+            // Show snackbar for errors
+            setSnackbarMsg(`Failed to save settings: ${err.response?.data?.error || err.message}`);
+            setOpenSnackbar(true);
+        });
+};
+
+
+    const handleButtonClick = () => setModalOpen(true);
+
+    const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    let newValue = value;
+
+    if (name === "newCites") {
+        // Capitalize first letter
+        newValue = value.charAt(0).toUpperCase() + value.slice(1);
+
+        // Prevent "admin" or "Admin" as input
+        if (newValue.toLowerCase() === "admin") {
+            newValue = "";
+        }
+    }
+
+    setSettings(prev => ({
+        ...prev,
+        [name]: newValue
+    }));
+};
 
 
 
     return (
-    
         <>
             <DrawerComponent />
             <Box
+            sx={{
+                backgroundColor: "#ffffff",
+                minHeight: "90vh",
+                paddingTop: 4,
+                paddingBottom: 4,
+                display: "flex",
+                justifyContent: "center",
+            }}
+            >
+            <Paper
+                elevation={3}
                 sx={{
-                    backgroundColor: "#ffffff",
-                    minHeight: "90vh",
-                    paddingTop: 4,
-                    paddingBottom: 4,
-                    display: "flex",
-                    justifyContent: "center"
+                width: "min(90%, 600px)",
+                padding: 4,
+                backgroundColor: "#ffffff",
+                borderRadius: 2,
                 }}
             >
-                <Paper
-                    elevation={3}
-                    sx={{
-                        width: "min(90%, 600px)",
-                        padding: 4,
-                        backgroundColor: "#ffffff",
-                        borderRadius: 2
-                    }}
+                <Typography
+                variant="h4"
+                sx={{ textAlign: "center", marginBottom: 3, fontWeight: "bold" }}
                 >
-                    <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
-                        Setting
-                    </Typography>
+                Setting
+                </Typography>
 
-                    <Stack spacing={3}>
+                <form autoComplete="off">
+                {/* Hidden dummy inputs to prevent autofill */}
+                <input
+                    type="text"
+                    name="fakeusernameremembered"
+                    style={{ display: "none" }}
+                />
+                <input
+                    type="password"
+                    name="fakepasswordremembered"
+                    style={{ display: "none" }}
+                />
 
-                        <TextField
-                            name="juice_quantity"
-                            type="number"
-                            required
-                            fullWidth
-                            variant="filled"
-                            label="Juice Quantity (L/Kilo)"
-                            value={settings.juice_quantity}
-                            onChange={handleChange}
-                        />
-
-                        <TextField
-                            name="no_pouches"
-                            type="number"
-                            required
-                            fullWidth
-                            variant="filled"
-                            label="Number of Pouches (L/Pouch)"
-                            value={settings.no_pouches}
-                            onChange={handleChange}
-                        />
-
-                        <TextField
-                            name="price"
-                            type="number"
-                            required
-                            fullWidth
-                            variant="filled"
-                            label="Price (€/L)"
-                            value={settings.price}
-                            onChange={handleChange}
-                        />
-                        <TextField
-                            name="shipping_fee"
-                            type="number"
-                            required
-                            fullWidth
-                            variant="filled"
-                            label="Shipping fee (€/L)"
-                            value={settings.shipping_fee}
-                            onChange={handleChange}
-                        />
-                        <TextField
-                            name="newCites"
-                            fullWidth
-                            variant="filled"
-                            label="New cities"
-                            onChange={handleChange}
-                        />
-                        <TextField
-                            name="newPass"
-                            type="password"
-                            fullWidth
-                            variant="filled"
-                            label="New admin password"
-                            onChange={handleChange}
-                        />
-
-                        <TextField
-                            name="printer_ip"
-                            fullWidth
-                            variant="filled"
-                            label="Printer IP Address"
-                            value={String(settings.printer_ip)}
-                            onChange={handleChange}
-                        />
-
-
-                        <Button variant="contained" onClick={handleButtonClick}>Save</Button>
-                    </Stack>
-
-                </Paper>
+                <Stack spacing={3}>
+                    <TextField
+                    name="juice_quantity"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Juice Quantity (L/Kilo)"
+                    value={settings.juice_quantity}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="no_pouches"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Number of Pouches (L/Pouch)"
+                    value={settings.no_pouches}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="price"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Price (€/L)"
+                    value={settings.price}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="shipping_fee"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label="Shipping fee (€/L)"
+                    value={settings.shipping_fee}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="newCites"
+                    type="text"
+                    fullWidth
+                    variant="filled"
+                    label="New cities"
+                    value={settings.newCites}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <TextField
+                    name="newPass"
+                    type="password"
+                    fullWidth
+                    variant="filled"
+                    label="New admin password"
+                    value={settings.newPass}
+                    onChange={handleChange}
+                    autoComplete="new-password"
+                    />
+                    <TextField
+                    name="newEmployeePass"
+                    type="password"
+                    fullWidth
+                    variant="filled"
+                    label="New Employee password"
+                    value={settings.newEmployeePass}
+                    onChange={handleChange}
+                    autoComplete="new-password"
+                    />
+                    <TextField
+                    name="printer_ip"
+                    fullWidth
+                    variant="filled"
+                    label="Printer IP Address"
+                    value={settings.printer_ip}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    />
+                    <Button variant="contained" onClick={handleButtonClick}>
+                    Save
+                    </Button>
+                </Stack>
+                </form>
+            </Paper>
             </Box>
 
-            <Snackbar
-            open={openSnackbar}
-            autoHideDuration={3000}
-            onClose={() => setOpenSnackbar(false)}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            >
-                
-            <Alert onClose={() => setOpenSnackbar(false)} severity="success" sx={{ width: '100%' }}>
-                Settings saved successfully!
-            </Alert>
+
+            <Snackbar open={openSnackbar} autoHideDuration={3000} onClose={() => setOpenSnackbar(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+                <Alert onClose={() => setOpenSnackbar(false)} severity="success" sx={{ width: '100%' }}>Settings saved successfully!</Alert>
             </Snackbar>
 
-            <PasswordModal
-                open={modalOpen}
-                onClose={() => setModalOpen(false)}
-                onConfirm={handleConfirm}
-            />
-
+            <PasswordModal open={modalOpen} onClose={() => setModalOpen(false)} onConfirm={handleConfirm} />
         </>
     );
 }

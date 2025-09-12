@@ -14,34 +14,40 @@ function OrderInfoInput({data, setdata, city}) {
     const [settings, setSettings] = useState(default_settings)    
     
     useEffect(() => {
-    api
-        .get('/default-setting')
-        .then((res) => {
-            const raw = res.data;
-
-            // Convert the response string into an object
+        api.get('/default-setting')
+            .then((res) => {
+            // res.data is already an object
             const parsed = Object.fromEntries(
-                raw
-                    .trim()
-                    .split(',') // split each key-value pair
-                    .map(pair => pair.split(':')) // split key and value
-                    .map(([key, value]) => [key.trim(), parseFloat(value)]) // clean up
+                Object.entries(res.data).map(([key, value]) => [
+                key,
+                isNaN(value) ? value : parseFloat(value)
+                ])
             );
 
             setSettings(parsed);
-        });
-    }, []);
+            })
+            .catch((err) => {
+            console.error("Failed to load settings:", err);
+            });
+        }, []);
+
 
     const handleCustomerInfoUpdate = (e)=>{
         setdata({... data, [e.target.name]:e.target.value})
     }
 
     const handleWeightInfoInput = (e)=>{
+        console.log(settings);
         setdata({... data, 
             total_apple_weight:e.target.value, 
-            Juice_quantity:(0.64*e.target.value), 
-            No_of_Pouches:Math.ceil(0.64*e.target.value/3),
-            price:Math.ceil(0.64*e.target.value/3)*(8 + (city == "Kuopio" ? 0 : 1.9))
+            Juice_quantity: Math.floor(settings.juice_quantity * e.target.value),
+            No_of_Pouches:Math.ceil(settings.juice_quantity*e.target.value/3),
+            price: Number(
+            (
+                Math.ceil(settings.juice_quantity * e.target.value / 3) *
+                (8 + (city === "Kuopio" ? 0 : 1.9))
+            ).toFixed(2)
+            )
         }
     )
     }

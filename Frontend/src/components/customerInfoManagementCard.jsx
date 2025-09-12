@@ -1,82 +1,64 @@
 import { useEffect, useState, memo } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Box, TextField, Stack, Button, Tooltip, Chip } from '@mui/material';
+import { Box, TextField, Stack, Button, Tooltip, Paper } from '@mui/material';
+import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
 import api from '../services/axios';
 import EditCustomerDialog from './EditCustomerDialog';
 import QRCodeDialog from './qrcodeDialog';
-import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
+import PasswordModal from './PasswordModal';
 
-/** Tiny cell component to show SMS status for an order. */
-const SmsStatusChip = memo(function SmsStatusChip({ row, refresh }) {
-  const [status, setStatus] = useState({ last_status: 'not_sent', sent_count: 0, updated_at: null });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const cid = row?.customer_id;
-        if (!cid) return;
-        const { data } = await api.get(`/customers/${encodeURIComponent(cid)}/sms-status`);
-        if (!cancelled && data) {
-          setStatus({
-            last_status: data.last_status || 'not_sent',
-            sent_count: Number(data.sent_count || 0),
-            updated_at: data.updated_at || null,
-          });
-        }
-      } catch {
-        // keep default "Not sent"
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [row?.customer_id, refresh]);
-
-  const sent = String(status.last_status || '').toLowerCase() === 'sent';
-  return (
-    <Tooltip title={sent ? (status.updated_at ? `Last sent: ${status.updated_at}` : 'SMS sent') : 'No SMS sent yet'}>
-      <Chip
-        size="small"
-        variant="outlined"
-        color={sent ? "success" : "default"}
-        label={sent ? `Sent (${status.sent_count || 0})` : 'Not sent'}
-        sx={{ fontWeight: 600 }}
-      />
-    </Tooltip>
-  );
-});
-
-
-export default function CustomerTable() {
+export default function CustomerInfoManagementCard() {
   const [CustomerForwardName, setCustomerForwardName] = useState('');
   const [maxCrates, setMaxCrates] = useState('');
 
-  // NEW: used to force-refresh SmsStatusChip after manual sends
-  const [smsRefreshTick, setSmsRefreshTick] = useState(0);
-
-  // helper: strict check (adjust here if your spelling varies)
   const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pickup';
 
-  const handleDelete = async (row) => {
-    try {
-      const response = await api.delete('/customer', {
-        data: { customer_id: row.customer_id },
-      });
-      console.log('Deleted successfully:', response.data);
-      setButtonClicked(true);
-      return response.data;
-    } catch (error) {
-      console.error('Delete failed:', error);
-      throw error;
-    }
-  };
+  const [rows, setRows] = useState([]);
+  const [rowCount, setRowCount] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [buttonClicked, setButtonClicked] = useState(false);
 
-  function handleEdit(row) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState(null);
+
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [crateIds, setCrateIds] = useState([]);
+
+  // Password modal state
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    api
+      .get('/customer', {
+        params: {
+          page: page + 1,
+          limit: pageSize,
+          customerName: customerName || undefined,
+        },
+      })
+      .then((res) => {
+        const data = res.data;
+        setRows(data.rows);
+        setRowCount(data.total);
+        setLoading(false);
+        setButtonClicked(false);
+      })
+      .catch((err) => {
+        console.error('API error:', err);
+        setLoading(false);
+      });
+  }, [page, pageSize, buttonClicked]);
+
+  // Edit handlers
+  const handleEdit = (row) => {
     setSelectedRow(row);
     setEditOpen(true);
-  }
+  };
 
   const handleEditClose = () => {
     setEditOpen(false);
@@ -84,18 +66,15 @@ export default function CustomerTable() {
   };
 
   const handleUpdateSuccess = () => {
-    // reload table after update
     setButtonClicked(true);
   };
 
+  // QR code handlers
   const handleCrateQRPrint = async (row) => {
     setMaxCrates(row.crate_count);
 
     try {
-      // Fetch crate IDs for this customer from your API
-      const response = await api.get('/crates', {
-        params: { customer_id: row.customer_id }
-      });
+      const response = await api.get('/crates', { params: { customer_id: row.customer_id } });
 
       if (response.data && Array.isArray(response.data.crates)) {
         setCrateIds(response.data.crates.map(c => c.crate_id));
@@ -109,24 +88,48 @@ export default function CustomerTable() {
     }
   };
 
+  // SMS handler
   const handleNotifySMS = async (row) => {
     if (!isReadyForPickup(row?.status)) {
       alert("Can only send SMS when status is 'Ready for pickup'.");
       return;
     }
     try {
-      // No message in body → server uses location-based template
       const res = await api.post(`/customers/${row.customer_id}/notify`, {});
-      console.log("SMS notify:", res.data);
-
-      // If backend already records SMS status, just refresh the chip:
-      setSmsRefreshTick((t) => t + 1);
-
       alert(res.data?.message || "SMS attempted");
     } catch (e) {
       console.error("Notify failed", e);
       alert("SMS failed – check server logs");
     }
+  };
+
+  // Delete handlers
+  const handleDeleteClick = (row) => {
+    setRowToDelete(row);
+    setPasswordModalOpen(true);
+  };
+
+  const handlePasswordConfirm = async ({ id, password }) => {
+    try {
+      await api.post('/auth/login', { id, password }); // backend expects id='admin'
+
+      if (rowToDelete) {
+        await api.delete('/customer', { data: { customer_id: rowToDelete.customer_id } });
+        setRowToDelete(null);
+        setButtonClicked(true);
+        alert('Customer deleted successfully!');
+      }
+    } catch (err) {
+      console.error('Admin verification failed:', err);
+      alert('Invalid admin password!');
+    } finally {
+      setPasswordModalOpen(false);
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setRowToDelete(null);
+    setPasswordModalOpen(false);
   };
 
   const columns = [
@@ -163,12 +166,12 @@ export default function CustomerTable() {
         const ready = isReadyForPickup(params.row?.status);
 
         return (
-          <Stack direction="row" spacing={1} sx={{ display: "center", justifyContent: "center", alignItems: "center" }}>
+          <Stack direction="row" spacing={1} sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
             <Button variant="outlined" size="small" color="primary" onClick={() => handleEdit(params.row)}>
               <Edit />
             </Button>
 
-            <Button variant="outlined" size="small" color="error" onClick={() => handleDelete(params.row)}>
+            <Button variant="outlined" size="small" color="error" onClick={() => handleDeleteClick(params.row)}>
               <Delete />
             </Button>
 
@@ -176,9 +179,8 @@ export default function CustomerTable() {
               <QrCode />
             </Button>
 
-            {/* Message button only active when status is "Ready for pickup" */}
             <Tooltip title={ready ? "Send SMS" : "Only available when status is 'Ready for pickup'."}>
-              <span> {/* span wrapper so Tooltip works with disabled Button */}
+              <span>
                 <Button
                   variant="outlined"
                   size="small"
@@ -196,94 +198,47 @@ export default function CustomerTable() {
     }
   ];
 
-  const [rows, setRows] = useState([]);
-  const [rowCount, setRowCount] = useState(0);
-  const [page, setPage] = useState(0);         // 0-based for MUI
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [buttonClicked, setButtonClicked] = useState(false);
-
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedRow, setSelectedRow] = useState(null);
-
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [crateIds, setCrateIds] = useState([]);
-
-  useEffect(() => {
-    setLoading(true);
-    api
-      .get('/customer', {
-        params: {
-          page: page + 1, // backend expects 1-based
-          limit: pageSize,
-          customerName: customerName || undefined, // skip param if empty
-        },
-      })
-      .then((res) => {
-        const data = res.data;
-        setRows(data.rows);
-        setRowCount(data.total);
-        setLoading(false);
-        setButtonClicked(false);
-        // also refresh chips on reload
-        setSmsRefreshTick((t) => t + 1);
-      })
-      .catch((err) => {
-        console.error('API error:', err);
-        setLoading(false);
-      });
-  }, [page, pageSize, buttonClicked]);
-
   return (
     <>
-      <Box sx={{ width: 'auto' }}>
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{
-            justifySelf: "center",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "min(1200px, 90%)",
-            padding: "5px",
-            borderRadius: "10px",
-            marginBottom: "10px"
-          }}
-        >
-          <TextField
-            label="Customer name"
-            variant="filled"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            size="small"
-            sx={{ mb: 2, width: "80%" }}
-            fullWidth
-            placeholder="Search by customer Name"
-          />
+      <Box sx={{ width: '100%', overflowX: 'hidden' }}>
+  <Box sx={{ width: "100%", maxWidth: 1200, mt: 2 }}>
+    <Stack direction="row" spacing={2} sx={{ mb: 2, justifyContent: "flex-start", alignItems: "center" }}>
+      <TextField
+        label="Customer name"
+        variant="filled"
+        value={customerName}
+        onChange={(e) => setCustomerName(e.target.value)}
+        size="small"
+        fullWidth
+        placeholder="Search by customer Name"
+      />
+      <Button variant="contained" onClick={() => setButtonClicked(true)}>OK</Button>
+    </Stack>
 
-          <Button variant="contained" onClick={() => { setButtonClicked(true); }}>OK</Button>
-        </Stack>
+    <DataGrid
+      rows={rows}
+      columns={columns}
+      rowCount={rowCount}
+      loading={loading}
+      pagination
+      paginationMode="server"
+      paginationModel={{ page, pageSize }}
+      onPaginationModelChange={(model) => {
+        setPage(model.page);
+        setPageSize(model.pageSize);
+      }}
+      getRowId={(row) => row.customer_id}
+      autoHeight={false}
+      disableRowSelectionOnClick
+      hideFooterSelectedRowCount
+      sx={{
+        width: '100%',
+        '& .MuiDataGrid-viewport': { overflowX: 'auto' },
+      }}
+    />
+  </Box>
+</Box>
 
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          rowCount={rowCount}
-          loading={loading}
-          pagination
-          paginationMode="server"
-          paginationModel={{ page, pageSize }}
-          onPaginationModelChange={(model) => {
-            setPage(model.page);
-            setPageSize(model.pageSize);
-          }}
-          getRowId={(row) => row.customer_id} // very important
-          checkboxSelection={false}
-          disableRowSelectionOnClick={true}
-          hideFooterSelectedRowCount={true}
-        />
-      </Box>
 
       <EditCustomerDialog
         open={editOpen}
@@ -298,6 +253,12 @@ export default function CustomerTable() {
         data={crateIds}
         name={CustomerForwardName}
         max={maxCrates}
+      />
+
+      <PasswordModal
+        open={passwordModalOpen}
+        onClose={handlePasswordCancel}
+        onConfirm={handlePasswordConfirm}
       />
     </>
   );
