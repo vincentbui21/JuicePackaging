@@ -13,6 +13,89 @@ const { router: authRouter, authenticateToken } = require("./auth");
 
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
+const smsTemplatesFilePath = path.join(__dirname, "data", "sms-templates.json");
+
+const DEFAULT_SMS_TEMPLATES = {
+  lapinlahti: [
+    "Hei, Mehunne ovat valmiina ja odottavat noutoanne, Anjan Pihaputiikki, Lapinlahti",
+    "puh. 044 073 3447",
+    "Avoinna. Maanantai-Perjantai 09-17, Lauantai 09-13"
+  ].join("\n"),
+  kuopio: [
+    "Hei, Mehunne ovat valmiina ja odottavat noutoanne Mehustajalla.",
+    "Olemme avoinna Ma klo 8-17 ja Ti - Pe klo 9-17",
+    "Ystävällisin terveisin, Mehustajat"
+  ].join("\n"),
+  lahti: [
+    "Hei, mehunne ovat valmiina noudettavaksi Vihertalo Varpulasta",
+    "Rajakatu 2, Lahti",
+    "Olemme avoinna Ma-Pe klo 10-18  ja La 9-15",
+    "Terveisin Mehustaja"
+  ].join("\n"),
+  joensuu: [
+    "Hei, Mehunne ovat valmiina osoitteessa",
+    "Joensuu Nuorisoverstas",
+    "Tulliportinkatu 54",
+    "Mehut voi noutaa Ti ja To 9-14",
+    "puh: 050 4395406 Terveisin Mehustaja"
+  ].join("\n"),
+  mikkeli: [
+    "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa Nuorten Työpajat Mikkeli.",
+    "Noutopiste on avoinna Ma 09.30-14.00, Ti 8-16, Ke 8-16, To 09.30-14.00",
+    "Ystävällisin terveisin Mehustaja."
+  ].join("\n"),
+  varkaus: [
+    "Hei, Mehunne ovat valmiina ja odottav﻿﻿at noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omanat on jätetty.",
+    "HUOM! Noutopiste on avoinna XXXXXX",
+    "Ystävällisin terveisin, Mehustaja"
+  ].join("\n"),
+  default: "Hei! Mehunne ovat valmiina noudettavaksi. Ystävällisin terveisin, Mehustaja"
+};
+
+let SMS_TEMPLATES_CACHE = null;
+
+
+async function ensureSmsTemplatesFile() {
+  try {
+    await fs.access(smsTemplatesFilePath);
+  } catch {
+    await fs.mkdir(path.dirname(smsTemplatesFilePath), { recursive: true });
+    await fs.writeFile(
+      smsTemplatesFilePath,
+      JSON.stringify(DEFAULT_SMS_TEMPLATES, null, 2),
+      "utf8"
+    );
+  }
+}
+
+async function loadSmsTemplates() {
+  try {
+    await ensureSmsTemplatesFile();
+    const txt = await fs.readFile(smsTemplatesFilePath, "utf8");
+    const obj = JSON.parse(txt || "{}");
+    const normalized = Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [String(k).toLowerCase(), String(v)])
+    );
+    if (!normalized.default) normalized.default = DEFAULT_SMS_TEMPLATES.default;
+    SMS_TEMPLATES_CACHE = { ...DEFAULT_SMS_TEMPLATES, ...normalized };
+    return SMS_TEMPLATES_CACHE;
+  } catch (e) {
+    console.error("Failed to load sms-templates.json, using defaults:", e.message);
+    SMS_TEMPLATES_CACHE = { ...DEFAULT_SMS_TEMPLATES };
+    return SMS_TEMPLATES_CACHE;
+  }
+}
+
+async function saveSmsTemplates(newTemplates = {}) {
+  const normalized = Object.fromEntries(
+    Object.entries(newTemplates).map(([k, v]) => [String(k).toLowerCase(), String(v ?? "")])
+  );
+  const merged = { ...DEFAULT_SMS_TEMPLATES, ...normalized };
+  await fs.mkdir(path.dirname(smsTemplatesFilePath), { recursive: true });
+  await fs.writeFile(smsTemplatesFilePath, JSON.stringify(merged, null, 2), "utf8");
+  SMS_TEMPLATES_CACHE = merged;
+  return merged;
+}
 
 
 const app = express();
@@ -45,6 +128,8 @@ app.use(cors({
 
 app.use(express.json());
 
+loadSmsTemplates().catch(() => {});
+
 io.on('connection', (socket) => {
   console.log('New client connected');
 });
@@ -58,56 +143,9 @@ app.use("/auth", authRouter);
 // ─────────────────────────────────────────────────────────────────────────────
 // Location-based pickup SMS templates (Finnish)
 function buildPickupSMSText(locationRaw) {
-  const l = (locationRaw || "").trim().toLowerCase();
-  switch (l) {
-    case "lapinlahti":
-      return [
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne, Anjan Pihaputiikki, Lapinlahti",
-        "puh. 044 073 3447",
-        "Avoinna. Maanantai-Perjantai 09-17, Lauantai 09-13"
-      ].join("\n");
-
-    case "kuopio":
-      return [
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne Mehustajalla.",
-        "Olemme avoinna Ma klo 8-17 ja Ti - Pe klo 9-17",
-        "Ystävällisin terveisin, Mehustajat"
-      ].join("\n");
-
-    case "lahti":
-      return [
-        "Hei, mehunne ovat valmiina noudettavaksi Vihertalo Varpulasta",
-        "Rajakatu 2, Lahti",
-        "Olemme avoinna Ma-Pe klo 10-18  ja La 9-15",
-        "Terveisin Mehustaja"
-      ].join("\n");
-
-    case "joensuu":
-      return [
-        "Hei, Mehunne ovat valmiina osoitteessa",
-        "Joensuu Nuorisoverstas",
-        "Tulliportinkatu 54",
-        "Mehut voi noutaa Ti ja To 9-14",
-        "puh: 050 4395406 Terveisin Mehustaja"
-      ].join("\n");
-
-    case "mikkeli":
-      return [
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa Nuorten Työpajat Mikkeli.",
-        "Noutopiste on avoinna Ma 09.30-14.00, Ti 8-16, Ke 8-16, To 09.30-14.00",
-        "Ystävällisin terveisin Mehustaja."
-      ].join("\n");
-
-    case "varkaus":
-      return [
-        "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omanat on jätetty.",
-        "HUOM! Noutopiste on avoinna XXXXXX",
-        "Ystävällisin terveisin, Mehustaja"
-      ].join("\n");
-
-    default:
-      return "Hei! Mehunne ovat valmiina noudettavaksi. Ystävällisin terveisin, Mehustaja";
-  }
+  const l = String(locationRaw || "").trim().toLowerCase();
+  const source = SMS_TEMPLATES_CACHE || DEFAULT_SMS_TEMPLATES;
+  return source[l] || source.default;
 }
 
 // --- Force account-level SMS defaults (no change to aws_sns.js needed) ---
@@ -922,7 +960,6 @@ app.get('/dashboard/activity', async (req, res) => {
   }
 });
 
-
 app.get('/dashboard/daily-totals', async (req, res) => {
   try {
     const { days } = req.query; // optional, defaults to 30
@@ -1210,6 +1247,26 @@ app.post('/customers/:customerId/sms-status', async (req, res) => {
   }
 });
 
+app.get("/sms-templates", async (req, res) => {
+  try {
+    const current = SMS_TEMPLATES_CACHE || await loadSmsTemplates();
+    res.json({ templates: current });
+  } catch (e) {
+    console.error("GET /sms-templates failed:", e);
+    res.status(500).json({ error: "sms_templates_read_failed" });
+  }
+});
+
+app.put("/sms-templates", async (req, res) => {
+  try {
+    const incoming = (req.body && (req.body.templates || req.body)) || {};
+    const merged = await saveSmsTemplates(incoming);
+    res.json({ ok: true, templates: merged });
+  } catch (e) {
+    console.error("PUT /sms-templates failed:", e);
+    res.status(500).json({ ok: false, error: "sms_templates_write_failed" });
+  }
+});
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
