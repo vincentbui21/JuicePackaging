@@ -1773,75 +1773,35 @@ async function getOrdersOnPallet(palletId) {
   );
   return rows;
 }
+// ───────────────── SMS STATUS HELPERS (customer-centric) ─────────────────
 
-// ───────────────── SMS STATUS HELPERS ─────────────────
-async function upsertSmsStatus(orderId, wasSent) {
-  if (!orderId) return null;
-  const now = new Date();
-
-  if (wasSent) {
-    await pool.query(
-      `
-      INSERT INTO SMSStatus (order_id, sent_count, last_status, last_at)
-      VALUES (?, 1, 'sent', ?)
-      ON DUPLICATE KEY UPDATE
-        sent_count = sent_count + 1,
-        last_status = 'sent',
-        last_at = VALUES(last_at)
-      `,
-      [orderId, now]
-    );
-  } else {
-    await pool.query(
-      `
-      INSERT INTO SMSStatus (order_id, sent_count, last_status, last_at)
-      VALUES (?, 0, 'not_sent', ?)
-      ON DUPLICATE KEY UPDATE
-        last_status = 'not_sent',
-        last_at = VALUES(last_at)
-      `,
-      [orderId, now]
-    );
-  }
-
+/**
+ * Return a single customer's SMS status or a default "not_sent" object.
+ */
+async function getSmsStatusForCustomer(customerId) {
   const [rows] = await pool.query(
-    `SELECT order_id, sent_count, last_status, last_at FROM SMSStatus WHERE order_id = ?`,
-    [orderId]
-  );
-  return rows[0] || null;
-}
-
-async function getSmsStatus(orderId) {
-  const [rows] = await pool.query(
-    `SELECT order_id, sent_count, last_status, last_at FROM SMSStatus WHERE order_id = ?`,
-    [orderId]
-  );
-  return rows[0] || null;
-}
-
-// If you need to get the most recent order for a customer (for manual SMS fallback)
-async function getLatestOrderByCustomerId(customerId) {
-  const [rows] = await pool.query(
-    `
-    SELECT o.order_id
-    FROM Orders o
-    WHERE o.customer_id = ?
-    ORDER BY o.created_at DESC
-    LIMIT 1
-    `,
+    `SELECT customer_id, sent_count, last_status, updated_at
+       FROM SmsStatus
+      WHERE customer_id = ?`,
     [customerId]
   );
-  return rows[0] || null;
+  if (rows.length) return rows[0];
+  return {
+    customer_id: customerId,
+    sent_count: 0,
+    last_status: 'not_sent',
+    updated_at: null,
+  };
 }
 
 async function getSmsStatusForCustomer(customerId) {
   const [rows] = await pool.query(
     `SELECT customer_id, sent_count, last_status, updated_at
-       FROM SmsStatus WHERE customer_id = ?`,
+     FROM SmsStatus
+     WHERE customer_id = ?`,
     [customerId]
   );
   if (rows.length) return rows[0];
-  // default shape when none exists yet
   return { customer_id: customerId, sent_count: 0, last_status: 'not_sent', updated_at: null };
 }
 
@@ -1868,6 +1828,32 @@ async function markSmsSkipped(customerId) {
   );
 }
 
+// --- Daily totals: liters + customers served (distinct) per day -------------
+async function getDailyTotals(days = 30) {
+  const n = Math.max(1, Math.min(365, Number(days) || 30));
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      DATE(b.created_at) AS d,
+      COUNT(*)           AS boxes,
+      COUNT(DISTINCT b.customer_id) AS customers
+    FROM Boxes b
+    WHERE b.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+    GROUP BY DATE(b.created_at)
+    ORDER BY d DESC
+    `,
+    [n]
+  );
+
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0,10) : String(x));
+
+  return rows.map(r => ({
+    date: toDateStr(r.d),
+    total_liters: Number(r.boxes || 0) * 8,          // same 1 box = 8L assumption as summary
+    total_customers: Number(r.customers || 0),
+  }));
+}
 
 module.exports = {
     updateAdminPassword,
@@ -1929,13 +1915,11 @@ module.exports = {
     getOrderStatus,
     getPalletBoxes,
     getOrdersOnPallet,
-    upsertSmsStatus,
-    getSmsStatus,
-    getLatestOrderByCustomerId,
     getSmsStatusForCustomer,
     incrementSmsSent,
     markSmsSkipped,
-    updateEmployeePassword
+    updateEmployeePassword,
+    getDailyTotals,
     
 }
 
