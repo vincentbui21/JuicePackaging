@@ -912,31 +912,32 @@ app.post("/printer/test-print", async (req, res) => {
   }
 });
 
-
-
+//Pouch printing route
 app.post("/printer/print-pouch", async (req, res) => {
   try {
-    const { customer, productionDate } = req.body;
+    const { customer, firstName, lastName, productionDate, expiryDate } = req.body || {};
 
-    // Read the latest printer IP from the settings file
+    // dynamic IP from settings file
     const { printer_ip = "192.168.1.139" } = await getCurrentSettings();
 
     const result = await printPouch({
-      host: printer_ip,     // <-- dynamic IP
+      host: printer_ip,
       port: 3003,
-      job: "Mehustaja",
-      customer,
-      productionDate,
+      job: "Mehustaja",          // default job name
+      customer,                 
+      firstName,
+      lastName,
+      productionDate,        
+      expiryDate,          
     });
 
-    console.log("Sent to printer:", result);
+    console.log("Videojet sent:", result);
     res.json({ status: "ok", ...result });
   } catch (err) {
     console.error("print-pouch failed:", err);
     res.status(500).json({ status: "error", message: err.message });
   }
 });
-
 
 
 app.get('/dashboard/summary', async (req, res) => {
