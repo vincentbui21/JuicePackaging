@@ -1,57 +1,76 @@
 // auth.js
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const database = require("./source/database_fns"); // adjust path if needed
+const database = require("./source/database_fns");
 require("dotenv").config();
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || "defaultsecret"; // fallback if missing
 
-// Login route for employee
+// Login route
 router.post("/login", async (req, res) => {
-  const {id, password } = req.body; // only password is sent from frontend
+  try {
+    const { id, password } = req.body;
 
-    if (!password) {
-        return res.status(400).json({ error: "Password is required" });
+    if (!id || !password) {
+      return res.json({ success: false, error: "ID and password are required" });
     }
 
+    const pool = database.pool;
+
+    let rows;
     try {
-        const pool = database.pool;
-
-        // Check if password matches for employee
-        const [rows] = await pool.query(
-        "SELECT id FROM Accounts WHERE id = ? AND password = ? LIMIT 1",
-        [id, password]
-        );
-
-        if (!rows.length) {
-        return res.status(401).json({ error: "Invalid password" });
-        }
-
-        const user = rows[0];
-
-        // Generate JWT
-        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
-
-        res.json({ token });
-    } catch (err) {
-        console.error("Login error:", err);
-        res.status(500).json({ error: "Internal server error" });
+      [rows] = await pool.query(
+        "SELECT id, password FROM Accounts WHERE id = ? LIMIT 1",
+        [id]
+      );
+    } catch (dbErr) {
+      console.error("[LOGIN] DB error:", dbErr);
+      return res.json({ success: false, error: "Database error", details: dbErr.message });
     }
-    });
 
-    // Middleware to protect routes
-    function authenticateToken(req, res, next) {
+    if (!rows.length) {
+      return res.json({ success: false, error: "Invalid credentials" });
+    }
+
+    const user = rows[0];
+
+    // Simple password check (plain-text)
+    if (user.password !== password) {
+      return res.json({ success: false, error: "Invalid credentials" });
+    }
+
+    let token;
+    try {
+      token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
+    } catch (jwtErr) {
+      console.error("[LOGIN] JWT error:", jwtErr);
+      return res.json({ success: false, error: "JWT generation error", details: jwtErr.message });
+    }
+
+    return res.json({ success: true, token });
+  } catch (err) {
+    console.error("[LOGIN] Unexpected error:", err);
+    return res.json({ success: false, error: "Internal server error", details: err.message });
+  }
+});
+
+// Middleware to protect routes
+function authenticateToken(req, res, next) {
+  try {
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
 
-    if (!token) return res.sendStatus(401);
+    if (!token) return res.json({ success: false, error: "Missing token" });
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
-        req.user = user;
-        next();
+      if (err) return res.json({ success: false, error: "Invalid token" });
+      req.user = user;
+      next();
     });
+  } catch (err) {
+    return res.json({ success: false, error: "Token verification error", details: err.message });
+  }
 }
 
 module.exports = { router, authenticateToken };

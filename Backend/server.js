@@ -2,17 +2,43 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const database = require('./source/database_fns');
-const uuid = require('./source/uuid');
-const { publishDirectSMS } = require('./utils/aws_sns');
 const fs = require('fs').promises;
 const path = require('path');
+const database = require('./source/database_fns');
+const { router: authRouter } = require("./auth");
+const uuid = require('./source/uuid');
+const { publishDirectSMS } = require('./utils/aws_sns');
 const { printPouch } = require("./source/printers/videojet6330");
 const net = require("net");
-const { router: authRouter, authenticateToken } = require("./auth");
 
+const app = express();
+const server = http.createServer(app);
+const pool = database.pool;
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
+
+const io = new Server(server, {
+  cors: {
+    origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  }
+});
+
+// Attach io to app so routes can access it
+app.set('io', io);
+
+// REST API CORS
+app.use(cors({
+  origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+app.use(express.json());
+
+// ---------- SMS templates ----------
 const smsTemplatesFilePath = path.join(__dirname, "data", "sms-templates.json");
 
 const DEFAULT_SMS_TEMPLATES = {
@@ -45,7 +71,7 @@ const DEFAULT_SMS_TEMPLATES = {
     "Ystävällisin terveisin Mehustaja."
   ].join("\n"),
   varkaus: [
-    "Hei, Mehunne ovat valmiina ja odottav﻿﻿at noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omanat on jätetty.",
+    "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omenat on jätetty.",
     "HUOM! Noutopiste on avoinna XXXXXX",
     "Ystävällisin terveisin, Mehustaja"
   ].join("\n"),
@@ -53,7 +79,6 @@ const DEFAULT_SMS_TEMPLATES = {
 };
 
 let SMS_TEMPLATES_CACHE = null;
-
 
 async function ensureSmsTemplatesFile() {
   try {
@@ -97,44 +122,34 @@ async function saveSmsTemplates(newTemplates = {}) {
   return merged;
 }
 
+// Load templates at startup
+loadSmsTemplates().catch(() => {});
 
-const app = express();
-const server = http.createServer(app);
-const pool = database.pool;
+// ---------- Socket.IO ----------
+io.on('connection', (socket) => {
+  console.log('New client connected:', socket.id);
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
+// Example emitActivity
 function emitActivity(type, message, extra = {}) {
   io.emit("activity", {
-    type,         // "customer" | "processing" | "warehouse" | "ready" | "pickup"
-    message,      // short text
+    type,
+    message,
     ts: new Date().toISOString(),
     ...extra,
   });
 }
 
-const io = new Server(server, {
-  cors: {
-    origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
-});
-
-// Attach io to app so routes can access it
-app.set('io', io);
-
-app.use(cors({
-  origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type']
-}));
-
-app.use(express.json());
-
-loadSmsTemplates().catch(() => {});
-
-io.on('connection', (socket) => {
-  console.log('New client connected');
-});
-
+// ---------- Routes ----------
 app.use("/auth", authRouter);
+
+app.get('/ping', (req, res) => {
+  res.json({ msg: 'pong' });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Location-specific pickup SMS templates
