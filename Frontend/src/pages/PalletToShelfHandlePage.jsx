@@ -209,13 +209,34 @@ export default function PalletToShelfHandlePage() {
   const submitWithFlag = async (sendSms) => {
     try {
       setSubmitting(true);
+  
+      // 1) Assign pallet -> shelf on the server
       await api.post("/pallets/assign-shelf", {
         palletId,
         shelfId,
         sendSms,
       });
-
-      // Reset UI
+  
+      // 2) Record SMS decision per order on this pallet (non-blocking)
+      try {
+        const orders = Array.isArray(ordersOnPallet) ? ordersOnPallet : [];
+        await Promise.all(
+          orders
+            .map(o => o?.order_id)
+            .filter(Boolean)
+            .map(orderId =>
+              api.post(
+                `/orders/${encodeURIComponent(orderId)}/sms-status`,
+                { sent: !!sendSms, source: "pallet-to-shelf" }
+              )
+            )
+        );
+      } catch (e) {
+        // Do not block the main flow if this fails
+        console.warn("sms-status record failed (non-blocking):", e?.message || e);
+      }
+  
+      // 3) Reset UI
       setPalletId("");
       setShelfId("");
       setOrderInfo(InitialOrderInfo);
@@ -230,6 +251,7 @@ export default function PalletToShelfHandlePage() {
       setSubmitting(false);
     }
   };
+  
 
   const handleClear = () => {
     setOrderInfo(InitialOrderInfo);

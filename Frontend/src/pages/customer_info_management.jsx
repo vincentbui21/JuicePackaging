@@ -7,6 +7,7 @@ import DrawerComponent from "../components/drawer";
 function CustomerInfoManagement() {
 
     return (
+
         <>
             <DrawerComponent></DrawerComponent>
 

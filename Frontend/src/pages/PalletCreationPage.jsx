@@ -16,6 +16,8 @@ import { Print } from "@mui/icons-material";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
+import printImage from '../services/send_to_printer'
+
 
 function PalletCreationPage() {
   const [location, setLocation] = useState("");
@@ -25,6 +27,7 @@ function PalletCreationPage() {
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [cities, setCities] = useState([]);
+  const [pallet_ids, setPallet_ids] = useState()
 
   useEffect(() => {
   const fetchCities = async () => {
@@ -54,6 +57,7 @@ function PalletCreationPage() {
       // Be tolerant to either shape: { pallet_id } or { result: { pallet_id } }
       const pallet_id = res?.data?.pallet_id ?? res?.data?.result?.pallet_id;
       if (!pallet_id) throw new Error("Missing pallet_id in response");
+      setPallet_ids(pallet_id)
 
       const img = await generateSmallPngQRCode(`PALLET_${pallet_id}`);
       setQrImage(img);
@@ -68,22 +72,23 @@ function PalletCreationPage() {
     }
   };
 
-  const handlePrint = () => {
-    if (!qrImage) return;
-    const popup = window.open("", "_blank");
-    popup.document.write(`
-      <html><head><title>Print QR Code</title></head>
-      <body style="text-align:center;padding:20px;">
-        <img src="${qrImage}" style="width:100px;" />
-        <script>
-          window.onload = function() {
-            window.print();
-            window.onafterprint = () => window.close();
-          }
-        </script>
-      </body></html>
-    `);
-    popup.document.close();
+  const handlePrint = (qrImage, id) => {
+    // if (!qrImage) return;
+    // const popup = window.open("", "_blank");
+    // popup.document.write(`
+    //   <html><head><title>Print QR Code</title></head>
+    //   <body style="text-align:center;padding:20px;">
+    //     <img src="${qrImage}" style="width:100px;" />
+    //     <script>
+    //       window.onload = function() {
+    //         window.print();
+    //         window.onafterprint = () => window.close();
+    //       }
+    //     </script>
+    //   </body></html>
+    // `);
+    // popup.document.close();
+    printImage(qrImage, pallet_ids)
   };
 
   return (
@@ -159,7 +164,7 @@ function PalletCreationPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
-          <Button onClick={handlePrint} variant="contained" startIcon={<Print />}>
+          <Button onClick={()=> handlePrint(qrImage)} variant="contained" startIcon={<Print />}>
             Print
           </Button>
         </DialogActions>

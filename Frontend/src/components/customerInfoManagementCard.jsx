@@ -1,59 +1,124 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Box, TextField, Stack, Button, Tooltip } from '@mui/material';
+import {
+  Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress,
+} from '@mui/material';
+import { Edit, Delete, QrCode, Send } from '@mui/icons-material';
 import api from '../services/axios';
 import EditCustomerDialog from './EditCustomerDialog';
 import QRCodeDialog from './qrcodeDialog';
-import { Edit, Delete, QrCode, Send } from "@mui/icons-material";
+import PasswordModal from './PasswordModal';
 
-export default function CustomerTable() {
+const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pickup';
 
-  const [CustomerForwardName, setCustomerForwardName] = useState('');
-  const [maxCrates, setMaxCrates] = useState('');
+// Small chip component that fetches /customers/:id/sms-status
+function SmsStatusChip({ customerId, refreshKey }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // helper: strict check (adjust here if your spelling varies)
-  const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pickup';
-
-  const handleDelete = async (row) => {
+  const load = async () => {
     try {
-      const response = await api.delete('/customer', {
-        data: { customer_id: row.customer_id },
-      });
-      console.log('Deleted successfully:', response.data);
-      setButtonClicked(true);
-      return response.data;
-    } catch (error) {
-      console.error('Delete failed:', error);
-      throw error;
+      setLoading(true);
+      const { data } = await api.get(`/customers/${customerId}/sms-status`);
+      setStatus(data);
+    } catch (e) {
+      console.error('sms-status fetch failed:', e);
+      setStatus({ last_status: 'not_sent', sent_count: 0 });
+    } finally {
+      setLoading(false);
     }
   };
 
-  function handleEdit (row) {
-    setSelectedRow(row);
-    setEditOpen(true);
+  useEffect(() => {
+    load();
+    // re-fetch when parent toggles the key
+  }, [customerId, refreshKey]);
+
+  if (loading) {
+    return <CircularProgress size={18} />;
   }
 
+  const sent = String(status?.last_status || '').toLowerCase() === 'sent';
+  const count = Number(status?.sent_count || 0);
+
+  return (
+    <Chip
+      size="small"
+      color={sent ? 'success' : 'default'}
+      variant={sent ? 'filled' : 'outlined'}
+      label={sent ? `Sent (${count})` : 'Not sent'}
+    />
+  );
+}
+
+export default function CustomerInfoManagementCard() {
+  const [rows, setRows] = useState([]);
+  const [rowCount, setRowCount] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState(null);
+
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [crateIds, setCrateIds] = useState([]);
+  const [customerForwardName, setCustomerForwardName] = useState('');
+  const [maxCrates, setMaxCrates] = useState('');
+
+  // Password modal state
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState(null);
+
+  // force chips to refresh after manual sends
+  const [smsRefreshTick, setSmsRefreshTick] = useState(0);
+
+  const reload = () => setSmsRefreshTick((n) => n + 1);
+
+  useEffect(() => {
+    setLoading(true);
+    api
+      .get('/customer', {
+        params: {
+          page: page + 1,
+          limit: pageSize,
+          customerName: customerName || undefined,
+        },
+      })
+      .then((res) => {
+        const data = res.data;
+        setRows(data.rows);
+        setRowCount(data.total);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('API error:', err);
+        setLoading(false);
+      });
+  }, [page, pageSize, customerName]);
+
+  // Edit handlers
+  const handleEdit = (row) => {
+    setSelectedRow(row);
+    setEditOpen(true);
+  };
   const handleEditClose = () => {
     setEditOpen(false);
     setSelectedRow(null);
   };
-
   const handleUpdateSuccess = () => {
-    // reload table after update
-    setButtonClicked(true);
+    // after dialog save, reload the list
+    setCustomerName((v) => v); // no-op triggers effect if you prefer; or just call same GET again
   };
 
+  // QR code handlers
   const handleCrateQRPrint = async (row) => {
     setMaxCrates(row.crate_count);
-
     try {
-      // Fetch crate IDs for this customer from your API
-      const response = await api.get('/crates', {
-        params: { customer_id: row.customer_id }
-      });
-
+      const response = await api.get('/crates', { params: { customer_id: row.customer_id } });
       if (response.data && Array.isArray(response.data.crates)) {
-        setCrateIds(response.data.crates.map(c => c.crate_id));
+        setCrateIds(response.data.crates.map((c) => c.crate_id));
         setCustomerForwardName(row.name);
         setQrDialogOpen(true);
       } else {
@@ -64,22 +129,54 @@ export default function CustomerTable() {
     }
   };
 
+  // Manual SMS button
   const handleNotifySMS = async (row) => {
     if (!isReadyForPickup(row?.status)) {
       alert("Can only send SMS when status is 'Ready for pickup'.");
       return;
     }
     try {
-      // No message in body → server will use the location-based template
+      // fire the SMS
       const res = await api.post(`/customers/${row.customer_id}/notify`, {});
-      console.log("SMS notify:", res.data);
-      alert(res.data?.message || "SMS attempted");
+      alert(res.data?.message || 'SMS attempted');
+
+      // record "sent" for this customer
+      await api.post(`/customers/${row.customer_id}/sms-status`, { sent: true });
+
+      // update the chip
+      reload();
     } catch (e) {
-      console.error("Notify failed", e);
-      alert("SMS failed – check server logs");
+      console.error('Notify failed', e);
+      alert('SMS failed – check server logs');
     }
   };
-  
+
+  // Delete handlers
+  const handleDeleteClick = (row) => {
+    setRowToDelete(row);
+    setPasswordModalOpen(true);
+  };
+  const handlePasswordConfirm = async ({ id, password }) => {
+    try {
+      await api.post('/auth/login', { id, password }); // backend expects id='admin'
+      if (rowToDelete) {
+        await api.delete('/customer', { data: { customer_id: rowToDelete.customer_id } });
+        setRowToDelete(null);
+        // re-fetch table
+        setCustomerName((v) => v);
+        alert('Customer deleted successfully!');
+      }
+    } catch (err) {
+      console.error('Admin verification failed:', err);
+      alert('Invalid admin password!');
+    } finally {
+      setPasswordModalOpen(false);
+    }
+  };
+  const handlePasswordCancel = () => {
+    setRowToDelete(null);
+    setPasswordModalOpen(false);
+  };
 
   const columns = [
     { field: 'name', headerName: 'Name', width: 150 },
@@ -92,22 +189,37 @@ export default function CustomerTable() {
     { field: 'total_cost', headerName: 'Cost (€)', width: 100 },
     { field: 'status', headerName: 'Status', width: 130 },
     { field: 'notes', headerName: 'Notes', width: 200 },
+
+    // NEW: SMS status column
+    {
+      field: 'sms_status',
+      headerName: 'SMS',
+      width: 140,
+      sortable: false,
+      filterable: false,
+      renderCell: (params) => (
+        <SmsStatusChip
+          customerId={params.row.customer_id}
+          refreshKey={smsRefreshTick}
+        />
+      ),
+    },
+
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 320,
+      width: 360,
       sortable: false,
       filterable: false,
       renderCell: (params) => {
         const ready = isReadyForPickup(params.row?.status);
-
         return (
-          <Stack direction="row" spacing={1} sx={{ display: "center", justifyContent: "center", alignItems: "center" }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <Button variant="outlined" size="small" color="primary" onClick={() => handleEdit(params.row)}>
               <Edit />
             </Button>
 
-            <Button variant="outlined" size="small" color="error" onClick={() => handleDelete(params.row)}>
+            <Button variant="outlined" size="small" color="error" onClick={() => handleDeleteClick(params.row)}>
               <Delete />
             </Button>
 
@@ -115,9 +227,8 @@ export default function CustomerTable() {
               <QrCode />
             </Button>
 
-            {/* Message button only active when status is "Ready for pickup" */}
-            <Tooltip title={ready ? "Send SMS" : "Only available when status is 'Ready for pickup'."}>
-              <span> {/* span wrapper so Tooltip works with disabled Button */}
+            <Tooltip title={ready ? 'Send SMS' : "Only available when status is 'Ready for pickup'."}>
+              <span>
                 <Button
                   variant="outlined"
                   size="small"
@@ -132,94 +243,45 @@ export default function CustomerTable() {
           </Stack>
         );
       },
-    }
+    },
   ];
-
-  const [rows, setRows] = useState([]);
-  const [rowCount, setRowCount] = useState(0);
-  const [page, setPage] = useState(0);         // 0-based for MUI
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [buttonClicked, setButtonClicked] = useState(false);
-
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedRow, setSelectedRow] = useState(null);
-
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [crateIds, setCrateIds] = useState([]);
-
-  useEffect(() => {
-    setLoading(true);
-    api
-      .get('/customer', {
-        params: {
-          page: page + 1, // backend expects 1-based
-          limit: pageSize,
-          customerName: customerName || undefined, // skip param if empty
-        },
-      })
-      .then((res) => {
-        const data = res.data;
-        setRows(data.rows);
-        setRowCount(data.total);
-        setLoading(false);
-        setButtonClicked(false);
-      })
-      .catch((err) => {
-        console.error('API error:', err);
-        setLoading(false);
-      });
-  }, [page, pageSize, buttonClicked]);
 
   return (
     <>
-      <Box sx={{ width: 'auto' }}>
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{
-            justifySelf: "center",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "min(1200px, 90%)",
-            padding: "5px",
-            borderRadius: "10px",
-            marginBottom: "10px"
-          }}
-        >
-          <TextField
-            label="Customer name"
-            variant="filled"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            size="small"
-            sx={{ mb: 2, width: "80%" }}
-            fullWidth
-            placeholder="Search by customer Name"
+      <Box sx={{ width: '100%', overflowX: 'hidden' }}>
+        <Box sx={{ width: '100%', maxWidth: 1200, mt: 2 }}>
+          <Stack direction="row" spacing={2} sx={{ mb: 2, alignItems: 'center' }}>
+            <TextField
+              label="Customer name"
+              variant="filled"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              size="small"
+              fullWidth
+              placeholder="Search by customer Name"
+            />
+            <Button variant="contained" onClick={() => setCustomerName((v) => v)}>OK</Button>
+          </Stack>
+
+          <DataGrid
+            rows={rows}
+            columns={columns}
+            rowCount={rowCount}
+            loading={loading}
+            pagination
+            paginationMode="server"
+            paginationModel={{ page, pageSize }}
+            onPaginationModelChange={(model) => {
+              setPage(model.page);
+              setPageSize(model.pageSize);
+            }}
+            getRowId={(row) => row.customer_id}
+            autoHeight={false}
+            disableRowSelectionOnClick
+            hideFooterSelectedRowCount
+            sx={{ width: '100%', '& .MuiDataGrid-viewport': { overflowX: 'auto' } }}
           />
-
-          <Button variant="contained" onClick={() => { setButtonClicked(true); }}>OK</Button>
-        </Stack>
-
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          rowCount={rowCount}
-          loading={loading}
-          pagination
-          paginationMode="server"
-          paginationModel={{ page, pageSize }}
-          onPaginationModelChange={(model) => {
-            setPage(model.page);
-            setPageSize(model.pageSize);
-          }}
-          getRowId={(row) => row.customer_id} // very important
-          checkboxSelection={false}
-          disableRowSelectionOnClick={true}
-          hideFooterSelectedRowCount={true}
-        />
+        </Box>
       </Box>
 
       <EditCustomerDialog
@@ -233,8 +295,14 @@ export default function CustomerTable() {
         open={qrDialogOpen}
         onClose={() => setQrDialogOpen(false)}
         data={crateIds}
-        name={CustomerForwardName}
+        name={customerForwardName}
         max={maxCrates}
+      />
+
+      <PasswordModal
+        open={passwordModalOpen}
+        onClose={handlePasswordCancel}
+        onConfirm={handlePasswordConfirm}
       />
     </>
   );

@@ -1594,6 +1594,15 @@ async function updateAdminPassword(adminId, newPassword) {
         throw err;
     }
 }
+async function updateEmployeePassword(newPassword) {
+  console.log("testing employee password update");
+    const sql = `UPDATE Accounts SET password = ? WHERE id = "employee"`;
+    try {
+        await pool.query(sql, [newPassword]); // store plain string
+    } catch (err) {
+        throw err;
+    }
+}
 
 
 async function addCities(cities) {
@@ -1764,6 +1773,88 @@ async function getOrdersOnPallet(palletId) {
   );
   return rows;
 }
+// ───────────────── SMS STATUS HELPERS (customer-centric) ─────────────────
+
+/**
+ * Return a single customer's SMS status or a default "not_sent" object.
+ */
+async function getSmsStatusForCustomer(customerId) {
+  const [rows] = await pool.query(
+    `SELECT customer_id, sent_count, last_status, updated_at
+       FROM SmsStatus
+      WHERE customer_id = ?`,
+    [customerId]
+  );
+  if (rows.length) return rows[0];
+  return {
+    customer_id: customerId,
+    sent_count: 0,
+    last_status: 'not_sent',
+    updated_at: null,
+  };
+}
+
+async function getSmsStatusForCustomer(customerId) {
+  const [rows] = await pool.query(
+    `SELECT customer_id, sent_count, last_status, updated_at
+     FROM SmsStatus
+     WHERE customer_id = ?`,
+    [customerId]
+  );
+  if (rows.length) return rows[0];
+  return { customer_id: customerId, sent_count: 0, last_status: 'not_sent', updated_at: null };
+}
+
+async function incrementSmsSent(customerId) {
+  await pool.query(
+    `INSERT INTO SmsStatus (customer_id, sent_count, last_status)
+     VALUES (?, 1, 'sent')
+     ON DUPLICATE KEY UPDATE
+       sent_count = sent_count + 1,
+       last_status = 'sent',
+       updated_at = CURRENT_TIMESTAMP`,
+    [customerId]
+  );
+}
+
+async function markSmsSkipped(customerId) {
+  await pool.query(
+    `INSERT INTO SmsStatus (customer_id, sent_count, last_status)
+     VALUES (?, 0, 'not_sent')
+     ON DUPLICATE KEY UPDATE
+       last_status = 'not_sent',
+       updated_at = CURRENT_TIMESTAMP`,
+    [customerId]
+  );
+}
+
+// --- Daily totals: liters + customers served (distinct) per day -------------
+async function getDailyTotals(days = 30) {
+  const n = Math.max(1, Math.min(365, Number(days) || 30));
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      DATE(b.created_at) AS d,
+      COUNT(*)           AS boxes,
+      COUNT(DISTINCT b.customer_id) AS customers
+    FROM Boxes b
+    WHERE b.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+    GROUP BY DATE(b.created_at)
+    ORDER BY d DESC
+    `,
+    [n]
+  );
+
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0,10) : String(x));
+
+  return rows.map(r => ({
+    date: toDateStr(r.d),
+    total_liters: Number(r.boxes || 0) * 8,          // same 1 box = 8L assumption as summary
+    total_customers: Number(r.customers || 0),
+  }));
+}
+
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -1824,6 +1915,11 @@ module.exports = {
     getOrderStatus,
     getPalletBoxes,
     getOrdersOnPallet,
+    getSmsStatusForCustomer,
+    incrementSmsSent,
+    markSmsSkipped,
+    updateEmployeePassword,
+    getDailyTotals,
     
 }
 
