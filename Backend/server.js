@@ -12,7 +12,6 @@ const net = require("net");
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
 
-
 const app = express();
 const server = http.createServer(app);
 const pool = database.pool;
