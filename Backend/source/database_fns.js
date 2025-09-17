@@ -3,6 +3,9 @@ const mysql = require('mysql2');
 const { generateUUID } = require('./uuid');
 const logic = require("./mehustaja_logic")
 
+const recentRequests = new Map(); // key -> timestamp (in-memory; use Redis for multi-instance)
+const IDEMPOTENCY_TTL_MS = 10_000;
+
 // Create connection pool
 const pool = mysql.createPool({
     host: process.env.host,
@@ -989,6 +992,7 @@ async function getBoxesByPalletId(pallet_id) {
       connection.release();
     }
   }
+  
   async function getShelfById(shelfId) {
     const [rows] = await pool.query(
       `SELECT location, shelf_name FROM Shelves WHERE shelf_id = ?`,
@@ -997,13 +1001,16 @@ async function getBoxesByPalletId(pallet_id) {
     return rows[0] || null;
   }
   
-  
   async function getCustomersByPalletId(palletId) {
     const [rows] = await pool.query(
-      `SELECT DISTINCT c.name, c.phone
-       FROM Boxes b
-       JOIN Customers c ON b.customer_id = c.customer_id
-       WHERE b.pallet_id = ?`,
+      `SELECT DISTINCT
+           c.customer_id,
+           c.name,
+           c.phone,
+           c.city
+         FROM Boxes b
+         JOIN Customers c ON b.customer_id = c.customer_id
+        WHERE b.pallet_id = ?`,
       [palletId]
     );
     return rows;
@@ -1855,6 +1862,26 @@ async function getDailyTotals(days = 30) {
   }));
 }
 
+function normalizePhone(raw) {
+  if (!raw) return '';
+  // normalize to digits + leading '+'
+  let p = String(raw).trim();
+  p = p.replace(/\s+/g, '');
+  p = p.replace(/[()\-]/g, '');
+  // if it doesn't start with '+' but looks like international, leave as is; otherwise just keep digits
+  // (for true E.164 use libphonenumber in production)
+  return p.startsWith('+') ? p : p.replace(/[^\d]/g, '');
+}
+
+function makeIdempotencyKey({ shelfId, boxes = [], customers = [] }) {
+  const phones = customers
+    .map(c => normalizePhone(c?.phone))
+    .filter(Boolean)
+    .sort();
+  const sortedBoxes = [...boxes].sort();
+  return `load-boxes:${shelfId}:${sortedBoxes.join(',')}:${phones.join(',')}`;
+}
+
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -1920,7 +1947,8 @@ module.exports = {
     markSmsSkipped,
     updateEmployeePassword,
     getDailyTotals,
-    
+    makeIdempotencyKey,
+    pctChange,
 }
 
 module.exports.pool = pool;

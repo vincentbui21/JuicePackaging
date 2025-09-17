@@ -20,7 +20,7 @@ function normalizeE164(phone) {
   let s = String(phone).trim();
 
   // Convert "00..." to "+..."
-  if (s.startsWith("00")) s = `+${s.slice(2)}`;
+  if (s.startsWith("00")) s = `+${s.slice(1)}`;
 
   const defaultCC = process.env.DEFAULT_SMS_COUNTRY_CODE || ""; // e.g., "+358"
   // If no leading + and it's only digits, optionally add default CC (strip leading zeros)

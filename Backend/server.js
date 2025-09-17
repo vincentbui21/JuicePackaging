@@ -15,6 +15,46 @@ const { router: authRouter, authenticateToken } = require("./auth");
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
 const smsTemplatesFilePath = path.join(__dirname, "data", "sms-templates.json");
 
+const IDEMPOTENCY_TTL_MS = 10_000; // 10s window to dedupe accidental repeats
+const recentRequests = new Map();
+
+
+function makeIdempotencyKey({ shelfId, boxes, customers }) {
+  const sortedBoxes = Array.isArray(boxes)
+    ? [...boxes].map(String).sort()
+    : [];
+
+  const customerKeys = Array.isArray(customers)
+    ? customers
+        .map(c => c?.customer_id || c?.id || "")
+        .filter(Boolean)
+        .map(String)
+        .sort()
+    : [];
+
+  return `shelf:${String(shelfId || "")}|boxes:${sortedBoxes.join(",")}|cust:${customerKeys.join(",")}`;
+}
+
+// --- Phone normalizer (minimal, non-invasive) ---
+function normalizePhone(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+
+  // keep leading "+" if present; remove all other non-digits
+  const cleaned = s.startsWith("+")
+    ? "+" + s.slice(1).replace(/[^\d]/g, "")
+    : s.replace(/[^\d]/g, "");
+
+  if (!cleaned) return null;
+
+  // Already E.164-ish
+  if (cleaned.startsWith("+")) return cleaned;
+
+  // If you want stricter rules, plug them here. For now, assume local numbers
+  // are sent as digits and we just prefix "+" (server-side SNS will validate).
+  return "+358" + cleaned;
+}
+
 const DEFAULT_SMS_TEMPLATES = {
   lapinlahti: [
     "Hei, Mehunne ovat valmiina ja odottavat noutoanne, Anjan Pihaputiikki, Lapinlahti",
@@ -650,6 +690,16 @@ app.post('/orders/:order_id/ready', async (req, res) => {
 // ─── Boxes → Shelf (Kuopio direct) (mark ready; optionally SMS) ─────
 app.post('/shelves/load-boxes', async (req, res) => {
   const { shelfId, boxes, sendSms } = req.body || {};
+
+
+  const q = (req.query && (req.query.notifyNow ?? req.query.notify))
+  ? String(req.query.notifyNow ?? req.query.notify).toLowerCase()
+  : undefined;
+  const smsDecision = (typeof sendSms === 'boolean')
+  ? sendSms
+  : (typeof q !== 'undefined'
+      ? (q === '1' || q === 'true' || q === 'yes' || q === 'y')
+      : undefined);
   if (!shelfId || !Array.isArray(boxes) || boxes.length === 0) {
     return res.status(400).json({ ok: false, error: 'shelfId and non-empty boxes[] are required' });
   }
@@ -664,7 +714,26 @@ app.post('/shelves/load-boxes', async (req, res) => {
     // 3) Get customers for those boxes (id, name, phone, city)
     const customers = (await database.getCustomersByBoxIds(boxes)) || [];
 
-    // 3b) (Optional) resolve shelf display name (kept even if not used in SMS text)
+    // ----- NEW: idempotency (in-memory) -----
+    const clientKey = req.get('Idempotency-Key'); // allow client-provided key
+    const autoKey = makeIdempotencyKey({ shelfId, boxes, customers });
+    const key = clientKey || autoKey;
+    const now = Date.now();
+    const last = recentRequests.get(key);
+    if (last && now - last < IDEMPOTENCY_TTL_MS) {
+      return res.json({
+        ok: true,
+        placed,
+        ready,
+        notified: 0,
+        sms: [],
+        deduped: true
+      });
+    }
+    recentRequests.set(key, now);
+    // ----------------------------------------
+
+    // 3b) (Optional) shelf display
     let placeText = 'the store';
     if (typeof database.getShelfById === 'function') {
       try {
@@ -677,30 +746,40 @@ app.post('/shelves/load-boxes', async (req, res) => {
       } catch (_) {}
     }
 
-    // 4) Optional SMS
     const sms = [];
-    if (sendSms === true) {
-      const seen = new Set();
-      for (const c of customers) {
-        if (!c?.customer_id || seen.has(c.customer_id)) continue;
-        seen.add(c.customer_id);
+    if (smsDecision === true) {
+      const seenCustomers = new Set();
+      const seenPhones = new Set(); // ----- NEW: phone-level dedupe -----
 
-        const phone = c?.phone ? String(c.phone).trim() : '';
+      for (const c of customers) {
+        const cid = c?.customer_id;
+        if (!cid || seenCustomers.has(cid)) continue;
+        seenCustomers.add(cid);
+
+        const phoneRaw = c?.phone ? String(c.phone).trim() : '';
+        const phone = normalizePhone(phoneRaw);
         if (!phone) continue;
+
+        // skip if we've already messaged this phone in this request
+        if (seenPhones.has(phone)) {
+          sms.push({ ok: false, customer_id: cid, phone, skipped: 'duplicate_phone_in_batch' });
+          continue;
+        }
+        seenPhones.add(phone);
 
         const msg = buildPickupSMSText(c?.city || '');
         try {
           const messageId = await publishDirectSMS(phone, msg);
-          sms.push({ ok: true, customer_id: c.customer_id, phone, messageId });
+          sms.push({ ok: true, customer_id: cid, phone, messageId });
 
           if (typeof database.incrementSmsSent === 'function') {
-            await database.incrementSmsSent(c.customer_id);
+            await database.incrementSmsSent(cid);
           }
         } catch (e) {
-          sms.push({ ok: false, customer_id: c.customer_id, phone, error: e.message });
+          sms.push({ ok: false, customer_id: cid, phone, error: e.message });
         }
       }
-    } else if (sendSms === false) {
+    } else if (smsDecision === false) {
       const seen = new Set();
       for (const c of customers) {
         if (!c?.customer_id || seen.has(c.customer_id)) continue;
@@ -732,6 +811,7 @@ app.post('/shelves/load-boxes', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'shelves/load-boxes failed', details: err.message });
   }
 });
+
 
   app.get("/pallets/:pallet_id/customers", async (req, res) => {
     try {
