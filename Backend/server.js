@@ -61,25 +61,38 @@ function makeIdempotencyKey({ shelfId, boxes, customers }) {
   return `shelf:${String(shelfId || "")}|boxes:${sortedBoxes.join(",")}|cust:${customerKeys.join(",")}`;
 }
 
-// --- Phone normalizer (minimal, non-invasive) ---
+// --- Phone normalizer (E.164-ish, with Finland heuristics) ---
 function normalizePhone(raw) {
   if (!raw) return null;
-  const s = String(raw).trim();
 
-  // keep leading "+" if present; remove all other non-digits
-  const cleaned = s.startsWith("+")
-    ? "+" + s.slice(1).replace(/[^\d]/g, "")
-    : s.replace(/[^\d]/g, "");
+  // Keep leading + if present; strip everything else non-digit
+  let s = String(raw).trim().replace(/[^\d+]/g, "");
+  if (!s) return null;
 
-  if (!cleaned) return null;
+  // If it already starts with '+', clean up common Finland mistakes:
+  // e.g., '+3580XXXXXXXX' -> '+358XXXXXXXX' (drop trunk '0' after country code)
+  if (s.startsWith("+3580")) {
+    s = "+358" + s.slice(5); // remove that extra '0'
+    return s;
+  }
+  if (s.startsWith("+358") && s.charAt(4) === "0") {
+    s = "+358" + s.slice(5);
+    return s;
+  }
 
-  // Already E.164-ish
-  if (cleaned.startsWith("+")) return cleaned;
+  // If it starts with '0', assume Finnish local and convert to +358 (drop the '0')
+  if (s.startsWith("0")) {
+    s = "+358" + s.slice(1);
+    return s;
+  }
 
-  // If you want stricter rules, plug them here. For now, assume local numbers
-  // are sent as digits and we just prefix "+" (server-side SNS will validate).
-  return "+358" + cleaned;
+  // If it already has a + and looks like E.164, keep it
+  if (s.startsWith("+")) return s;
+
+  // Last resort: prefix '+' (SNS will still validate)
+  return "+" + s;
 }
+
 
 const DEFAULT_SMS_TEMPLATES = {
   lapinlahti: [
