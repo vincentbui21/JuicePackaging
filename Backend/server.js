@@ -19,7 +19,7 @@ const settingsFilePath = path.join(__dirname, "default-setting.txt");
 
 const io = new Server(server, {
   cors: {
-    origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+    origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
@@ -30,7 +30,7 @@ app.set('io', io);
 
 // REST API CORS
 app.use(cors({
-  origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+  origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true

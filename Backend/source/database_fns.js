@@ -206,7 +206,7 @@ async function getCustomers(customerName, page, limit) {
         // Get paginated rows
         const dataQuery = `
             SELECT 
-                o.customer_id, o.created_at, o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes,
+                o.customer_id, o.created_at, o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id,
                 c.name, c.email, c.phone, c.city
             FROM Orders AS o
             LEFT JOIN Customers AS c ON o.customer_id = c.customer_id

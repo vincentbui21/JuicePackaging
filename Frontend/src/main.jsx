@@ -19,6 +19,7 @@ import CrateHandling from "./pages/CrateHandling.jsx";
 import CustomerInfoManagement from "./pages/customer_info_management.jsx";
 import JuiceHandlePage from "./pages/JuiceHandlePage.jsx";
 import JuiceProcessingManagement from "./pages/JuiceProcessingManagement.jsx";
+import UnifiedManagement from "./pages/UnifiedManagement.jsx";
 import BoxToPalletLoadingPage from "./pages/BoxToPalletLoadingPage.jsx";
 import PalletToShelfHandlePage from "./pages/PalletToShelfHandlePage.jsx";
 import PalletCreationPage from "./pages/PalletCreationPage.jsx";
@@ -90,6 +91,9 @@ const router = createBrowserRouter([
   )},
   { path: "/juice-processing-management", element: (
     <ProtectedRoute>{wrap(JuiceProcessingManagement, { icon: Droplets, title: "Juice Processing Management" })}</ProtectedRoute>
+  )},
+  { path: "/unified-management", element: (
+    <ProtectedRoute>{wrap(UnifiedManagement, { icon: UserCog, title: "Unified Management" })}</ProtectedRoute>
   )},
 
   // Create / Settings

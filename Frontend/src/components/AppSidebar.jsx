@@ -29,6 +29,7 @@ const management = [
   { label: "Pallets Management", to: "/pallets-management", icon: <Grid3X3 size={18} /> },
   { label: "Shelves Management", to: "/shelve-management", icon: <Layers size={18} /> },
   { label: "Juice Processing Management", to: "/juice-processing-management", icon: <Droplets size={18} /> },
+  { label: "Unified Management", to: "/unified-management", icon: <UserCog size={18} /> },
 ];
 
 const createNew = [
