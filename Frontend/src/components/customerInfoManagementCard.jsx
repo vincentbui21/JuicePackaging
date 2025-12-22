@@ -129,27 +129,25 @@ export default function CustomerInfoManagementCard() {
     }
   };
 
-  // Manual SMS button
-  const handleNotifySMS = async (row) => {
-    if (!isReadyForPickup(row?.status)) {
-      alert("Can only send SMS when status is 'Ready for pickup'.");
-      return;
-    }
-    try {
-      // fire the SMS
-      const res = await api.post(`/customers/${row.customer_id}/notify`, {});
-      alert(res.data?.message || 'SMS attempted');
+  /// Manual SMS button
+const handleNotifySMS = async (row) => {
+  if (!isReadyForPickup(row?.status)) {
+    alert("Can only send SMS when status is 'Ready for pickup'.");
+    return;
+  }
+  try {
+    // fire the SMS (server also updates SmsStatus counters)
+    const res = await api.post(`/customers/${row.customer_id}/notify`, {});
+    alert(res.data?.message || 'SMS attempted');
 
-      // record "sent" for this customer
-      await api.post(`/customers/${row.customer_id}/sms-status`, { sent: true });
+    // update the chip
+    reload();
+  } catch (e) {
+    console.error('Notify failed', e);
+    alert('SMS failed – check server logs');
+  }
+};
 
-      // update the chip
-      reload();
-    } catch (e) {
-      console.error('Notify failed', e);
-      alert('SMS failed – check server logs');
-    }
-  };
 
   // Delete handlers
   const handleDeleteClick = (row) => {

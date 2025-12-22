@@ -2,18 +2,97 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const database = require('./source/database_fns');
-const uuid = require('./source/uuid');
-const { publishDirectSMS } = require('./utils/aws_sns');
 const fs = require('fs').promises;
 const path = require('path');
+const database = require('./source/database_fns');
+const { router: authRouter } = require("./auth");
+const uuid = require('./source/uuid');
+const { publishDirectSMS } = require('./utils/aws_sns');
 const { printPouch } = require("./source/printers/videojet6330");
 const net = require("net");
-const { router: authRouter, authenticateToken } = require("./auth");
 
+const app = express();
+const server = http.createServer(app);
+const pool = database.pool;
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
+
+const io = new Server(server, {
+  cors: {
+    origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  }
+});
+
+// Attach io to app so routes can access it
+app.set('io', io);
+
+// REST API CORS
+app.use(cors({
+  origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+app.use(express.json());
+
+// ---------- SMS templates ----------
 const smsTemplatesFilePath = path.join(__dirname, "data", "sms-templates.json");
+
+const IDEMPOTENCY_TTL_MS = 10_000; // 10s window to dedupe accidental repeats
+const recentRequests = new Map();
+
+
+function makeIdempotencyKey({ shelfId, boxes, customers }) {
+  const sortedBoxes = Array.isArray(boxes)
+    ? [...boxes].map(String).sort()
+    : [];
+
+  const customerKeys = Array.isArray(customers)
+    ? customers
+        .map(c => c?.customer_id || c?.id || "")
+        .filter(Boolean)
+        .map(String)
+        .sort()
+    : [];
+
+  return `shelf:${String(shelfId || "")}|boxes:${sortedBoxes.join(",")}|cust:${customerKeys.join(",")}`;
+}
+
+// --- Phone normalizer (E.164-ish, with Finland heuristics) ---
+function normalizePhone(raw) {
+  if (!raw) return null;
+
+  // Keep leading + if present; strip everything else non-digit
+  let s = String(raw).trim().replace(/[^\d+]/g, "");
+  if (!s) return null;
+
+  // If it already starts with '+', clean up common Finland mistakes:
+  // e.g., '+3580XXXXXXXX' -> '+358XXXXXXXX' (drop trunk '0' after country code)
+  if (s.startsWith("+3580")) {
+    s = "+358" + s.slice(5); // remove that extra '0'
+    return s;
+  }
+  if (s.startsWith("+358") && s.charAt(4) === "0") {
+    s = "+358" + s.slice(5);
+    return s;
+  }
+
+  // If it starts with '0', assume Finnish local and convert to +358 (drop the '0')
+  if (s.startsWith("0")) {
+    s = "+358" + s.slice(1);
+    return s;
+  }
+
+  // If it already has a + and looks like E.164, keep it
+  if (s.startsWith("+")) return s;
+
+  // Last resort: prefix '+' (SNS will still validate)
+  return "+" + s;
+}
+
 
 const DEFAULT_SMS_TEMPLATES = {
   lapinlahti: [
@@ -45,7 +124,7 @@ const DEFAULT_SMS_TEMPLATES = {
     "Ystävällisin terveisin Mehustaja."
   ].join("\n"),
   varkaus: [
-    "Hei, Mehunne ovat valmiina ja odottav﻿﻿at noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omanat on jätetty.",
+    "Hei, Mehunne ovat valmiina ja odottavat noutoanne osoitteessa XXX Varkaus, paikka on sama jonne omenat on jätetty.",
     "HUOM! Noutopiste on avoinna XXXXXX",
     "Ystävällisin terveisin, Mehustaja"
   ].join("\n"),
@@ -53,7 +132,6 @@ const DEFAULT_SMS_TEMPLATES = {
 };
 
 let SMS_TEMPLATES_CACHE = null;
-
 
 async function ensureSmsTemplatesFile() {
   try {
@@ -97,43 +175,34 @@ async function saveSmsTemplates(newTemplates = {}) {
   return merged;
 }
 
-const app = express();
-const server = http.createServer(app);
-const pool = database.pool;
+// Load templates at startup
+loadSmsTemplates().catch(() => {});
+
+// ---------- Socket.IO ----------
+io.on('connection', (socket) => {
+  console.log('New client connected:', socket.id);
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
+// Example emitActivity
 function emitActivity(type, message, extra = {}) {
   io.emit("activity", {
-    type,         // "customer" | "processing" | "warehouse" | "ready" | "pickup"
-    message,      // short text
+    type,
+    message,
     ts: new Date().toISOString(),
     ...extra,
   });
 }
 
-const io = new Server(server, {
-  cors: {
-    origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
-});
-
-// Attach io to app so routes can access it
-app.set('io', io);
-
-app.use(cors({
-  origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type']
-}));
-
-app.use(express.json());
-
-loadSmsTemplates().catch(() => {});
-
-io.on('connection', (socket) => {
-  console.log('New client connected');
-});
-
+// ---------- Routes ----------
 app.use("/auth", authRouter);
+
+app.get('/ping', (req, res) => {
+  res.json({ msg: 'pong' });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Location-specific pickup SMS templates
@@ -649,6 +718,16 @@ app.post('/orders/:order_id/ready', async (req, res) => {
 // ─── Boxes → Shelf (Kuopio direct) (mark ready; optionally SMS) ─────
 app.post('/shelves/load-boxes', async (req, res) => {
   const { shelfId, boxes, sendSms } = req.body || {};
+
+
+  const q = (req.query && (req.query.notifyNow ?? req.query.notify))
+  ? String(req.query.notifyNow ?? req.query.notify).toLowerCase()
+  : undefined;
+  const smsDecision = (typeof sendSms === 'boolean')
+  ? sendSms
+  : (typeof q !== 'undefined'
+      ? (q === '1' || q === 'true' || q === 'yes' || q === 'y')
+      : undefined);
   if (!shelfId || !Array.isArray(boxes) || boxes.length === 0) {
     return res.status(400).json({ ok: false, error: 'shelfId and non-empty boxes[] are required' });
   }
@@ -663,7 +742,26 @@ app.post('/shelves/load-boxes', async (req, res) => {
     // 3) Get customers for those boxes (id, name, phone, city)
     const customers = (await database.getCustomersByBoxIds(boxes)) || [];
 
-    // 3b) (Optional) resolve shelf display name (kept even if not used in SMS text)
+    // ----- NEW: idempotency (in-memory) -----
+    const clientKey = req.get('Idempotency-Key'); // allow client-provided key
+    const autoKey = makeIdempotencyKey({ shelfId, boxes, customers });
+    const key = clientKey || autoKey;
+    const now = Date.now();
+    const last = recentRequests.get(key);
+    if (last && now - last < IDEMPOTENCY_TTL_MS) {
+      return res.json({
+        ok: true,
+        placed,
+        ready,
+        notified: 0,
+        sms: [],
+        deduped: true
+      });
+    }
+    recentRequests.set(key, now);
+    // ----------------------------------------
+
+    // 3b) (Optional) shelf display
     let placeText = 'the store';
     if (typeof database.getShelfById === 'function') {
       try {
@@ -676,30 +774,40 @@ app.post('/shelves/load-boxes', async (req, res) => {
       } catch (_) {}
     }
 
-    // 4) Optional SMS
     const sms = [];
-    if (sendSms === true) {
-      const seen = new Set();
-      for (const c of customers) {
-        if (!c?.customer_id || seen.has(c.customer_id)) continue;
-        seen.add(c.customer_id);
+    if (smsDecision === true) {
+      const seenCustomers = new Set();
+      const seenPhones = new Set(); // ----- NEW: phone-level dedupe -----
 
-        const phone = c?.phone ? String(c.phone).trim() : '';
+      for (const c of customers) {
+        const cid = c?.customer_id;
+        if (!cid || seenCustomers.has(cid)) continue;
+        seenCustomers.add(cid);
+
+        const phoneRaw = c?.phone ? String(c.phone).trim() : '';
+        const phone = normalizePhone(phoneRaw);
         if (!phone) continue;
+
+        // skip if we've already messaged this phone in this request
+        if (seenPhones.has(phone)) {
+          sms.push({ ok: false, customer_id: cid, phone, skipped: 'duplicate_phone_in_batch' });
+          continue;
+        }
+        seenPhones.add(phone);
 
         const msg = buildPickupSMSText(c?.city || '');
         try {
           const messageId = await publishDirectSMS(phone, msg);
-          sms.push({ ok: true, customer_id: c.customer_id, phone, messageId });
+          sms.push({ ok: true, customer_id: cid, phone, messageId });
 
           if (typeof database.incrementSmsSent === 'function') {
-            await database.incrementSmsSent(c.customer_id);
+            await database.incrementSmsSent(cid);
           }
         } catch (e) {
-          sms.push({ ok: false, customer_id: c.customer_id, phone, error: e.message });
+          sms.push({ ok: false, customer_id: cid, phone, error: e.message });
         }
       }
-    } else if (sendSms === false) {
+    } else if (smsDecision === false) {
       const seen = new Set();
       for (const c of customers) {
         if (!c?.customer_id || seen.has(c.customer_id)) continue;
@@ -731,6 +839,7 @@ app.post('/shelves/load-boxes', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'shelves/load-boxes failed', details: err.message });
   }
 });
+
 
   app.get("/pallets/:pallet_id/customers", async (req, res) => {
     try {
@@ -911,31 +1020,32 @@ app.post("/printer/test-print", async (req, res) => {
   }
 });
 
-
-
+//Pouch printing route
 app.post("/printer/print-pouch", async (req, res) => {
   try {
-    const { customer, productionDate } = req.body;
+    const { customer, firstName, lastName, productionDate, expiryDate } = req.body || {};
 
-    // Read the latest printer IP from the settings file
+    // dynamic IP from settings file
     const { printer_ip = "192.168.1.139" } = await getCurrentSettings();
 
     const result = await printPouch({
-      host: printer_ip,     // <-- dynamic IP
+      host: printer_ip,
       port: 3003,
-      job: "Mehustaja",
-      customer,
-      productionDate,
+      job: "Mehustaja",          // default job name
+      customer,                 
+      firstName,
+      lastName,
+      productionDate,        
+      expiryDate,          
     });
 
-    console.log("Sent to printer:", result);
+    console.log("Videojet sent:", result);
     res.json({ status: "ok", ...result });
   } catch (err) {
     console.error("print-pouch failed:", err);
     res.status(500).json({ status: "error", message: err.message });
   }
 });
-
 
 
 app.get('/dashboard/summary', async (req, res) => {

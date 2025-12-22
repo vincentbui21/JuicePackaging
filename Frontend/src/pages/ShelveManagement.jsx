@@ -27,6 +27,8 @@ function ShelvesManagementPage() {
 
   // NEW: keep the readable name for the QR dialog/print
   const [qrShelfName, setQrShelfName] = useState("");
+// NEW: when contents come from shelf (no pallet), store shelf details here
+const [shelfDetails, setShelfDetails] = useState(null);
 
   useEffect(() => {
     fetchLocations();
@@ -104,19 +106,46 @@ function ShelvesManagementPage() {
   };
 
   const handleViewContents = async (shelf_id) => {
+    // reset before fetch
+    setShelfDetails(null);
+    setPalletContent(null);
+    setBoxesOnShelf([]);
+  
+    try {
+      // Try unified contents route (shelf + boxes; works even without a pallet)
+      const res = await api.get(`/shelves/${shelf_id}/contents`);
+      // If the unified route is active, it returns { ok: true, shelf, boxes }
+      if (res?.data?.ok) {
+        setShelfDetails(res.data.shelf ?? null);
+        setPalletContent(null);
+        setBoxesOnShelf(Array.isArray(res.data.boxes) ? res.data.boxes : []);
+        setContentDialogOpen(true);
+        return;
+      }
+  
+      // If ok isn't present, fall through to legacy shape below
+      // (no-op here; we try the legacy path next)
+    } catch (errUnified) {
+      // swallow and try legacy
+    }
+  
+    // Legacy fallback: pallet + boxes (only works if there’s a pallet on this shelf)
     try {
       const res = await api.get(`/shelves/${shelf_id}/contents`);
+      setShelfDetails(null);
       setPalletContent(res.data?.pallet ?? null);
       setBoxesOnShelf(Array.isArray(res.data?.boxes) ? res.data.boxes : []);
       setContentDialogOpen(true);
     } catch (err) {
       console.error("Failed to fetch shelf contents", err);
+      setShelfDetails(null);
       setPalletContent(null);
       setBoxesOnShelf([]);
       setContentDialogOpen(true);
       setSnackbarMsg("No pallet or boxes found for this shelf");
     }
   };
+  
 
   const columns = [
     { field: "shelf_id", headerName: "Shelf ID", flex: 1.5 },
@@ -242,44 +271,79 @@ function ShelvesManagementPage() {
       </Dialog>
 
       {/* Pallet and Box Contents Dialog */}
-      <Dialog open={contentDialogOpen} onClose={() => setContentDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Pallet & Boxes on Shelf</DialogTitle>
-        <DialogContent dividers>
-          {palletContent ? (
-            <>
-              <Typography variant="subtitle1"><strong>Pallet ID:</strong> {palletContent.pallet_id}</Typography>
-              <Typography variant="subtitle1"><strong>Status:</strong> {palletContent.status}</Typography>
-              <Typography variant="subtitle1"><strong>Holding:</strong> {palletContent.holding} / {palletContent.capacity}</Typography>
-              <Typography variant="h6" sx={{ mt: 2 }}>Boxes:</Typography>
-              {boxesOnShelf.length === 0 ? (
-                <Typography>No boxes on this pallet.</Typography>
-              ) : (
-                <List dense>
-                  {boxesOnShelf.map((box, i) => (
-                    <ListItem key={i} disableGutters>
-                      <ListItemText
-                        primary={box.box_id || `BOX_${i + 1}`}
-                        secondary={
-                          [
-                            box.customer_id ? `Customer: ${box.customer_id}` : null,
-                            box.pouch_count ? `Pouches: ${box.pouch_count}` : null,
-                            box.created_at ? `Created: ${new Date(box.created_at).toLocaleDateString()}` : null,
-                          ].filter(Boolean).join("  •  ")
-                        }
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              )}
-            </>
-          ) : (
-            <Typography>No pallet assigned to this shelf.</Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setContentDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      {/* Pallet and Box Contents Dialog */}
+<Dialog open={contentDialogOpen} onClose={() => setContentDialogOpen(false)} maxWidth="sm" fullWidth>
+  <DialogTitle>Contents on Shelf</DialogTitle>
+  <DialogContent dividers>
+    {(palletContent || shelfDetails) ? (
+      <>
+        {/* If we have a PALLET (legacy path) */}
+        {palletContent ? (
+          <>
+            <Typography variant="subtitle1"><strong>Pallet ID:</strong> {palletContent.pallet_id}</Typography>
+            <Typography variant="subtitle1"><strong>Status:</strong> {palletContent.status}</Typography>
+            <Typography variant="subtitle1">
+              <strong>Holding:</strong> {palletContent.holding} / {palletContent.capacity}
+            </Typography>
+          </>
+        ) : null}
+
+        {/* If we have SHELF details (unified path) */}
+        {shelfDetails ? (
+          <>
+            <Typography variant="subtitle1">
+              <strong>Shelf:</strong> {shelfDetails.shelf_name || shelfDetails.shelf_id}
+            </Typography>
+            <Typography variant="subtitle1">
+              <strong>Location:</strong> {shelfDetails.location}
+            </Typography>
+            <Typography variant="subtitle1">
+              <strong>Status:</strong> {shelfDetails.status}
+            </Typography>
+            <Typography variant="subtitle1">
+              <strong>Holding:</strong> {shelfDetails.holding} / {shelfDetails.capacity}
+            </Typography>
+          </>
+        ) : null}
+
+        <Typography variant="h6" sx={{ mt: 2 }}>Boxes:</Typography>
+        {boxesOnShelf.length === 0 ? (
+          <Typography>No boxes on this shelf.</Typography>
+        ) : (
+          <List dense>
+            {boxesOnShelf.map((box, i) => {
+              // Prefer name if present; fall back to ID
+              const customerLabel =
+                (box.customer || box.customer_name)
+                  ? `Customer: ${box.customer || box.customer_name}`
+                  : (box.customer_id ? `Customer ID: ${box.customer_id}` : null);
+
+              const cityLabel = box.city ? `City: ${box.city}` : null;
+              const pouches = box.pouch_count ? `Pouches: ${box.pouch_count}` : null;
+              const created = box.created_at ? `Created: ${new Date(box.created_at).toLocaleDateString()}` : null;
+
+              const secondary = [customerLabel, cityLabel, pouches, created].filter(Boolean).join("  •  ");
+
+              return (
+                <ListItem key={i} disableGutters>
+                  <ListItemText
+                    primary={box.box_id || `BOX_${i + 1}`}
+                    secondary={secondary}
+                  />
+                </ListItem>
+              );
+            })}
+          </List>
+        )}
+      </>
+    ) : (
+      <Typography>No pallet or shelf details found.</Typography>
+    )}
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setContentDialogOpen(false)}>Close</Button>
+  </DialogActions>
+</Dialog>
 
       <Snackbar
         open={!!snackbarMsg}

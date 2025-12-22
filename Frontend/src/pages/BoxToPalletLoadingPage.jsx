@@ -1,4 +1,3 @@
-// src/pages/BoxToPalletLoadingPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -334,20 +333,14 @@ export default function BoxToPalletLoadingPage() {
 
   // Kuopio submit + optional SMS (controlled by confirm dialog)
   const submitKuopio = async (sendNow) => {
-    // backend reads ?notifyNow=1|0
-    const q = sendNow ? "?notifyNow=1" : "?notifyNow=0";
-    await api.post(`/shelves/load-boxes${q}`, {
+    // ✅ Send the decision in the BODY; backend reads `sendSms`
+    await api.post(`/shelves/load-boxes`, {
       shelfId,
       boxes: scannedBoxes,
+      sendSms: !!sendNow,
     });
-    try {
-      if (orderInfo?.order_id) {
-        await api.post(`/orders/${encodeURIComponent(orderInfo.order_id)}/sms-status`, {
-          sent: !!sendNow,
-          source: 'box-to-shelf', // optional metadata; ignored by server
-        });
-      }
-    } catch (_) {}
+
+    // ✅ No extra /orders/:orderId/sms-status call here (server updates counters)
     resetAll();
     setSnackbarMsg(sendNow ? "Submitted; SMS queued." : "Submitted without SMS.");
   };

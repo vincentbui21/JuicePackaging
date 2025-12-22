@@ -1,4 +1,3 @@
-// Frontend/src/pages/PalletToShelfHandlePage.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -65,8 +64,8 @@ export default function PalletToShelfHandlePage() {
     try {
       const enc = encodeURIComponent(pId);
       const [{ data: ctx }, { data: orders }] = await Promise.all([
-        api.get(`/pallets/${enc}/order-context`), // <-- exact route
-        api.get(`/pallets/${enc}/orders`),        // <-- exact route
+        api.get(`/pallets/${enc}/order-context`),
+        api.get(`/pallets/${enc}/orders`),
       ]);
 
       const boxes = Array.isArray(ctx?.boxes) ? ctx.boxes : [];
@@ -75,7 +74,6 @@ export default function PalletToShelfHandlePage() {
       setFetchedBoxList(boxes);
       setOrdersOnPallet(orderList);
 
-      // Show one "primary" order in the summary card if available
       if (orderList.length) {
         const o = orderList[0];
         setOrderInfo((prev) => ({
@@ -89,7 +87,6 @@ export default function PalletToShelfHandlePage() {
               : prev.boxes_count,
         }));
       } else {
-        // Still let the chip show box count from context if present
         setOrderInfo((prev) => ({
           ...prev,
           boxes_count:
@@ -100,12 +97,10 @@ export default function PalletToShelfHandlePage() {
       }
     } catch (err) {
       console.error("Failed to load pallet context", err);
-      // Don’t kill the UI; just show a small toast
       setSnackbarMsg("Failed to fetch pallet context");
     }
   }
 
-  // Fetch context whenever a pallet is linked
   useEffect(() => {
     if (palletId) fetchPalletContext(palletId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,7 +115,6 @@ export default function PalletToShelfHandlePage() {
     const uuidMatch = raw.match(/[0-9a-fA-F-]{36}/);
     const uuid = uuidMatch ? uuidMatch[0] : null;
 
-    // PALLET (“PALLET_…” or bare UUID)
     if (upper.startsWith("PALLET") || (!!uuid && !raw.includes("_"))) {
       const id = upper.startsWith("PALLET")
         ? raw.replace(/^PALLET[\s_:\-]*/i, "").trim()
@@ -129,7 +123,6 @@ export default function PalletToShelfHandlePage() {
       if (id) {
         setPalletId(id);
         setSnackbarMsg("Pallet linked");
-        // reset context until fetched
         setFetchedBoxList([]);
         setOrdersOnPallet([]);
         setOrderInfo((prev) => ({ ...prev, order_id: "" }));
@@ -137,7 +130,6 @@ export default function PalletToShelfHandlePage() {
       return;
     }
 
-    // SHELF
     if (upper.startsWith("SHELF")) {
       const id = raw.replace(/^SHELF[\s_:\-]*/i, "").trim();
       if (id) {
@@ -147,21 +139,16 @@ export default function PalletToShelfHandlePage() {
       return;
     }
 
-    // BOX – optional on this page (we don’t require it to submit)
     if (upper.startsWith("BOX")) {
-      // Normalize like BOX_<orderId>_<n>
       const normalized = raw.replace(/\s+/g, "_");
       const parts = normalized.split("_");
       if (parts.length >= 3) {
         const order_id = parts[1];
-
-        // reflect an order in the top chip list
         setOrdersOnPallet((prev) => {
           if (prev.some((o) => o.order_id === order_id)) return prev;
           return [...prev, { order_id }];
         });
 
-        // If we still don’t have a visible order on the card, try to fetch it
         if (order_id && !orderInfo.order_id) {
           api
             .get(`/orders/${order_id}/boxes`)
@@ -190,8 +177,11 @@ export default function PalletToShelfHandlePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanResult]);
 
-  // ---------- Submit flow (review → SMS confirm → POST) ----------
-  const canSubmit = useMemo(() => Boolean(palletId) && Boolean(shelfId), [palletId, shelfId]);
+  // ---------- Submit flow ----------
+  const canSubmit = useMemo(
+    () => Boolean(palletId) && Boolean(shelfId),
+    [palletId, shelfId]
+  );
 
   const handleOpenConfirm = () => setConfirmOpen(true);
   const handleConfirmCancel = () => setConfirmOpen(false);
@@ -209,41 +199,26 @@ export default function PalletToShelfHandlePage() {
   const submitWithFlag = async (sendSms) => {
     try {
       setSubmitting(true);
-  
-      // 1) Assign pallet -> shelf on the server
+
+      // Assign pallet -> shelf on the server
       await api.post("/pallets/assign-shelf", {
         palletId,
         shelfId,
         sendSms,
       });
-  
-      // 2) Record SMS decision per order on this pallet (non-blocking)
-      try {
-        const orders = Array.isArray(ordersOnPallet) ? ordersOnPallet : [];
-        await Promise.all(
-          orders
-            .map(o => o?.order_id)
-            .filter(Boolean)
-            .map(orderId =>
-              api.post(
-                `/orders/${encodeURIComponent(orderId)}/sms-status`,
-                { sent: !!sendSms, source: "pallet-to-shelf" }
-              )
-            )
-        );
-      } catch (e) {
-        // Do not block the main flow if this fails
-        console.warn("sms-status record failed (non-blocking):", e?.message || e);
-      }
-  
-      // 3) Reset UI
+
+      // Reset UI
       setPalletId("");
       setShelfId("");
       setOrderInfo(InitialOrderInfo);
       setFetchedBoxList([]);
       setOrdersOnPallet([]);
       setScannedBoxes([]);
-      setSnackbarMsg(sendSms ? "Assigned & SMS sent (if available)" : "Assigned (SMS skipped)");
+      setSnackbarMsg(
+        sendSms
+          ? "Assigned & SMS sent (if available)"
+          : "Assigned (SMS skipped)"
+      );
     } catch (err) {
       console.error("Assign to shelf failed:", err);
       setSnackbarMsg("Submit failed. See console for details.");
@@ -251,7 +226,6 @@ export default function PalletToShelfHandlePage() {
       setSubmitting(false);
     }
   };
-  
 
   const handleClear = () => {
     setOrderInfo(InitialOrderInfo);
@@ -263,7 +237,6 @@ export default function PalletToShelfHandlePage() {
   };
 
   const scannedCount = scannedBoxes.length;
-  const expectedCount = Number(orderInfo.boxes_count || 0);
 
   return (
     <>
@@ -287,18 +260,31 @@ export default function PalletToShelfHandlePage() {
             </Box>
           )}
 
-          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
+          <Typography
+            variant="h4"
+            sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
+          >
             Pallet → Shelf Handling
           </Typography>
 
           <Stack spacing={3} alignItems="center">
             <QRScanner onResult={setScanResult} />
 
-            {/* Quick link summary */}
             <Paper variant="outlined" sx={{ p: 2, width: "100%" }}>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap flexWrap="wrap">
-                <Chip label={`Pallet: ${palletId ? short(palletId) : "—"}`} color={palletId ? "success" : "default"} />
-                <Chip label={`Shelf: ${shelfId ? shelfId : "—"}`} color={shelfId ? "success" : "default"} />
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={2}
+                useFlexGap
+                flexWrap="wrap"
+              >
+                <Chip
+                  label={`Pallet: ${palletId ? short(palletId) : "—"}`}
+                  color={palletId ? "success" : "default"}
+                />
+                <Chip
+                  label={`Shelf: ${shelfId ? shelfId : "—"}`}
+                  color={shelfId ? "success" : "default"}
+                />
                 <Chip
                   label={`Orders on pallet: ${ordersOnPallet.length}`}
                   color={ordersOnPallet.length ? "success" : "default"}
@@ -322,7 +308,9 @@ export default function PalletToShelfHandlePage() {
                         key={i}
                         variant="outlined"
                         label={
-                          o.name ? `${o.name} • ${short(o.order_id)}` : short(o.order_id)
+                          o.name
+                            ? `${o.name} • ${short(o.order_id)}`
+                            : short(o.order_id)
                         }
                       />
                     ))}
@@ -331,8 +319,6 @@ export default function PalletToShelfHandlePage() {
               )}
             </Paper>
 
-
-            {/* Optional: show fetched box list (from order/pallet context) */}
             {!!fetchedBoxList.length && (
               <Paper variant="outlined" sx={{ p: 2, width: "100%" }}>
                 <Typography variant="subtitle2" gutterBottom>
@@ -351,7 +337,9 @@ export default function PalletToShelfHandlePage() {
                   ))}
                   {fetchedBoxList.length > 8 && (
                     <ListItem disableGutters>
-                      <ListItemText primary={`…and ${fetchedBoxList.length - 8} more`} />
+                      <ListItemText
+                        primary={`…and ${fetchedBoxList.length - 8} more`}
+                      />
                     </ListItem>
                   )}
                 </List>
@@ -359,18 +347,27 @@ export default function PalletToShelfHandlePage() {
             )}
 
             <Stack direction="row" spacing={2}>
-              <Button variant="outlined" onClick={handleClear} disabled={submitting}>
+              <Button
+                variant="outlined"
+                onClick={handleClear}
+                disabled={submitting}
+              >
                 Clear
               </Button>
-              <Button variant="contained" onClick={handleOpenConfirm} disabled={!canSubmit || submitting}>
+              <Button
+                variant="contained"
+                onClick={handleOpenConfirm}
+                disabled={!canSubmit || submitting}
+              >
                 Assign to Shelf
               </Button>
             </Stack>
 
             {!canSubmit && (
               <Typography variant="caption" color="text.secondary">
-                Tip: scan a <strong>PALLET</strong> and a <strong>SHELF</strong> to enable the
-                button. Scanning a <strong>BOX</strong> is optional (only for showing order details).
+                Tip: scan a <strong>PALLET</strong> and a <strong>SHELF</strong>{" "}
+                to enable the button. Scanning a <strong>BOX</strong> is
+                optional (only for showing order details).
               </Typography>
             )}
           </Stack>
@@ -387,8 +384,12 @@ export default function PalletToShelfHandlePage() {
         </Alert>
       </Snackbar>
 
-      {/* Review/confirm dialog */}
-      <Dialog open={confirmOpen} onClose={handleConfirmCancel} maxWidth="sm" fullWidth>
+      <Dialog
+        open={confirmOpen}
+        onClose={handleConfirmCancel}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Review assignment</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1}>
@@ -421,7 +422,6 @@ export default function PalletToShelfHandlePage() {
         </DialogActions>
       </Dialog>
 
-      {/* SMS confirm */}
       <SmsConfirmDialog
         open={smsOpen}
         onClose={() => setSmsOpen(false)}
