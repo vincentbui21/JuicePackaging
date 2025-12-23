@@ -105,6 +105,16 @@ const [shelfDetails, setShelfDetails] = useState(null);
     }
   };
 
+  const handleCreatePallet = async () => {
+    try {
+      await api.post("/pallets", { location: selectedLocation });
+      setSnackbarMsg("Pallet created");
+    } catch (err) {
+      console.error("Failed to create pallet", err);
+      setSnackbarMsg("Failed to create pallet");
+    }
+  };
+
   const handleViewContents = async (shelf_id) => {
     // reset before fetch
     setShelfDetails(null);
@@ -153,7 +163,6 @@ const [shelfDetails, setShelfDetails] = useState(null);
     { field: "shelf_name", headerName: "Shelf Name", flex: 1 },
     { field: "location", headerName: "Location", flex: 1 },
     { field: "status", headerName: "Status", flex: 1 },
-    { field: "capacity", headerName: "Capacity", flex: 0.8 },
     { field: "holding", headerName: "Holding", flex: 0.8 },
     {
       field: "actions",
@@ -228,6 +237,11 @@ const [shelfDetails, setShelfDetails] = useState(null);
                   ))}
                 </TextField>
               </Grid>
+              <Grid item xs={12} sm={4} md={3}>
+                <Button fullWidth variant="contained" onClick={handleCreatePallet}>
+                  Quick Create Pallet
+                </Button>
+              </Grid>
             </Grid>
           </Box>
 
@@ -283,7 +297,7 @@ const [shelfDetails, setShelfDetails] = useState(null);
             <Typography variant="subtitle1"><strong>Pallet ID:</strong> {palletContent.pallet_id}</Typography>
             <Typography variant="subtitle1"><strong>Status:</strong> {palletContent.status}</Typography>
             <Typography variant="subtitle1">
-              <strong>Holding:</strong> {palletContent.holding} / {palletContent.capacity}
+              <strong>Holding:</strong> {palletContent.holding}
             </Typography>
           </>
         ) : null}
@@ -301,7 +315,7 @@ const [shelfDetails, setShelfDetails] = useState(null);
               <strong>Status:</strong> {shelfDetails.status}
             </Typography>
             <Typography variant="subtitle1">
-              <strong>Holding:</strong> {shelfDetails.holding} / {shelfDetails.capacity}
+              <strong>Holding:</strong> {shelfDetails.holding}
             </Typography>
           </>
         ) : null}

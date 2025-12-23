@@ -388,11 +388,47 @@ app.delete('/customer', async (req, res) => {
   const result = await database.delete_customer(customer_id);
 
   if (result) {
-    res.status(200).json({ message: 'Customer and related data deleted successfully.' });
+    res.status(200).json({ message: 'Customer moved to delete bin successfully.' });
   } else {
     res.status(500).json({ message: 'Failed to delete customer.' });
   }
 });
+
+app.get('/deleted-customers', async (req, res) => {
+    const result = await database.get_deleted_customers();
+    if (result) {
+        res.status(200).json(result);
+    } else {
+        res.status(500).json({ message: 'Failed to get deleted customers.' });
+    }
+});
+
+app.post('/restore-customer', async (req, res) => {
+    const { customer_id } = req.body;
+    if (!customer_id) {
+        return res.status(400).json({ message: 'Missing customerID in request body.' });
+    }
+    const result = await database.restore_customer(customer_id);
+    if (result) {
+        res.status(200).json({ message: 'Customer restored successfully.' });
+    } else {
+        res.status(500).json({ message: 'Failed to restore customer.' });
+    }
+});
+
+app.delete('/force-delete-customer', async (req, res) => {
+    const { customer_id } = req.body;
+    if (!customer_id) {
+        return res.status(400).json({ message: 'Missing customerID in request body.' });
+    }
+    const result = await database.force_delete_customer(customer_id);
+    if (result) {
+        res.status(200).json({ message: 'Customer permanently deleted.' });
+    } else {
+        res.status(500).json({ message: 'Failed to permanently delete customer.' });
+    }
+});
+
 
 app.put('/customer', async (req, res) => {
   const { customer_id, customerInfoChange = {}, orderInfoChange = {} } = req.body;

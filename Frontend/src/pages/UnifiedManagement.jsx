@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import {
-Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Snackbar, Paper, Typography, IconButton, Card, CardContent, useMediaQuery, useTheme,
+Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Snackbar, Paper, Typography, IconButton, Card, CardContent, useMediaQuery, useTheme, Checkbox, FormControlLabel, Popover,
 } from '@mui/material';
-import { Edit, Delete, QrCode, Send, Print, Trolley, Inventory } from '@mui/icons-material';
+import { Edit, Delete, QrCode, Send, Print, Trolley, Inventory, Settings } from '@mui/icons-material';
 import api from '../services/axios';
 import generateQRCode from '../services/qrcodGenerator';
 import printImage from '../services/send_to_printer';
@@ -95,6 +95,27 @@ export default function UnifiedManagement() {
     // Refresh key for SMS
     const [smsRefreshTick, setSmsRefreshTick] = useState(0);
 
+    // Column visibility
+    const [columnVisibility, setColumnVisibility] = useState({
+        order_id: true,
+        name: true,
+        phone: true,
+        weight_kg: true,
+        crate_count: true,
+        estimated_pouches: true,
+        estimated_boxes: true,
+        total_cost: true,
+        city: true,
+        created_at: true,
+        status: true,
+        sms_status: true,
+        notes: true,
+    });
+
+    // Popover for column settings
+    const [anchorEl, setAnchorEl] = useState(null);
+    const open = Boolean(anchorEl);
+
     const reload = () => setSmsRefreshTick((n) => n + 1);
 
     const fetchData = useCallback(async () => {
@@ -112,7 +133,6 @@ export default function UnifiedManagement() {
                 };
             });
             
-            console.log(enriched);
             setRows(enriched);
         } catch (err) {
             console.error('Failed to fetch data', err);
@@ -124,6 +144,13 @@ export default function UnifiedManagement() {
 
     useEffect(() => {
         fetchData();
+
+        const handleCustomersUpdate = () => fetchData();
+        window.addEventListener('customers-updated', handleCustomersUpdate);
+
+        return () => {
+            window.removeEventListener('customers-updated', handleCustomersUpdate);
+        };
     }, [fetchData]);
 
     const computeFromWeight = (weight_kg) => {
@@ -198,10 +225,6 @@ export default function UnifiedManagement() {
         if (rowToDelete) {
             // Delete customer
             await api.delete('/customer', { data: { customer_id: rowToDelete.customer_id } });
-            // Delete order if exists
-            if (rowToDelete.order_id) {
-            await api.delete(`/orders/${rowToDelete.order_id}`);
-            }
             setSnackbarMsg('Deleted successfully');
             fetchData();
         }
@@ -313,74 +336,74 @@ export default function UnifiedManagement() {
     };
 
     const columns = [
+        {
+            field: 'actions',
+            headerName: 'Actions',
+            minWidth: isMobile ? 180 : 300,
+            flex: isMobile ? 2 : 3,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => {
+                const ready = isReadyForPickup(params.row?.status);
+                return (
+                <Stack direction="row" spacing={isMobile ? 0.25 : 0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <IconButton color="primary" onClick={() => openEditDialog(params.row)} size={isMobile ? "small" : "small"}>
+                    <Edit fontSize={isMobile ? "small" : "medium"} />
+                    </IconButton>
+                    <IconButton color="error" onClick={() => handleDeleteClick(params.row)} size={isMobile ? "small" : "small"}>
+                    <Delete fontSize={isMobile ? "small" : "medium"} />
+                    </IconButton>
+                    <IconButton color="warning" onClick={() => handleCrateQRPrint(params.row)} size={isMobile ? "small" : "small"}>
+                    <Trolley fontSize={isMobile ? "small" : "medium"} />
+                    </IconButton>
+                    <IconButton color="secondary" onClick={() => handleShowQR(params.row)} size={isMobile ? "small" : "small"}>
+                    <Inventory fontSize={isMobile ? "small" : "medium"} />
+                    </IconButton>
+                    <IconButton color="success" onClick={() => printPouchLabels(params.row)} size={isMobile ? "small" : "small"}>
+                    <Print fontSize={isMobile ? "small" : "medium"} />
+                    </IconButton>
+                    <Tooltip title={ready ? 'Send SMS' : "Only available when status is 'Ready for pickup'."}>
+                    <span>
+                        <Button
+                        variant="outlined"
+                        size={isMobile ? "small" : "small"}
+                        color="info"
+                        disabled={!ready}
+                        onClick={() => handleNotifySMS(params.row)}
+                        sx={{ minWidth: 'auto', px: isMobile ? 0.5 : 1, fontSize: isMobile ? '0.7rem' : '0.875rem' }}
+                        >
+                        <Send fontSize={isMobile ? "small" : "medium"} />
+                        </Button>
+                    </span>
+                    </Tooltip>
+                </Stack>
+                );
+            },
+        },
         { field: 'order_id', headerName: 'Order ID', minWidth: 180, flex: 0.5 },
         { field: 'name', headerName: 'Name', minWidth: 120, flex: 1 },
         // { field: 'email', headerName: 'Email', minWidth: 150, flex: 1.5, hide: isMobile },
         { field: 'phone', headerName: 'Phone', minWidth: 120, flex: 1 },
-        { field: 'city', headerName: 'City', minWidth: 100, flex: 0.8, hide: isMobile },
-        { field: 'created_at', headerName: 'Date', minWidth: 120, flex: 1, hide: isMobile },
-        { field: 'weight_kg', headerName: 'Weight (kg)', minWidth: 80, flex: 0.6 },
+        { field: 'weight_kg', headerName: 'Weight (kg)', minWidth: 100, flex: 0.6 },
         { field: 'crate_count', headerName: 'Crates', minWidth: 70, flex: 0.5 },
-        { field: 'total_cost', headerName: 'Cost (€)', minWidth: 80, flex: 0.6 },
-        { field: 'status', headerName: 'Status', minWidth: 110, flex: 0.8 },
-        { field: 'notes', headerName: 'Notes', minWidth: 150, flex: 1.2, hide: isMobile },
         { field: 'estimated_pouches', headerName: 'Pouches', minWidth: 80, flex: 0.6 },
         { field: 'estimated_boxes', headerName: 'Boxes', minWidth: 70, flex: 0.5 },
+        { field: 'total_cost', headerName: 'Cost (€)', minWidth: 80, flex: 0.6 },
+        { field: 'city', headerName: 'City', minWidth: 100, flex: 0.8, hide: isMobile },
+        { field: 'created_at', headerName: 'Date', minWidth: 120, flex: 1, hide: isMobile },
+        { field: 'status', headerName: 'Status', minWidth: 110, flex: 0.8 },
         {
-        field: 'sms_status',
-        headerName: 'SMS',
-        minWidth: 100,
-        flex: 0.7,
-        sortable: false,
-        filterable: false,
-        renderCell: (params) => (
-            <SmsStatusChip customerId={params.row.customer_id} refreshKey={smsRefreshTick} />
-        ),
+            field: 'sms_status',
+            headerName: 'SMS',
+            minWidth: 100,
+            flex: 0.7,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => (
+                <SmsStatusChip customerId={params.row.customer_id} refreshKey={smsRefreshTick} />
+            ),
         },
-        {
-        field: 'actions',
-        headerName: 'Actions',
-        minWidth: isMobile ? 180 : 400,
-        flex: isMobile ? 2 : 3,
-        sortable: false,
-        filterable: false,
-        renderCell: (params) => {
-            const ready = isReadyForPickup(params.row?.status);
-            return (
-            <Stack direction="row" spacing={isMobile ? 0.25 : 0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                <IconButton color="primary" onClick={() => openEditDialog(params.row)} size={isMobile ? "small" : "small"}>
-                <Edit fontSize={isMobile ? "small" : "medium"} />
-                </IconButton>
-                <IconButton color="error" onClick={() => handleDeleteClick(params.row)} size={isMobile ? "small" : "small"}>
-                <Delete fontSize={isMobile ? "small" : "medium"} />
-                </IconButton>
-                <IconButton color="warning" onClick={() => handleCrateQRPrint(params.row)} size={isMobile ? "small" : "small"}>
-                <Trolley fontSize={isMobile ? "small" : "medium"} />
-                </IconButton>
-                <IconButton color="secondary" onClick={() => handleShowQR(params.row)} size={isMobile ? "small" : "small"}>
-                <Inventory fontSize={isMobile ? "small" : "medium"} />
-                </IconButton>
-                <IconButton color="success" onClick={() => printPouchLabels(params.row)} size={isMobile ? "small" : "small"}>
-                <Print fontSize={isMobile ? "small" : "medium"} />
-                </IconButton>
-                <Tooltip title={ready ? 'Send SMS' : "Only available when status is 'Ready for pickup'."}>
-                <span>
-                    <Button
-                    variant="outlined"
-                    size={isMobile ? "small" : "small"}
-                    color="info"
-                    disabled={!ready}
-                    onClick={() => handleNotifySMS(params.row)}
-                    sx={{ minWidth: 'auto', px: isMobile ? 0.5 : 1, fontSize: isMobile ? '0.7rem' : '0.875rem' }}
-                    >
-                    <Send fontSize={isMobile ? "small" : "medium"} />
-                    </Button>
-                </span>
-                </Tooltip>
-            </Stack>
-            );
-        },
-        },
+        { field: 'notes', headerName: 'Notes', minWidth: 150, flex: 1.2, hide: isMobile },
     ];
 
     const filteredRows = rows.filter((r) =>
@@ -456,6 +479,12 @@ export default function UnifiedManagement() {
                 size={isMobile ? "small" : "medium"}
             />
 
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                <IconButton onClick={(e) => setAnchorEl(e.currentTarget)}>
+                    <Settings />
+                </IconButton>
+            </Box>
+
             <DataGrid
                 rows={filteredRows}
                 columns={columns}
@@ -463,6 +492,8 @@ export default function UnifiedManagement() {
                 pageSize={isMobile ? 5 : 10}
                 rowsPerPageOptions={isMobile ? [5, 10] : [10, 20, 50]}
                 loading={loading}
+                columnVisibilityModel={columnVisibility}
+                onColumnVisibilityModelChange={setColumnVisibility}
                 sx={{
                 height: isMobile ? 400 : 600,
                 backgroundColor: 'white',
@@ -474,6 +505,35 @@ export default function UnifiedManagement() {
                 },
                 }}
             />
+
+            <Popover
+                open={open}
+                anchorEl={anchorEl}
+                onClose={() => setAnchorEl(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Box sx={{ p: 2, minWidth: 200 }}>
+                    <Typography variant="h6" sx={{ mb: 1 }}>Show/Hide Columns</Typography>
+                    <Stack direction="column" spacing={1}>
+                        {Object.keys(columnVisibility).map(field => {
+                            const col = columns.find(c => c.field === field);
+                            return col ? (
+                                <FormControlLabel
+                                    key={field}
+                                    control={
+                                        <Checkbox
+                                            checked={columnVisibility[field]}
+                                            onChange={(e) => setColumnVisibility(prev => ({ ...prev, [field]: e.target.checked }))}
+                                            size="small"
+                                        />
+                                    }
+                                    label={col.headerName}
+                                />
+                            ) : null;
+                        })}
+                    </Stack>
+                </Box>
+            </Popover>
             </Paper>
         </Box>
 

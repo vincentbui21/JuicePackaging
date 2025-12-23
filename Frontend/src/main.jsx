@@ -1,5 +1,5 @@
 import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -20,14 +20,13 @@ import CustomerInfoManagement from "./pages/customer_info_management.jsx";
 import JuiceHandlePage from "./pages/JuiceHandlePage.jsx";
 import JuiceProcessingManagement from "./pages/JuiceProcessingManagement.jsx";
 import UnifiedManagement from "./pages/UnifiedManagement.jsx";
+import UnifiedShelvesPalletsManagement from "./pages/UnifiedShelvesPalletsManagement.jsx";
 import BoxToPalletLoadingPage from "./pages/BoxToPalletLoadingPage.jsx";
 import PalletToShelfHandlePage from "./pages/PalletToShelfHandlePage.jsx";
-import PalletCreationPage from "./pages/PalletCreationPage.jsx";
-import PalletsManagementPage from "./pages/PalletsManagementPage.jsx";
-import ShelveCreationPage from "./pages/ShelveCreationPage.jsx";
-import ShelveManagement from "./pages/ShelveManagement.jsx";
 import PickupPage from "./pages/PickupPage.jsx";
 import SettingPage from "./pages/settingPage.jsx";
+
+import DeleteBinPage from "./pages/DeleteBinPage.jsx";
 
 /** Theme */
 const theme = createTheme({
@@ -83,11 +82,11 @@ const router = createBrowserRouter([
   { path: "/customer-management", element: (
     <ProtectedRoute>{wrap(CustomerInfoManagement, { icon: UserCog, title: "Customer Management" })}</ProtectedRoute>
   )},
-  { path: "/pallets-management", element: (
-    <ProtectedRoute>{wrap(PalletsManagementPage, { icon: Grid3X3, title: "Pallets Management" })}</ProtectedRoute>
+  { path: "/delete-bin", element: (
+    <ProtectedRoute>{wrap(DeleteBinPage, { icon: UserCog, title: "Delete Bin" })}</ProtectedRoute>
   )},
-  { path: "/shelve-management", element: (
-    <ProtectedRoute>{wrap(ShelveManagement, { icon: Layers, title: "Shelves Management" })}</ProtectedRoute>
+  { path: "/shelves-pallets-management", element: (
+    <ProtectedRoute>{wrap(UnifiedShelvesPalletsManagement, { icon: Grid3X3, title: "Shelves & Pallets Management" })}</ProtectedRoute>
   )},
   { path: "/juice-processing-management", element: (
     <ProtectedRoute>{wrap(JuiceProcessingManagement, { icon: Droplets, title: "Juice Processing Management" })}</ProtectedRoute>
@@ -96,13 +95,13 @@ const router = createBrowserRouter([
     <ProtectedRoute>{wrap(UnifiedManagement, { icon: UserCog, title: "Unified Management" })}</ProtectedRoute>
   )},
 
+  // Redirects for merged pages
+  { path: "/pallets-management", element: <Navigate to="/shelves-pallets-management" replace /> },
+  { path: "/shelve-management", element: <Navigate to="/shelves-pallets-management" replace /> },
+  { path: "/create-pallet", element: <Navigate to="/shelves-pallets-management" replace /> },
+  { path: "/create-shelve", element: <Navigate to="/shelves-pallets-management" replace /> },
+
   // Create / Settings
-  { path: "/create-pallet", element: (
-    <ProtectedRoute>{wrap(PalletCreationPage, { icon: Plus, title: "Create Pallet" })}</ProtectedRoute>
-  )},
-  { path: "/create-shelve", element: (
-    <ProtectedRoute>{wrap(ShelveCreationPage, { icon: Plus, title: "Create Shelf" })}</ProtectedRoute>
-  )},
   { path: "/setting", element: (
     <ProtectedRoute>{wrap(SettingPage, { icon: Cog, title: "Settings" })}</ProtectedRoute>
   )},

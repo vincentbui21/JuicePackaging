@@ -21,13 +21,16 @@ import printImage from '../services/send_to_printer'
 
 function PalletCreationPage() {
   const [location, setLocation] = useState("");
-  const [capacity, setCapacity] = useState(8);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [error, setError] = useState(false);
   const [qrImage, setQrImage] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [cities, setCities] = useState([]);
   const [pallet_ids, setPallet_ids] = useState()
+
+  // NEW: optional pallet name input + display name after create
+  const [palletName, setPalletName] = useState("");
+  const [createdPalletName, setCreatedPalletName] = useState("");
 
   useEffect(() => {
   const fetchCities = async () => {
@@ -45,26 +48,29 @@ function PalletCreationPage() {
 
   const handleCreate = async () => {
     const trimmed = location.trim();
-    if (!trimmed || Number(capacity) <= 0) {
-      setSnackbarMsg(!trimmed ? "Please enter a pallet location" : "Capacity must be at least 1");
+    if (!trimmed) {
+      setSnackbarMsg("Please enter a pallet location");
       setError(true);
       return;
     }
 
     try {
-      const res = await api.post("/pallets", { location: trimmed, capacity: Number(capacity) });
+      const res = await api.post("/pallets", { location: trimmed, pallet_name: palletName?.trim() || null });
 
       // Be tolerant to either shape: { pallet_id } or { result: { pallet_id } }
       const pallet_id = res?.data?.pallet_id ?? res?.data?.result?.pallet_id;
       if (!pallet_id) throw new Error("Missing pallet_id in response");
       setPallet_ids(pallet_id)
 
+      const returned_name = res?.data?.pallet_name ?? res?.data?.result?.pallet_name;
+      setCreatedPalletName(returned_name || palletName || "");
+
       const img = await generateSmallPngQRCode(`PALLET_${pallet_id}`);
       setQrImage(img);
       setQrDialogOpen(true);
       setSnackbarMsg("Pallet created successfully");
       setLocation("");
-      setCapacity(8);
+      setPalletName("");
       setError(false);
     } catch (err) {
       console.error("Failed to create pallet", err);
@@ -135,16 +141,13 @@ function PalletCreationPage() {
             ))}
           </TextField>
 
-
+          {/* NEW: optional pallet name input */}
           <TextField
-            label="Capacity"
-            type="number"
+            label="Pallet Name (optional)"
             variant="filled"
             fullWidth
-            value={capacity}
-            onChange={(e) => setCapacity(Number(e.target.value))}
-            error={error && Number(capacity) <= 0}
-            helperText={error && Number(capacity) <= 0 ? "Capacity must be at least 1" : ""}
+            value={palletName}
+            onChange={(e) => setPalletName(e.target.value)}
             sx={{ mb: 3 }}
           />
 
@@ -161,6 +164,14 @@ function PalletCreationPage() {
           <Box display="flex" justifyContent="center">
           <img src={qrImage} alt="QR Code" style={{ width: 100 }} />
           </Box>
+          {/* NEW: show readable name beneath QR */}
+          {createdPalletName ? (
+            <Box display="flex" justifyContent="center" mt={1}>
+              <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+                {createdPalletName}
+              </Typography>
+            </Box>
+          ) : null}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setQrDialogOpen(false)}>Close</Button>

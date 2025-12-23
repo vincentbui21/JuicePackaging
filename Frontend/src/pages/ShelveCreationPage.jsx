@@ -21,7 +21,6 @@ import printImage from '../services/send_to_printer'
 
 function ShelveCreationPage() {
   const [location, setLocation] = useState("");
-  const [capacity, setCapacity] = useState(8);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [error, setError] = useState(false);
   const [qrImage, setQrImage] = useState("");
@@ -47,10 +46,9 @@ function ShelveCreationPage() {
 
   const handleCreate = async () => {
     const loc = location.trim();
-    const cap = Number(capacity);
-    if (!loc || cap <= 0) {
+    if (!loc) {
       setError(true);
-      setSnackbarMsg(!loc ? "Please enter a shelf location" : "Capacity must be at least 1");
+      setSnackbarMsg("Please enter a shelf location");
       return;
     }
 
@@ -58,7 +56,6 @@ function ShelveCreationPage() {
       // Send optional shelf_name (backend will auto-name if empty)
       const res = await api.post("/api/shelves", {
         location: loc,
-        capacity: cap,
         shelf_name: shelfName?.trim() || null, // NEW
       });
 
@@ -151,19 +148,6 @@ function ShelveCreationPage() {
               </MenuItem>
             ))}
           </TextField>
-
-
-          <TextField
-            label="Capacity"
-            type="number"
-            variant="filled"
-            fullWidth
-            value={capacity}
-            onChange={(e) => setCapacity(Number(e.target.value))}
-            error={error && Number(capacity) <= 0}
-            helperText={error && Number(capacity) <= 0 ? "Capacity must be at least 1" : ""}
-            sx={{ mb: 2 }}
-          />
 
           {/* NEW: optional name input */}
           <TextField
