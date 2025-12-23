@@ -596,7 +596,7 @@ app.post('/orders/:order_id/ready', async (req, res) => {
   
   app.get("/orders/pickup", async (req, res) => {
     const { query } = req.query;
-    console.log("Pickup query:", query); 
+    // console.log("Pickup query:", query); 
     try {
       const results = await database.searchOrdersWithShelfInfo(query);
       if (results.length === 0) {

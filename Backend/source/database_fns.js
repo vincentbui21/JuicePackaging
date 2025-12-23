@@ -902,6 +902,7 @@ async function searchOrdersWithShelfInfo(query) {
 
       /* prefer persisted count; otherwise count distinct boxes for this order */
       COALESCE(o.boxes_count, COUNT(DISTINCT b.box_id)) AS box_count,
+      o.pouches_count,
 
       /* shelf via pallet OR via box (Kuopio) */
       COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name))   AS shelf_name,
