@@ -500,15 +500,15 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
   });
 
   app.post('/pallets', async (req, res) => {
-    const { location, capacity } = req.body;
-    if (!location || !capacity) {
-      return res.status(400).json({ error: "Location and capacity are required" });
+    const { location, capacity = 8, pallet_name } = req.body;
+    if (!location) {
+      return res.status(400).json({ error: "Location is required" });
     }
   
     try {
-      const pallet_id = await database.createPallet(location, capacity);
-      emitActivity('warehouse', `Pallet ${pallet_id} created (${location})`, { pallet_id, location });
-      res.status(201).json({ message: "Pallet created", pallet_id });
+      const result = await database.createPallet(location, capacity, pallet_name);
+      emitActivity('warehouse', `Pallet ${result.pallet_name} created (${location})`, { pallet_id: result.pallet_id, location });
+      res.status(201).json({ message: "Pallet created", pallet_id: result.pallet_id, pallet_name: result.pallet_name });
     } catch (err) {
       console.error("Failed to create pallet:", err);
       res.status(500).json({ error: "Failed to create pallet" });
@@ -885,8 +885,8 @@ app.get('/api/shelves/:location', async (req, res) => {
 app.post('/api/shelves', async (req, res) => {
   try {
     const { location, capacity, shelf_name } = req.body;
-    if (!location || capacity == null) {
-      return res.status(400).json({ message: "Location and capacity are required" });
+    if (!location) {
+      return res.status(400).json({ message: "Location is required" });
     }
     const shelf = await database.createShelf(location, capacity, shelf_name);
     emitActivity('warehouse', `Shelf created: ${shelf_name || shelf?.shelf_id} @ ${location}`, {

@@ -648,14 +648,28 @@ async function updateOrderInfo(order_id, data = {}) {
         return rows;
       }
       
-      async function createPallet(location, capacity) {
-        const pallet_id = generateUUID(); // reuse your existing UUID function
-        await pool.query(
-          `INSERT INTO Pallets (pallet_id, location, status, capacity, holding, created_at)
-           VALUES (?, ?, 'available', ?, 0, NOW())`,
-          [pallet_id, location, capacity]
-        );
-        return pallet_id;
+      async function createPallet(location, capacity, palletName = null) {
+        const connection = await pool.getConnection();
+        try {
+          // Auto-number within the same location if no name given
+          const [[{ cnt }]] = await connection.query(
+            'SELECT COUNT(*) AS cnt FROM Pallets WHERE location = ?',
+            [location]
+          );
+          const pallet_name = palletName && palletName.trim()
+            ? palletName.trim()
+            : `${location} - Pallet ${cnt + 1}`;
+
+          const pallet_id = generateUUID();
+          await connection.query(
+            `INSERT INTO Pallets (pallet_id, location, status, capacity, holding, pallet_name, created_at)
+             VALUES (?, ?, 'available', ?, 0, ?, NOW())`,
+            [pallet_id, location, capacity, pallet_name]
+          );
+          return { pallet_id, pallet_name };
+        } finally {
+          connection.release();
+        }
       }
       
       async function deleteShelf(shelf_id) {
