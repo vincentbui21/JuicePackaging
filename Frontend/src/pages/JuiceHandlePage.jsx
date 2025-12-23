@@ -1,7 +1,4 @@
 import {
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   Typography,
   Button,
   Card,
@@ -17,8 +14,11 @@ import {
   DialogActions,
   Grid,
   MenuItem,
+  IconButton,
+  Tooltip,
+  Divider,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { Print, QrCode, CheckCircle, Save, Delete } from "@mui/icons-material";
 import { useEffect, useState } from "react";
 import api from "../services/axios";
 import { io } from "socket.io-client";
@@ -33,6 +33,8 @@ const socket = io(WS_URL);
 function JuiceHandlePage() {
   // data
   const [orders, setOrders] = useState([]);
+  const [search, setSearch] = useState("");
+  const [inlineEdits, setInlineEdits] = useState({});
 
   // QR dialog
   const [qrCodes, setQrCodes] = useState({}); // { [orderId]: [{index, url}] }
@@ -44,43 +46,33 @@ function JuiceHandlePage() {
   // notifications
   const [snackbarMsg, setSnackbarMsg] = useState("");
 
-  // EDIT dialog state
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [editedFields, setEditedFields] = useState({
-    name: "",
-    status: "",
-    weight_kg: "",
-    estimated_pouches: "",
-    estimated_boxes: "",
-  });
+  const statusOptions = [
+    { value: "Created", label: "Created" },
+    { value: "In Progress", label: "In Progress" },
+    { value: "Processing complete", label: "processing complete" },
+    { value: "Ready for pickup", label: "Ready for pickup" },
+    { value: "Picked up", label: "Picked up" },
+  ];
 
   // ---------- helpers (override-aware) ----------
-  const computePouches = (order) => {
-    // Prefer manual override
-    const manual =
-      order?.estimated_pouches ??
-      order?.pouches_count;
+  const computeEstimatedPouches = (order) => {
+    const manual = order?.estimated_pouches ?? order?.pouches_count;
     const manualNum = Number(manual);
     if (!Number.isNaN(manualNum) && manualNum > 0) return manualNum;
-
-    // fallback to computation
     const weight = Number(order?.weight_kg || 0);
     return Math.floor((weight * 0.65) / 3); // 0.65 yield, 3L pouch
   };
 
-  const computeBoxes = (order) => {
-    // Prefer manual override
-    const manual =
-      order?.estimated_boxes ??
-      order?.boxes_count;
+  const computeEstimatedBoxes = (order, estimatedPouches) => {
+    const manual = order?.estimated_boxes ?? order?.boxes_count;
     const manualNum = Number(manual);
     if (!Number.isNaN(manualNum) && manualNum > 0) return manualNum;
-
-    // fallback to computed from (possibly overridden) pouches
-    const p = computePouches(order);
-    return Math.ceil(p / 8); // 8 pouches per box
+    const p = Number(estimatedPouches || 0);
+    return Math.max(1, Math.ceil(p / 8)); // 8 pouches per box
   };
+
+  const getInlineValue = (orderId, field, fallback) =>
+    inlineEdits?.[orderId]?.[field] ?? fallback;
 
   // ---------------------------------------------------------------------------
   // lifecycle
@@ -98,11 +90,36 @@ function JuiceHandlePage() {
   const fetchProcessingOrders = async () => {
     try {
       const res = await api.get("/orders?status=In Progress");
-      setOrders(res.data || []);
+      const sorted = [...(res.data || [])].sort((a, b) => {
+        const aDate = new Date(a?.created_at || 0).getTime();
+        const bDate = new Date(b?.created_at || 0).getTime();
+        return aDate - bDate;
+      });
+      setOrders(sorted);
     } catch (err) {
       console.error("Error fetching orders:", err);
     }
   };
+
+  useEffect(() => {
+    setInlineEdits((prev) => {
+      const next = { ...prev };
+      orders.forEach((order) => {
+        if (!next[order.order_id]) {
+          const estimatedPouches = computeEstimatedPouches(order);
+          const estimatedBoxes = computeEstimatedBoxes(order, estimatedPouches);
+          next[order.order_id] = {
+            status: order?.status || "In Progress",
+            weight_kg: order?.weight_kg ?? "",
+            estimated_pouches: estimatedPouches,
+            estimated_boxes: estimatedBoxes,
+            actual_pouches: order?.actual_pouches ?? "",
+          };
+        }
+      });
+      return next;
+    });
+  }, [orders]);
 
   // ---------------------------------------------------------------------------
   // printing (Videojet pouch; expiry +1 year)
@@ -135,7 +152,10 @@ function JuiceHandlePage() {
   // ---------------------------------------------------------------------------
   // QR generation + device printing
   const generateQRCodes = async (order) => {
-    const count = computeBoxes(order); // <-- now uses overrides when present
+    const inline = inlineEdits[order.order_id] || {};
+    const estimatedPouches = Number(inline.estimated_pouches) || computeEstimatedPouches(order);
+    const estimatedBoxes = Number(inline.estimated_boxes) || computeEstimatedBoxes(order, estimatedPouches);
+    const count = estimatedBoxes;
     const codes = [];
     for (let i = 0; i < count; i++) {
       const text = `BOX_${order.order_id}_${i + 1}`;
@@ -194,81 +214,76 @@ function JuiceHandlePage() {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // EDIT dialog handlers
-  const openEditDialog = (order) => {
-    setSelectedOrder(order);
-    setEditedFields({
-      name: order?.name ?? "",
-      status: order?.status ?? "In Progress",
-      weight_kg: order?.weight_kg ?? "",
-      // reflect any override already present
-      estimated_pouches: order?.estimated_pouches ?? order?.pouches_count ?? "",
-      estimated_boxes: order?.estimated_boxes ?? order?.boxes_count ?? "",
-    });
-    setEditOpen(true);
+  const handleInlineChange = (orderId, field, value) => {
+    setInlineEdits((prev) => ({
+      ...prev,
+      [orderId]: {
+        ...(prev[orderId] || {}),
+        [field]: value,
+      },
+    }));
   };
 
-  const handleEditSave = async () => {
-    if (!selectedOrder) return;
+  const handleInlineSave = async (orderId) => {
+    const edits = inlineEdits[orderId];
+    if (!edits) return;
 
-    const pouchOverride =
-      editedFields.estimated_pouches !== "" && editedFields.estimated_pouches != null
-        ? Number(editedFields.estimated_pouches)
-        : undefined;
-
-    const boxOverride =
-      editedFields.estimated_boxes !== "" && editedFields.estimated_boxes != null
-        ? Number(editedFields.estimated_boxes)
-        : undefined;
-
-    // Send both synonyms so the server (or DB function) can map either form.
     const payload = {
-      name: editedFields.name,
-      status: editedFields.status,
-      weight_kg: Number(editedFields.weight_kg),
-      estimated_pouches: pouchOverride,
-      estimated_boxes: boxOverride,
-      pouches_count: pouchOverride,
-      boxes_count: boxOverride,
+      status: edits.status,
+      weight_kg: edits.weight_kg !== "" ? Number(edits.weight_kg) : undefined,
+      estimated_pouches: edits.estimated_pouches !== "" ? Number(edits.estimated_pouches) : undefined,
+      estimated_boxes: edits.estimated_boxes !== "" ? Number(edits.estimated_boxes) : undefined,
+      actual_pouches: edits.actual_pouches !== "" ? Number(edits.actual_pouches) : undefined,
     };
 
     try {
-      await api.put(`/orders/${selectedOrder.order_id}`, payload);
-
-      // reflect instantly in UI
+      await api.put(`/orders/${orderId}`, payload);
       setOrders((prev) =>
         prev.map((o) => {
-          if (o.order_id !== selectedOrder.order_id) return o;
-          const merged = { ...o, ...payload };
-          // keep both keys set locally so helpers can see the overrides
-          if (pouchOverride !== undefined) {
-            merged.estimated_pouches = pouchOverride;
-            merged.pouches_count = pouchOverride;
-          }
-          if (boxOverride !== undefined) {
-            merged.estimated_boxes = boxOverride;
-            merged.boxes_count = boxOverride;
-          }
-          return merged;
+          if (o.order_id !== orderId) return o;
+          return {
+            ...o,
+            status: payload.status ?? o.status,
+            weight_kg: payload.weight_kg ?? o.weight_kg,
+            pouches_count: payload.estimated_pouches ?? o.pouches_count,
+            boxes_count: payload.estimated_boxes ?? o.boxes_count,
+            actual_pouches: payload.actual_pouches ?? o.actual_pouches,
+          };
         })
       );
-
       setSnackbarMsg("Order updated successfully");
-      setEditOpen(false);
     } catch (err) {
       console.error("Failed to update order", err);
       setSnackbarMsg("Update failed");
     }
   };
 
-  const statusOptions = [
-    { value: "Created", label: "Created" },
-    { value: "In Progress", label: "In Progress" },
-    { value: "Processing complete", label: "processing complete" },
-    { value: "Ready for pickup", label: "Ready for pickup" },
-    { value: "Picked up", label: "Picked up" },
-  ];
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm("Are you sure you want to delete this order?")) return;
+    try {
+      await api.delete(`/orders/${orderId}`);
+      setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
+      setInlineEdits((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
+      setSnackbarMsg("Order deleted successfully");
+    } catch (err) {
+      console.error("Failed to delete order:", err);
+      setSnackbarMsg("Failed to delete order");
+    }
+  };
+
+  const filteredOrders = orders.filter((order) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return [
+      order?.name,
+      order?.order_id,
+      order?.city,
+    ].some((v) => String(v || "").toLowerCase().includes(q));
+  });
 
   // ---------------------------------------------------------------------------
   // render
@@ -286,15 +301,37 @@ function JuiceHandlePage() {
           justifyContent: "center",
         }}
       >
-        <Paper elevation={3} sx={{ width: "min(90%, 800px)", p: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
+        <Paper elevation={3} sx={{ width: "min(95%, 1200px)", p: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
           <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
             Apple Juice Processing Station
           </Typography>
 
-          <Box sx={{ width: "100%", maxWidth: 800, mt: 3 }}>
-            {orders.map((order) => {
-              const estPouches = computePouches(order);
-              const qrCount = computeBoxes(order);
+          <TextField
+            label="Search by customer, order ID, or city"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            fullWidth
+            size="small"
+            sx={{ mb: 2 }}
+          />
+
+          <Stack spacing={2}>
+            {filteredOrders.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                No orders found.
+              </Typography>
+            )}
+
+            {filteredOrders.map((order) => {
+              const inlineEstimatedRaw = getInlineValue(order.order_id, "estimated_pouches", "");
+              const estimatedPouches =
+                inlineEstimatedRaw !== "" ? Number(inlineEstimatedRaw) : computeEstimatedPouches(order);
+              const inlineBoxesRaw = getInlineValue(order.order_id, "estimated_boxes", "");
+              const estimatedBoxes =
+                inlineBoxesRaw !== "" ? Number(inlineBoxesRaw) : computeEstimatedBoxes(order, estimatedPouches);
+              const inlineActualRaw = getInlineValue(order.order_id, "actual_pouches", order?.actual_pouches ?? "");
+              const inlineWeightRaw = getInlineValue(order.order_id, "weight_kg", order?.weight_kg ?? "");
+              const inlineStatus = getInlineValue(order.order_id, "status", order?.status || "In Progress");
 
               // Expiry date (1 year from today), dd/mm/yyyy for UI display
               const exp = new Date();
@@ -304,77 +341,137 @@ function JuiceHandlePage() {
               ).padStart(2, "0")}/${exp.getFullYear()}`;
 
               return (
-                <Accordion key={order.order_id}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Typography sx={{ fontWeight: "bold" }}>
-                      {order.name} — Est. {estPouches} pouches
-                    </Typography>
-                  </AccordionSummary>
+                <Card key={order.order_id} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                  <CardContent>
+                    <Stack
+                      direction={{ xs: "column", md: "row" }}
+                      alignItems={{ xs: "flex-start", md: "center" }}
+                      justifyContent="space-between"
+                      spacing={2}
+                    >
+                      <Box>
+                        <Typography variant="h6" fontWeight={700}>
+                          {order.name || "Unknown"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          City: {order.city || "—"} • Order ID: {order.order_id}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Est: {estimatedPouches || 0} pouches • Boxes: {estimatedBoxes || 0} • Actual:{" "}
+                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • Exp: {expiryUi}
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <Tooltip title="Print pouch label">
+                          <IconButton size="small" color="primary" onClick={() => printPouchLabels(order)}>
+                            <Print fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Generate QR codes">
+                          <IconButton size="small" color="secondary" onClick={() => generateQRCodes(order)}>
+                            <QrCode fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Mark as done">
+                          <IconButton size="small" color="success" onClick={() => markOrderDone(order.order_id)}>
+                            <CheckCircle fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete order">
+                          <IconButton size="small" color="error" onClick={() => handleDeleteOrder(order.order_id)}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </Stack>
 
-                  <AccordionDetails>
-                    <Card sx={{ backgroundColor: "#f5f5f5" }}>
-                      <CardContent>
-                        <Stack spacing={2}>
-                          <Typography>
-                            <strong>Order ID:</strong> {order.order_id}
-                          </Typography>
-                          <Typography>
-                            <strong>Customer:</strong> {order.name}
-                          </Typography>
-                          <Typography>
-                            <strong>Apple Weight:</strong> {order.weight_kg} kg
-                          </Typography>
-                          <Typography>
-                            <strong>Estimated Pouches:</strong> {estPouches}
-                          </Typography>
-                          <Typography>
-                            <strong>QR Codes to Print:</strong> {qrCount}
-                          </Typography>
-                          <Typography>
-                            <strong>Expiry Date:</strong> {expiryUi}
-                          </Typography>
+                    <Divider sx={{ my: 2 }} />
 
-                          <TextField
-                            label="Comments"
-                            fullWidth
-                            multiline
-                            minRows={2}
-                            value={comments[order.order_id] || ""}
-                            onChange={(e) =>
-                              setComments((prev) => ({ ...prev, [order.order_id]: e.target.value }))
-                            }
-                          />
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} sm={6} md={3}>
+                        <TextField
+                          label="Estimated pouches"
+                          size="small"
+                          type="number"
+                          value={inlineEstimatedRaw}
+                          onChange={(e) => handleInlineChange(order.order_id, "estimated_pouches", e.target.value)}
+                          fullWidth
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <TextField
+                          label="Actual pouches"
+                          size="small"
+                          type="number"
+                          value={inlineActualRaw}
+                          onChange={(e) => handleInlineChange(order.order_id, "actual_pouches", e.target.value)}
+                          fullWidth
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <TextField
+                          label="Estimated boxes"
+                          size="small"
+                          type="number"
+                          value={inlineBoxesRaw}
+                          onChange={(e) => handleInlineChange(order.order_id, "estimated_boxes", e.target.value)}
+                          fullWidth
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <TextField
+                          label="Weight (kg)"
+                          size="small"
+                          type="number"
+                          value={inlineWeightRaw}
+                          onChange={(e) => handleInlineChange(order.order_id, "weight_kg", e.target.value)}
+                          fullWidth
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <TextField
+                          select
+                          label="Status"
+                          size="small"
+                          value={inlineStatus}
+                          onChange={(e) => handleInlineChange(order.order_id, "status", e.target.value)}
+                          fullWidth
+                        >
+                          {statusOptions.map((opt) => (
+                            <MenuItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Save fontSize="small" />}
+                          onClick={() => handleInlineSave(order.order_id)}
+                        >
+                          Save
+                        </Button>
+                      </Grid>
+                    </Grid>
 
-                          <Stack direction="row" spacing={2} flexWrap="wrap">
-                            <Button variant="outlined" onClick={() => openEditDialog(order)}>
-                              Edit
-                            </Button>
-                            <Button variant="contained" onClick={() => printPouchLabels(order)}>
-                              Print Pouch Info
-                            </Button>
-                            <Button
-                              variant="contained"
-                              color="success"
-                              onClick={() => generateQRCodes(order)}
-                            >
-                              Generate QR Codes
-                            </Button>
-                            <Button
-                              variant="contained"
-                              color="error"
-                              onClick={() => markOrderDone(order.order_id)}
-                            >
-                              Mark as Done
-                            </Button>
-                          </Stack>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  </AccordionDetails>
-                </Accordion>
+                    <TextField
+                      label="Comments"
+                      fullWidth
+                      multiline
+                      minRows={2}
+                      value={comments[order.order_id] || ""}
+                      onChange={(e) =>
+                        setComments((prev) => ({ ...prev, [order.order_id]: e.target.value }))
+                      }
+                      sx={{ mt: 2 }}
+                    />
+                  </CardContent>
+                </Card>
               );
             })}
-          </Box>
+          </Stack>
 
           <Snackbar
             open={!!snackbarMsg}
@@ -425,74 +522,6 @@ function JuiceHandlePage() {
             disabled={!qrDialog.order || !(qrCodes[qrDialog.order.order_id] || []).length}
           >
             Print All
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* EDIT dialog */}
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth>
-        <DialogTitle>Edit Order</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} mt={1}>
-            <TextField
-              label="Customer Name"
-              value={editedFields.name}
-              onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
-              fullWidth
-            />
-            <TextField
-              select
-              label="Status"
-              value={editedFields.status}
-              onChange={(e) => setEditedFields((prev) => ({ ...prev, status: e.target.value }))}
-              fullWidth
-              helperText="Select current status for this order"
-            >
-              {[
-                { value: "Created", label: "Created" },
-                { value: "In Progress", label: "In Progress" },
-                { value: "Processing complete", label: "processing complete" },
-                { value: "Ready for pickup", label: "Ready for pickup" },
-                { value: "Picked up", label: "Picked up" },
-              ].map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Weight (kg)"
-              type="number"
-              value={editedFields.weight_kg}
-              onChange={(e) => setEditedFields((p) => ({ ...p, weight_kg: e.target.value }))}
-              fullWidth
-            />
-            <TextField
-              label="Estimated Pouches (optional)"
-              type="number"
-              value={editedFields.estimated_pouches}
-              onChange={(e) =>
-                setEditedFields((p) => ({ ...p, estimated_pouches: e.target.value }))
-              }
-              fullWidth
-              helperText="Manual override if you store this in DB"
-            />
-            <TextField
-              label="Estimated Boxes (optional)"
-              type="number"
-              value={editedFields.estimated_boxes}
-              onChange={(e) =>
-                setEditedFields((p) => ({ ...p, estimated_boxes: e.target.value }))
-              }
-              fullWidth
-              helperText="Manual override if you store this in DB"
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleEditSave}>
-            Save
           </Button>
         </DialogActions>
       </Dialog>

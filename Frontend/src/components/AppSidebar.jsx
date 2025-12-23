@@ -6,7 +6,7 @@ import {
 } from "@mui/material";
 import {
   Home, Users, Package, Droplets, Boxes, Archive, MapPin,
-  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut
+  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut, BarChart3
 } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import companyLogo from "../assets/company_logo.png";
@@ -34,6 +34,10 @@ const management = [
 const createNew = [
   { label: "Create Pallet", to: "/create-pallet", icon: <Plus size={18} /> },
   { label: "Create Shelf", to: "/create-shelve", icon: <Plus size={18} /> },
+];
+
+const adminItems = [
+  { label: "Admin Reports", to: "/admin/reports", icon: <BarChart3 size={18} /> },
 ];
 
 export default function AppSidebar({
@@ -159,6 +163,7 @@ export default function AppSidebar({
         <Section title="Operations" items={operations} />
         <Section title="Management" items={management} />
         <Section title="Create New" items={createNew} />
+        <Section title="Admin" items={adminItems} />
       </Box>
 
       <Divider />

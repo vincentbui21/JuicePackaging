@@ -27,6 +27,7 @@ import ShelveCreationPage from "./pages/ShelveCreationPage.jsx";
 import ShelveManagement from "./pages/ShelveManagement.jsx";
 import PickupPage from "./pages/PickupPage.jsx";
 import SettingPage from "./pages/settingPage.jsx";
+import AdminReports from "./pages/AdminReports.jsx";
 
 /** Theme */
 const theme = createTheme({
@@ -101,6 +102,13 @@ const router = createBrowserRouter([
   )},
   { path: "/setting", element: (
     <ProtectedRoute>{wrap(SettingPage, { icon: Cog, title: "Settings" })}</ProtectedRoute>
+  )},
+
+  // Admin
+  { path: "/admin/reports", element: (
+    <ProtectedRoute>
+      <DashboardLayout><AdminReports /></DashboardLayout>
+    </ProtectedRoute>
   )},
 ]);
 

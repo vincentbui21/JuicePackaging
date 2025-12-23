@@ -402,7 +402,11 @@ async function getOrdersByStatus(status) {
             o.weight_kg,
             o.status,
             o.boxes_count,
-            c.name
+            o.pouches_count,
+            o.actual_pouches,
+            o.created_at,
+            c.name,
+            c.city
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
         WHERE o.status = ?
@@ -621,6 +625,7 @@ async function updateOrderInfo(order_id, data = {}) {
   // UI sends these:
   if (data.estimated_pouches != null) { sets.push('pouches_count = ?'); vals.push(Number(data.estimated_pouches) || 0); }
   if (data.estimated_boxes != null)   { sets.push('boxes_count = ?');   vals.push(Number(data.estimated_boxes) || 0); }
+  if (data.actual_pouches != null)    { sets.push('actual_pouches = ?'); vals.push(Number(data.actual_pouches) || 0); }
 
   // If you also allow editing notes, etc., add them here similarly.
 
@@ -1373,6 +1378,18 @@ async function getDashboardSummary() {
   const [[{ orders_new_today }]] = await pool.query(
     `SELECT COUNT(*) AS orders_new_today FROM Orders WHERE DATE(created_at) = CURDATE()`
   );
+  const [[{ daily_kgs_today }]] = await pool.query(
+    `
+    SELECT COALESCE(SUM(o.weight_kg), 0) AS daily_kgs_today
+    FROM (
+      SELECT DISTINCT SUBSTRING(b.box_id, 5, 36) AS order_id
+      FROM Boxes b
+      WHERE DATE(b.created_at) = CURDATE()
+        AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+    ) x
+    JOIN Orders o ON o.order_id = x.order_id
+    `
+  );
 
   // Yesterday
   const [[{ boxes_yesterday }]] = await pool.query(
@@ -1386,6 +1403,18 @@ async function getDashboardSummary() {
   );
   const [[{ orders_new_yesterday }]] = await pool.query(
     `SELECT COUNT(*) AS orders_new_yesterday FROM Orders WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
+  );
+  const [[{ daily_kgs_yesterday }]] = await pool.query(
+    `
+    SELECT COALESCE(SUM(o.weight_kg), 0) AS daily_kgs_yesterday
+    FROM (
+      SELECT DISTINCT SUBSTRING(b.box_id, 5, 36) AS order_id
+      FROM Boxes b
+      WHERE DATE(b.created_at) = (CURDATE() - INTERVAL 1 DAY)
+        AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+    ) x
+    JOIN Orders o ON o.order_id = x.order_id
+    `
   );
 
   // Snapshots
@@ -1407,25 +1436,25 @@ async function getDashboardSummary() {
   );
 
   // Metrics
-  const daily_production_liters   = Number(boxes_today || 0) * 8;
-  const daily_production_liters_y = Number(boxes_yesterday || 0) * 8;
+  const daily_production_kgs   = Number(Number(daily_kgs_today || 0).toFixed(2));
+  const daily_production_kgs_y = Number(Number(daily_kgs_yesterday || 0).toFixed(2));
   const eff_today = crates_today    ? (Number(boxes_today || 0) / Number(crates_today)) * 100 : 0;
   const eff_yday  = crates_yesterday? (Number(boxes_yesterday || 0) / Number(crates_yesterday)) * 100 : 0;
 
   const changes = {
-    daily_production_pct:      pctChange(daily_production_liters, daily_production_liters_y),
+    daily_production_pct:      pctChange(daily_production_kgs, daily_production_kgs_y),
     active_orders_pct:         pctChange(Number(orders_new_today || 0), Number(orders_new_yesterday || 0)),
     customers_served_pct:      pctChange(Number(customers_today || 0), Number(customers_yesterday || 0)),
     processing_efficiency_pct: Number((eff_today - eff_yday).toFixed(1)),
   };
 
   return {
-    daily_production_liters,
+    daily_production_kgs,
     active_orders: Number(active_orders || 0),
     customers_served: Number(customers_served || 0),
     processing_efficiency: Number(eff_today.toFixed(1)),
     overview: {
-      juice_liters: daily_production_liters,
+      juice_kgs: daily_production_kgs,
       crates_processed: Number(crates_today || 0),
       orders_fulfilled: Number(orders_fulfilled_today || 0), // ← tweaked
     },
@@ -1835,30 +1864,43 @@ async function markSmsSkipped(customerId) {
   );
 }
 
-// --- Daily totals: liters + customers served (distinct) per day -------------
+// --- Daily totals: kilograms + pouches per production day ------------------
 async function getDailyTotals(days = 30) {
   const n = Math.max(1, Math.min(365, Number(days) || 30));
 
   const [rows] = await pool.query(
     `
     SELECT
-      DATE(b.created_at) AS d,
-      COUNT(*)           AS boxes,
-      COUNT(DISTINCT b.customer_id) AS customers
-    FROM Boxes b
-    WHERE b.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-    GROUP BY DATE(b.created_at)
+      DATE(
+        IF(HOUR(b.created_at) < 6,
+           DATE_SUB(DATE(b.created_at), INTERVAL 1 DAY),
+           DATE(b.created_at)
+        )
+      ) AS d,
+      COALESCE(SUM(COALESCE(o.actual_pouches, o.pouches_count)), 0) AS total_pouches,
+      COALESCE(SUM(o.weight_kg), 0)     AS total_kgs
+    FROM (
+      SELECT
+        SUBSTRING(bx.box_id, 5, 36) AS order_id,
+        MIN(bx.created_at) AS created_at
+      FROM Boxes bx
+      WHERE bx.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        AND bx.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+      GROUP BY order_id
+    ) b
+    JOIN Orders o ON o.order_id = b.order_id
+    GROUP BY d
     ORDER BY d DESC
     `,
     [n]
   );
 
-  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0,10) : String(x));
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x));
 
   return rows.map(r => ({
     date: toDateStr(r.d),
-    total_liters: Number(r.boxes || 0) * 8,          // same 1 box = 8L assumption as summary
-    total_customers: Number(r.customers || 0),
+    total_kgs: Number(Number(r.total_kgs || 0).toFixed(2)),
+    total_pouches: Number(r.total_pouches || 0),
   }));
 }
 
@@ -1880,6 +1922,263 @@ function makeIdempotencyKey({ shelfId, boxes = [], customers = [] }) {
     .sort();
   const sortedBoxes = [...boxes].sort();
   return `load-boxes:${shelfId}:${sortedBoxes.join(',')}:${phones.join(',')}`;
+}
+
+// Helper: Calculate start and end of a "production day" (6am to 6am next day)
+function getProductionDayBoundaries(date = null) {
+  const d = date ? new Date(date) : new Date();
+  d.setHours(0, 0, 0, 0); // start of calendar day
+  
+  // If current time is before 6am, it belongs to yesterday's production day
+  const now = new Date();
+  const hour = now.getHours();
+  
+  if (date) {
+    // For a specific date, determine if we're in the morning (before 6am) or not
+    const checkTime = new Date(date);
+    checkTime.setHours(6, 0, 0, 0); // 6am boundary
+    
+    if (date < checkTime) {
+      // Before 6am = belongs to previous day's production
+      const dayStart = new Date(date);
+      dayStart.setDate(dayStart.getDate() - 1);
+      dayStart.setHours(6, 0, 0, 0);
+      
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      dayEnd.setHours(6, 0, 0, 0);
+      
+      return { start: dayStart, end: dayEnd };
+    } else {
+      // 6am or after = today's production
+      const dayStart = new Date(date);
+      dayStart.setHours(6, 0, 0, 0);
+      
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      dayEnd.setHours(6, 0, 0, 0);
+      
+      return { start: dayStart, end: dayEnd };
+    }
+  }
+  
+  // For current time
+  const baseDate = new Date(d);
+  if (hour < 6) {
+    // Before 6am = still in yesterday's production day
+    baseDate.setDate(baseDate.getDate() - 1);
+  }
+  
+  const dayStart = new Date(baseDate);
+  dayStart.setHours(6, 0, 0, 0);
+  
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  dayEnd.setHours(6, 0, 0, 0);
+  
+  return { start: dayStart, end: dayEnd };
+}
+
+// Get today's production metrics (6am to 6am logic)
+async function getTodayMetrics() {
+  const { start, end } = getProductionDayBoundaries();
+  
+  try {
+    const [pouchesResult] = await pool.query(
+      `SELECT COALESCE(SUM(COALESCE(actual_pouches, pouches_count)), 0) AS pouches_made FROM Orders 
+       WHERE created_at >= ? AND created_at < ?`,
+      [start, end]
+    );
+    const pouches_made = pouchesResult[0]?.pouches_made || 0;
+    
+    const [processedResult] = await pool.query(
+      `SELECT COALESCE(SUM(weight_kg), 0) AS kg_processed FROM Orders 
+       WHERE status IN ('Ready for pickup', 'Picked up') 
+       AND created_at >= ? AND created_at < ?`,
+      [start, end]
+    );
+    const kg_processed = processedResult[0]?.kg_processed || 0;
+    
+    const [takenResult] = await pool.query(
+      `SELECT COALESCE(SUM(weight_kg), 0) AS kg_taken_in FROM Orders 
+       WHERE status IS NOT NULL 
+       AND created_at >= ? AND created_at < ?`,
+      [start, end]
+    );
+    const kg_taken_in = takenResult[0]?.kg_taken_in || 0;
+    
+    return {
+      pouches_made: Number(pouches_made || 0),
+      kg_processed: Number(Number(kg_processed || 0).toFixed(2)),
+      kg_taken_in: Number(Number(kg_taken_in || 0).toFixed(2)),
+    };
+  } catch (err) {
+    console.error('getTodayMetrics error:', err);
+    return {
+      pouches_made: 0,
+      kg_processed: 0,
+      kg_taken_in: 0,
+    };
+  }
+}
+
+// Get yesterday's production metrics for comparison
+async function getYesterdayMetrics() {
+  const { start } = getProductionDayBoundaries();
+  const yesterday = new Date(start);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const { start: yStart, end: yEnd } = getProductionDayBoundaries(yesterday);
+  
+  try {
+    const [pouchesResult] = await pool.query(
+      `SELECT COALESCE(SUM(COALESCE(actual_pouches, pouches_count)), 0) AS pouches_made FROM Orders 
+       WHERE created_at >= ? AND created_at < ?`,
+      [yStart, yEnd]
+    );
+    const pouches_made = pouchesResult[0]?.pouches_made || 0;
+    
+    const [processedResult] = await pool.query(
+      `SELECT COALESCE(SUM(weight_kg), 0) AS kg_processed FROM Orders 
+       WHERE status IN ('Ready for pickup', 'Picked up') 
+       AND created_at >= ? AND created_at < ?`,
+      [yStart, yEnd]
+    );
+    const kg_processed = processedResult[0]?.kg_processed || 0;
+    
+    const [takenResult] = await pool.query(
+      `SELECT COALESCE(SUM(weight_kg), 0) AS kg_taken_in FROM Orders 
+       WHERE status IS NOT NULL 
+       AND created_at >= ? AND created_at < ?`,
+      [yStart, yEnd]
+    );
+    const kg_taken_in = takenResult[0]?.kg_taken_in || 0;
+    
+    return {
+      pouches_made: Number(pouches_made || 0),
+      kg_processed: Number(Number(kg_processed || 0).toFixed(2)),
+      kg_taken_in: Number(Number(kg_taken_in || 0).toFixed(2)),
+    };
+  } catch (err) {
+    console.error('getYesterdayMetrics error:', err);
+    return {
+      pouches_made: 0,
+      kg_processed: 0,
+      kg_taken_in: 0,
+    };
+  }
+}
+
+// Get historical metrics for charting (daily, weekly, monthly, yearly)
+async function getHistoricalMetrics(period = 'daily', days = 30) {
+  // period: 'daily', 'weekly', 'monthly', 'yearly'
+  let format;
+  
+  switch(period) {
+    case 'weekly':
+      format = '%Y-W%u'; // Year-Week
+      break;
+    case 'monthly':
+      format = '%Y-%m';
+      break;
+    case 'yearly':
+      format = '%Y';
+      break;
+    default:
+      format = '%Y-%m-%d';
+  }
+  
+  try {
+    // Adjusted for 6am boundaries: group by production day (6am to 6am)
+    const [rows] = await pool.query(
+      `SELECT
+        DATE_FORMAT(
+          IF(HOUR(o.created_at) < 6,
+             DATE_SUB(DATE(o.created_at), INTERVAL 1 DAY),
+             DATE(o.created_at)
+          ),
+          ?
+        ) AS period,
+        COALESCE(SUM(COALESCE(o.actual_pouches, o.pouches_count)), 0) AS pouches_made,
+        COALESCE(SUM(CASE WHEN o.status IN ('Ready for pickup', 'Picked up') THEN o.weight_kg ELSE 0 END), 0) AS kg_processed,
+        COALESCE(SUM(CASE WHEN o.status IS NOT NULL THEN o.weight_kg ELSE 0 END), 0) AS kg_taken_in
+      FROM Orders o
+      WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+      GROUP BY period
+      ORDER BY period DESC`,
+      [format, days]
+    );
+    
+    return rows.map(r => ({
+      period: r.period || 'N/A',
+      pouches_made: Number(r.pouches_made || 0),
+      kg_processed: Number(Number(r.kg_processed || 0).toFixed(2)),
+      kg_taken_in: Number(Number(r.kg_taken_in || 0).toFixed(2)),
+    }));
+  } catch (err) {
+    console.error('getHistoricalMetrics error:', err);
+    return [];
+  }
+}
+
+// Admin reports: order-level rows for production + financial reporting
+async function getAdminReportRows({ startDate, endDate, cities = [] } = {}) {
+  const params = [];
+  const filters = [];
+
+  if (startDate) {
+    filters.push("DATE(b.created_at) >= ?");
+    params.push(startDate);
+  }
+  if (endDate) {
+    filters.push("DATE(b.created_at) <= ?");
+    params.push(endDate);
+  }
+  if (Array.isArray(cities) && cities.length > 0) {
+    const placeholders = cities.map(() => "?").join(",");
+    filters.push(`c.city IN (${placeholders})`);
+    params.push(...cities);
+  }
+
+  const whereSql = filters.length ? `AND ${filters.join(" AND ")}` : "";
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      DATE(b.created_at) AS production_date,
+      c.city,
+      c.name AS customer_name,
+      o.order_id,
+      COALESCE(o.actual_pouches, o.pouches_count, 0) AS pouches_produced,
+      COALESCE(o.weight_kg, 0) AS kilos,
+      COALESCE(o.total_cost, 0) AS total_cost
+    FROM (
+      SELECT
+        SUBSTRING(bx.box_id, 5, 36) AS order_id,
+        MIN(bx.created_at) AS created_at
+      FROM Boxes bx
+      WHERE bx.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+      GROUP BY order_id
+    ) b
+    JOIN Orders o ON o.order_id = b.order_id
+    JOIN Customers c ON c.customer_id = o.customer_id
+    WHERE 1=1
+      ${whereSql}
+    ORDER BY b.created_at DESC, o.order_id ASC
+    `,
+    params
+  );
+
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || ""));
+
+  return rows.map((r) => ({
+    production_date: toDateStr(r.production_date),
+    city: r.city || "Unknown",
+    customer_name: r.customer_name || "",
+    order_id: r.order_id,
+    pouches_produced: Number(r.pouches_produced || 0),
+    kilos: Number(Number(r.kilos || 0).toFixed(2)),
+    total_cost: Number(Number(r.total_cost || 0).toFixed(2)),
+  }));
 }
 
 module.exports = {
@@ -1948,6 +2247,11 @@ module.exports = {
     updateEmployeePassword,
     getDailyTotals,
     makeIdempotencyKey,
+    getTodayMetrics,
+    getYesterdayMetrics,
+    getHistoricalMetrics,
+    getProductionDayBoundaries,
+    getAdminReportRows,
     pctChange,
 }
 

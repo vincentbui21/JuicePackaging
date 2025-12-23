@@ -89,6 +89,7 @@ CREATE TABLE `Orders` (
     `boxes_count` int(11) NOT NULL DEFAULT 0,
     `total_cost` decimal(10,2) DEFAULT NULL,
     `pouches_count` int(11) DEFAULT NULL,
+    `actual_pouches` int(11) DEFAULT NULL,
     `notes` text DEFAULT NULL,
     `created_at` date DEFAULT NULL,
     `ready_at` datetime DEFAULT NULL,

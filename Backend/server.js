@@ -457,13 +457,16 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
 
   app.put('/orders/:order_id', async (req, res) => {
     const { order_id } = req.params;
-    const { weight_kg, estimated_pouches, estimated_boxes } = req.body;
+    const { weight_kg, estimated_pouches, estimated_boxes, actual_pouches, status, name } = req.body;
   
     try {
       await database.updateOrderInfo(order_id, {
+        name,
+        status,
         weight_kg,
         estimated_pouches,
-        estimated_boxes
+        estimated_boxes,
+        actual_pouches,
       });
       // Notify all clients that orders have been updated
       emitActivity('processing', `Order ${order_id} info updated`, { order_id });
@@ -1077,6 +1080,79 @@ app.get('/dashboard/daily-totals', async (req, res) => {
   } catch (err) {
     console.error('daily-totals error:', err);
     res.status(500).json({ error: 'Failed to fetch daily totals' });
+  }
+});
+
+// Get today's production metrics (pouches, kg processed, kg taken in) with 6am-6am logic
+// Endpoint: /dashboard/today-metrics
+app.get('/dashboard/today-metrics', async (req, res) => {
+  try {
+    const today = await database.getTodayMetrics();
+    const yesterday = await database.getYesterdayMetrics();
+    
+    // Calculate percentage changes
+    const pctChange = (curr, prev) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Number((((curr - prev) / prev) * 100).toFixed(1));
+    };
+    
+    res.json({
+      today,
+      yesterday,
+      changes: {
+        pouches_pct: pctChange(today.pouches_made, yesterday.pouches_made),
+        kg_processed_pct: pctChange(today.kg_processed, yesterday.kg_processed),
+        kg_taken_in_pct: pctChange(today.kg_taken_in, yesterday.kg_taken_in),
+      }
+    });
+  } catch (err) {
+    console.error('today-metrics error:', err);
+    res.status(500).json({ error: 'Failed to fetch today metrics' });
+  }
+});
+
+// Get historical metrics for charting (daily, weekly, monthly, yearly)
+app.get('/dashboard/historical-metrics', async (req, res) => {
+  try {
+    const { period = 'daily', days = 30 } = req.query;
+    const data = await database.getHistoricalMetrics(period, days);
+    res.json(data);
+  } catch (err) {
+    console.error('historical-metrics error:', err);
+    res.status(500).json({ error: 'Failed to fetch historical metrics' });
+  }
+});
+
+// Admin reports: production + finance rows (order-level)
+app.get('/admin/reports', async (req, res) => {
+  try {
+    let { start, end, cities } = req.query;
+    const cityList = typeof cities === "string"
+      ? cities.split(",").map((c) => c.trim()).filter(Boolean)
+      : [];
+
+    const today = new Date();
+    const toDateStr = (d) => d.toISOString().slice(0, 10);
+
+    if (!end) {
+      end = toDateStr(today);
+    }
+    if (!start) {
+      const from = new Date(today);
+      from.setDate(today.getDate() - 30);
+      start = toDateStr(from);
+    }
+
+    const rows = await database.getAdminReportRows({
+      startDate: start,
+      endDate: end,
+      cities: cityList,
+    });
+
+    res.json({ rows, range: { start, end }, cities: cityList });
+  } catch (err) {
+    console.error('admin reports error:', err);
+    res.status(500).json({ error: 'Failed to fetch admin reports' });
   }
 });
 

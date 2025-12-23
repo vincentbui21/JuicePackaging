@@ -20,7 +20,7 @@ import {
   Divider,
   DialogActions,
 } from "@mui/material";
-import { Droplets, Package, Users, Activity, TrendingUp, BarChart3, Eye, Filter } from "lucide-react";
+import { Droplets, Package, Users, Activity, TrendingUp, BarChart3, Eye, Filter, Zap, Weight } from "lucide-react";
 import api from "../services/axios";
 import { socket } from "../lib/socket";
 
@@ -77,11 +77,16 @@ function StatBar({ label, value, max, color = "success.main" }) {
 
 export default function DashboardCards() {
   const [stats, setStats] = useState({
-    daily_production_liters: 0,
+    daily_production_kgs: 0,
     active_orders: 0,
     customers_served: 0,
     processing_efficiency: 0,
-    overview: { juice_liters: 0, crates_processed: 0, orders_fulfilled: 0 },
+    overview: { juice_kgs: 0, crates_processed: 0, orders_fulfilled: 0 },
+  });
+  const [metrics, setMetrics] = useState({
+    today: { pouches_made: 0, kg_processed: 0, kg_taken_in: 0 },
+    yesterday: { pouches_made: 0, kg_processed: 0, kg_taken_in: 0 },
+    changes: { pouches_pct: 0, kg_processed_pct: 0, kg_taken_in_pct: 0 },
   });
   const [recent, setRecent] = useState([]);
 
@@ -99,12 +104,18 @@ export default function DashboardCards() {
   const [endDate, setEndDate] = useState("");
 
   const load = async () => {
-    const [{ data: s }, { data: r }] = await Promise.all([
-      api.get("/dashboard/summary"),
-      api.get("/dashboard/activity?limit=5"),
-    ]);
-    setStats(s || stats);
-    setRecent(r || []);
+    try {
+      const [{ data: s }, { data: r }, { data: m }] = await Promise.all([
+        api.get("/dashboard/summary"),
+        api.get("/dashboard/activity?limit=5"),
+        api.get("/dashboard/today-metrics"),
+      ]);
+      setStats(s || stats);
+      setRecent(r || []);
+      setMetrics(m || metrics);
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    }
   };
 
   // Fetch all-time daily totals once (large days window)
@@ -234,12 +245,40 @@ export default function DashboardCards() {
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
             title="Daily Production"
-            value={`${stats.daily_production_liters}L`}
+            value={`${stats.daily_production_kgs}kg`}
             change={fmt(stats?.changes?.daily_production_pct)}
             Icon={Droplets}
             onView={() => setDailyOpen(true)}
           />
         </Grid>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title="Pouches Made"
+            value={metrics.today.pouches_made}
+            change={fmt(metrics?.changes?.pouches_pct)}
+            Icon={Package}
+          />
+        </Grid>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title="Kilograms Processed"
+            value={`${metrics.today.kg_processed}kg`}
+            change={fmt(metrics?.changes?.kg_processed_pct)}
+            Icon={Weight}
+          />
+        </Grid>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title="Kilograms Taken In"
+            value={`${metrics.today.kg_taken_in}kg`}
+            change={fmt(metrics?.changes?.kg_taken_in_pct)}
+            Icon={Zap}
+          />
+        </Grid>
+      </Grid>
+
+      {/* Second row - Original metrics */}
+      <Grid container spacing={2}>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
             title="Active Orders"
@@ -322,7 +361,7 @@ export default function DashboardCards() {
               }
             />
             <CardContent>
-              <StatBar label="Juice Processed" value={stats.overview.juice_liters} max={3500} color="success.main" />
+              <StatBar label="Juice Processed" value={stats.overview.juice_kgs} max={3500} color="success.main" />
               <Box mt={2} />
               <StatBar label="Crates Processed" value={stats.overview.crates_processed} max={500} color="#ef6c00" />
               <Box mt={2} />
@@ -339,7 +378,7 @@ export default function DashboardCards() {
             <Box>
               <Typography variant="subtitle1" fontWeight={800}>Daily Totals</Typography>
               <Typography variant="body2" color="text.secondary">
-                Date · Total litres · Total customers • {activeFilterLabel}
+                Date · Total Kgs · Total pouches • {activeFilterLabel}
               </Typography>
             </Box>
             <IconButton
@@ -381,12 +420,12 @@ export default function DashboardCards() {
                       </Typography>
                       <Stack direction="row" spacing={3}>
                         <Stack alignItems="flex-end">
-                          <Typography variant="caption" color="text.secondary">Total litres</Typography>
-                          <Typography variant="body1" fontWeight={700}>{d.total_liters}L</Typography>
+                          <Typography variant="caption" color="text.secondary">Total Kgs</Typography>
+                          <Typography variant="body1" fontWeight={700}>{d.total_kgs}kg</Typography>
                         </Stack>
                         <Stack alignItems="flex-end">
-                          <Typography variant="caption" color="text.secondary">Total customers</Typography>
-                          <Typography variant="body1" fontWeight={700}>{d.total_customers}</Typography>
+                          <Typography variant="caption" color="text.secondary">Total pouches</Typography>
+                          <Typography variant="body1" fontWeight={700}>{d.total_pouches}</Typography>
                         </Stack>
                       </Stack>
                     </Stack>

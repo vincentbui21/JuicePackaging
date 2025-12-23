@@ -1,1 +1,3 @@
 SELECT * FROM Accounts  
+
+ALTER TABLE Orders ADD COLUMN actual_pouches INT(11) DEFAULT NULL;
