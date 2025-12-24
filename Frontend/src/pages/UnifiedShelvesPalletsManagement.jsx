@@ -375,7 +375,7 @@ function UnifiedShelvesPalletsManagement() {
       sortable: false,
       renderCell: (params) => (
         <>
-          <IconButton color="primary" onClick={() => handleShowQRPallet(params.row.pallet_id)}>
+          <IconButton color="primary" onClick={() => handleShowQRPallet(params.row.pallet_name)}>
             <QrCode />
           </IconButton>
           <IconButton color="info" onClick={() => handleViewBoxes(params.row.pallet_id)}>
