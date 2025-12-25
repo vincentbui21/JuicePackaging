@@ -41,6 +41,7 @@ CREATE TABLE `Customers` (
 DROP TABLE IF EXISTS `Pallets`;
 CREATE TABLE `Pallets` (
     `pallet_id` varchar(36) NOT NULL,
+    `pallet_name` varchar(64) NOT NULL,
     `section` varchar(36) DEFAULT NULL,
     `created_at` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`pallet_id`)
