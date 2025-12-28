@@ -24,7 +24,7 @@ const monthKey = (raw) => {
   return d ? d.slice(0, 7) : "Unknown";
 };
 
-export function buildAdminReport(rows = []) {
+export function buildAdminReport(rows = [], costTotals = {}) {
   const enriched = rows.map((row) => {
     const kilos = round(row.kilos, 2);
     const pouches = toNumber(row.pouches_produced);
@@ -61,8 +61,7 @@ export function buildAdminReport(rows = []) {
       acc.kilos += row.kilos;
       acc.pouches += row.pouches_produced;
       acc.revenue += row.revenue;
-      acc.direct_cost += row.direct_cost;
-      acc.gross_profit += row.gross_profit;
+      acc.order_direct_cost += row.direct_cost;
       acc.expected_pouches += row.expected_pouches;
       acc.orders += 1;
       return acc;
@@ -71,8 +70,7 @@ export function buildAdminReport(rows = []) {
       kilos: 0,
       pouches: 0,
       revenue: 0,
-      direct_cost: 0,
-      gross_profit: 0,
+      order_direct_cost: 0,
       expected_pouches: 0,
       orders: 0,
     }
@@ -80,8 +78,16 @@ export function buildAdminReport(rows = []) {
 
   totals.kilos = round(totals.kilos, 2);
   totals.revenue = round(totals.revenue, 2);
-  totals.direct_cost = round(totals.direct_cost, 2);
-  totals.gross_profit = round(totals.gross_profit, 2);
+  const directFromCenters = toNumber(costTotals.direct);
+  const overheadFromCenters = toNumber(costTotals.overhead);
+  const directCostTotal = round(totals.order_direct_cost + directFromCenters, 2);
+  const overheadCostTotal = round(overheadFromCenters, 2);
+  const totalCosts = round(directCostTotal + overheadCostTotal, 2);
+
+  totals.direct_cost = directCostTotal;
+  totals.overhead_cost = overheadCostTotal;
+  totals.total_costs = totalCosts;
+  totals.gross_profit = round(totals.revenue - totalCosts, 2);
   totals.gross_margin_pct = totals.revenue > 0 ? round((totals.gross_profit / totals.revenue) * 100, 2) : 0;
   totals.avg_weight_per_pouch_g = totals.pouches > 0 ? round((totals.kilos * 1000) / totals.pouches, 1) : 0;
   totals.avg_order_value = totals.orders > 0 ? round(totals.revenue / totals.orders, 2) : 0;

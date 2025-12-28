@@ -350,18 +350,30 @@ app.put('/crates', async (req, res) => {
 
 
 app.get('/orders', async (req, res) => {
-  const { status } = req.query;
+  const { status, page, limit } = req.query;
 
   if (!status) {
     return res.status(400).json({ error: 'Missing status query param' });
   }
 
   try {
+    if (page != null || limit != null) {
+      const pageNum = Number(page) || 1;
+      const limitNum = Number(limit) || 20;
+      const data = await database.getOrdersByStatusPaged(status, pageNum, limitNum);
+      return res.status(200).json({
+        rows: data.rows || [],
+        total: Number(data.total || 0),
+        page: pageNum,
+        limit: limitNum,
+      });
+    }
+
     const orders = await database.getOrdersByStatus(status);
-    res.status(200).json(orders);
+    return res.status(200).json(orders);
   } catch (error) {
     console.error('Failed to fetch orders by status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1153,6 +1165,167 @@ app.get('/admin/reports', async (req, res) => {
   } catch (err) {
     console.error('admin reports error:', err);
     res.status(500).json({ error: 'Failed to fetch admin reports' });
+  }
+});
+
+// Cost centers (direct + overhead)
+app.get('/cost-centers', async (req, res) => {
+  try {
+    const centers = await database.getCostCenters();
+    res.json(centers || []);
+  } catch (err) {
+    console.error('cost centers error:', err);
+    res.status(500).json({ error: 'Failed to fetch cost centers' });
+  }
+});
+
+app.post('/cost-centers', async (req, res) => {
+  try {
+    const { name, category = "direct" } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Cost center name is required' });
+    }
+    if (!["direct", "overhead"].includes(category)) {
+      return res.status(400).json({ error: 'Invalid cost center category' });
+    }
+    const center = await database.createCostCenter({ name: trimmedName, category });
+    res.status(201).json(center);
+  } catch (err) {
+    console.error('create cost center error:', err);
+    res.status(500).json({ error: 'Failed to create cost center' });
+  }
+});
+
+app.put('/cost-centers/:centerId', async (req, res) => {
+  try {
+    const centerId = Number(req.params.centerId);
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Invalid cost center id' });
+    }
+    const { name, category } = req.body || {};
+    const payload = {};
+    if (name != null) {
+      const trimmedName = String(name || "").trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: 'Cost center name is required' });
+      }
+      payload.name = trimmedName;
+    }
+    if (category != null) {
+      if (!["direct", "overhead"].includes(category)) {
+        return res.status(400).json({ error: 'Invalid cost center category' });
+      }
+      payload.category = category;
+    }
+    if (!Object.keys(payload).length) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    const center = await database.updateCostCenter(centerId, payload);
+    res.json(center);
+  } catch (err) {
+    console.error('update cost center error:', err);
+    res.status(500).json({ error: 'Failed to update cost center' });
+  }
+});
+
+app.delete('/cost-centers/:centerId', async (req, res) => {
+  try {
+    const centerId = Number(req.params.centerId);
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Invalid cost center id' });
+    }
+    await database.deleteCostCenter(centerId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete cost center error:', err);
+    res.status(500).json({ error: 'Failed to delete cost center' });
+  }
+});
+
+// Cost entries
+app.get('/cost-entries', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const entries = await database.getCostEntries({ startDate: start, endDate: end });
+    res.json(entries || []);
+  } catch (err) {
+    console.error('cost entries error:', err);
+    res.status(500).json({ error: 'Failed to fetch cost entries' });
+  }
+});
+
+app.post('/cost-entries', async (req, res) => {
+  try {
+    const { center_id, amount, incurred_date, notes } = req.body || {};
+    const centerId = Number(center_id);
+    const amountNum = Number(amount);
+    const dateStr = String(incurred_date || "").trim();
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Cost center is required' });
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Incurred date is required' });
+    }
+    const entry = await database.createCostEntry({
+      centerId,
+      amount: Number(amountNum.toFixed(2)),
+      incurredDate: dateStr,
+      notes,
+    });
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error('create cost entry error:', err);
+    res.status(500).json({ error: 'Failed to create cost entry' });
+  }
+});
+
+app.put('/cost-entries/:entryId', async (req, res) => {
+  try {
+    const entryId = Number(req.params.entryId);
+    if (!Number.isFinite(entryId)) {
+      return res.status(400).json({ error: 'Invalid cost entry id' });
+    }
+    const { center_id, amount, incurred_date, notes } = req.body || {};
+    const centerId = Number(center_id);
+    const amountNum = Number(amount);
+    const dateStr = String(incurred_date || "").trim();
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Cost center is required' });
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Incurred date is required' });
+    }
+    const entry = await database.updateCostEntry(entryId, {
+      centerId,
+      amount: Number(amountNum.toFixed(2)),
+      incurredDate: dateStr,
+      notes,
+    });
+    res.json(entry);
+  } catch (err) {
+    console.error('update cost entry error:', err);
+    res.status(500).json({ error: 'Failed to update cost entry' });
+  }
+});
+
+app.delete('/cost-entries/:entryId', async (req, res) => {
+  try {
+    const entryId = Number(req.params.entryId);
+    if (!Number.isFinite(entryId)) {
+      return res.status(400).json({ error: 'Invalid cost entry id' });
+    }
+    await database.deleteCostEntry(entryId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete cost entry error:', err);
+    res.status(500).json({ error: 'Failed to delete cost entry' });
   }
 });
 

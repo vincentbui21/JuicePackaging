@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 
 /** Layout & components */
 import DashboardLayout from "./components/DashboardLayout.jsx";
+import AdminReportsLayout from "./components/AdminReportsLayout.jsx";
 import PageHeader from "./components/PageHeader.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
@@ -107,7 +108,7 @@ const router = createBrowserRouter([
   // Admin
   { path: "/admin/reports", element: (
     <ProtectedRoute>
-      <DashboardLayout><AdminReports /></DashboardLayout>
+      <AdminReportsLayout><AdminReports /></AdminReportsLayout>
     </ProtectedRoute>
   )},
 ]);

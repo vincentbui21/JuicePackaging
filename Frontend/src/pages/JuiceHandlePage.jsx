@@ -33,6 +33,9 @@ const socket = io(WS_URL);
 function JuiceHandlePage() {
   // data
   const [orders, setOrders] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [search, setSearch] = useState("");
   const [inlineEdits, setInlineEdits] = useState({});
 
@@ -56,17 +59,13 @@ function JuiceHandlePage() {
 
   // ---------- helpers (override-aware) ----------
   const computeEstimatedPouches = (order) => {
-    const manual = order?.estimated_pouches ?? order?.pouches_count;
-    const manualNum = Number(manual);
-    if (!Number.isNaN(manualNum) && manualNum > 0) return manualNum;
     const weight = Number(order?.weight_kg || 0);
-    return Math.floor((weight * 0.65) / 3); // 0.65 yield, 3L pouch
+    if (weight > 0) return Math.floor((weight * 0.65) / 3); // 0.65 yield, 3L pouch
+    const fallback = Number(order?.pouches_count || 0);
+    return Number.isNaN(fallback) ? 0 : fallback;
   };
 
   const computeEstimatedBoxes = (order, estimatedPouches) => {
-    const manual = order?.estimated_boxes ?? order?.boxes_count;
-    const manualNum = Number(manual);
-    if (!Number.isNaN(manualNum) && manualNum > 0) return manualNum;
     const p = Number(estimatedPouches || 0);
     return Math.max(1, Math.ceil(p / 8)); // 8 pouches per box
   };
@@ -77,27 +76,51 @@ function JuiceHandlePage() {
   // ---------------------------------------------------------------------------
   // lifecycle
   useEffect(() => {
-    fetchProcessingOrders();
+    fetchProcessingOrders({ page: 1, append: false });
 
     const handleSocketUpdate = () => {
-      fetchProcessingOrders();
+      fetchProcessingOrders({ page: 1, append: false });
       setSnackbarMsg("Order status updated!");
     };
     socket.on("order-status-updated", handleSocketUpdate);
     return () => socket.off("order-status-updated", handleSocketUpdate);
   }, []);
 
-  const fetchProcessingOrders = async () => {
+  const fetchProcessingOrders = async ({ page: nextPage = 1, append = false } = {}) => {
     try {
-      const res = await api.get("/orders?status=In Progress");
-      const sorted = [...(res.data || [])].sort((a, b) => {
+      setLoadingOrders(true);
+      const res = await api.get("/orders", {
+        params: { status: "In Progress", page: nextPage, limit: 20 },
+      });
+      const payload = Array.isArray(res.data)
+        ? { rows: res.data, total: res.data.length, paged: false }
+        : { rows: res.data?.rows || [], total: Number(res.data?.total || 0), paged: true };
+      const sorted = [...payload.rows].sort((a, b) => {
         const aDate = new Date(a?.created_at || 0).getTime();
         const bDate = new Date(b?.created_at || 0).getTime();
         return aDate - bDate;
       });
-      setOrders(sorted);
+      setOrders((prev) => {
+        if (!append) return sorted;
+        const merged = [...prev, ...sorted];
+        const seen = new Set();
+        return merged.filter((item) => {
+          if (seen.has(item.order_id)) return false;
+          seen.add(item.order_id);
+          return true;
+        });
+      });
+      if (payload.paged) {
+        setHasMore(nextPage * 20 < payload.total);
+        setPage(nextPage);
+      } else {
+        setHasMore(false);
+        setPage(1);
+      }
     } catch (err) {
       console.error("Error fetching orders:", err);
+    } finally {
+      setLoadingOrders(false);
     }
   };
 
@@ -111,9 +134,8 @@ function JuiceHandlePage() {
           next[order.order_id] = {
             status: order?.status || "In Progress",
             weight_kg: order?.weight_kg ?? "",
-            estimated_pouches: estimatedPouches,
-            estimated_boxes: estimatedBoxes,
             actual_pouches: order?.actual_pouches ?? "",
+            actual_boxes: order?.boxes_count ?? "",
           };
         }
       });
@@ -153,9 +175,10 @@ function JuiceHandlePage() {
   // QR generation + device printing
   const generateQRCodes = async (order) => {
     const inline = inlineEdits[order.order_id] || {};
-    const estimatedPouches = Number(inline.estimated_pouches) || computeEstimatedPouches(order);
-    const estimatedBoxes = Number(inline.estimated_boxes) || computeEstimatedBoxes(order, estimatedPouches);
-    const count = estimatedBoxes;
+    const estimatedPouches = computeEstimatedPouches(order);
+    const estimatedBoxes = computeEstimatedBoxes(order, estimatedPouches);
+    const actualBoxes = Number(inline.actual_boxes || order?.boxes_count || 0);
+    const count = actualBoxes > 0 ? actualBoxes : estimatedBoxes;
     const codes = [];
     for (let i = 0; i < count; i++) {
       const text = `BOX_${order.order_id}_${i + 1}`;
@@ -231,9 +254,8 @@ function JuiceHandlePage() {
     const payload = {
       status: edits.status,
       weight_kg: edits.weight_kg !== "" ? Number(edits.weight_kg) : undefined,
-      estimated_pouches: edits.estimated_pouches !== "" ? Number(edits.estimated_pouches) : undefined,
-      estimated_boxes: edits.estimated_boxes !== "" ? Number(edits.estimated_boxes) : undefined,
       actual_pouches: edits.actual_pouches !== "" ? Number(edits.actual_pouches) : undefined,
+      actual_boxes: edits.actual_boxes !== "" ? Number(edits.actual_boxes) : undefined,
     };
 
     try {
@@ -245,9 +267,8 @@ function JuiceHandlePage() {
             ...o,
             status: payload.status ?? o.status,
             weight_kg: payload.weight_kg ?? o.weight_kg,
-            pouches_count: payload.estimated_pouches ?? o.pouches_count,
-            boxes_count: payload.estimated_boxes ?? o.boxes_count,
             actual_pouches: payload.actual_pouches ?? o.actual_pouches,
+            boxes_count: payload.actual_boxes ?? o.boxes_count,
           };
         })
       );
@@ -323,13 +344,11 @@ function JuiceHandlePage() {
             )}
 
             {filteredOrders.map((order) => {
-              const inlineEstimatedRaw = getInlineValue(order.order_id, "estimated_pouches", "");
               const estimatedPouches =
-                inlineEstimatedRaw !== "" ? Number(inlineEstimatedRaw) : computeEstimatedPouches(order);
-              const inlineBoxesRaw = getInlineValue(order.order_id, "estimated_boxes", "");
-              const estimatedBoxes =
-                inlineBoxesRaw !== "" ? Number(inlineBoxesRaw) : computeEstimatedBoxes(order, estimatedPouches);
+                computeEstimatedPouches(order);
+              const estimatedBoxes = computeEstimatedBoxes(order, estimatedPouches);
               const inlineActualRaw = getInlineValue(order.order_id, "actual_pouches", order?.actual_pouches ?? "");
+              const inlineActualBoxesRaw = getInlineValue(order.order_id, "actual_boxes", order?.boxes_count ?? "");
               const inlineWeightRaw = getInlineValue(order.order_id, "weight_kg", order?.weight_kg ?? "");
               const inlineStatus = getInlineValue(order.order_id, "status", order?.status || "In Progress");
 
@@ -357,8 +376,9 @@ function JuiceHandlePage() {
                           City: {order.city || "—"} • Order ID: {order.order_id}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          Est: {estimatedPouches || 0} pouches • Boxes: {estimatedBoxes || 0} • Actual:{" "}
-                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • Exp: {expiryUi}
+                          Est: {estimatedPouches || 0} pouches • Est boxes: {estimatedBoxes || 0} • Actual pouches:{" "}
+                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • Actual boxes:{" "}
+                          {inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw} • Exp: {expiryUi}
                         </Typography>
                       </Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -393,8 +413,8 @@ function JuiceHandlePage() {
                           label="Estimated pouches"
                           size="small"
                           type="number"
-                          value={inlineEstimatedRaw}
-                          onChange={(e) => handleInlineChange(order.order_id, "estimated_pouches", e.target.value)}
+                          value={estimatedPouches || 0}
+                          InputProps={{ readOnly: true }}
                           fullWidth
                         />
                       </Grid>
@@ -413,8 +433,18 @@ function JuiceHandlePage() {
                           label="Estimated boxes"
                           size="small"
                           type="number"
-                          value={inlineBoxesRaw}
-                          onChange={(e) => handleInlineChange(order.order_id, "estimated_boxes", e.target.value)}
+                          value={estimatedBoxes || 0}
+                          InputProps={{ readOnly: true }}
+                          fullWidth
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <TextField
+                          label="Actual boxes"
+                          size="small"
+                          type="number"
+                          value={inlineActualBoxesRaw}
+                          onChange={(e) => handleInlineChange(order.order_id, "actual_boxes", e.target.value)}
                           fullWidth
                         />
                       </Grid>
@@ -472,6 +502,18 @@ function JuiceHandlePage() {
               );
             })}
           </Stack>
+
+          {hasMore && (
+            <Stack alignItems="center" sx={{ mt: 2 }}>
+              <Button
+                variant="outlined"
+                onClick={() => fetchProcessingOrders({ page: page + 1, append: true })}
+                disabled={loadingOrders}
+              >
+                {loadingOrders ? "Loading..." : "Load more"}
+              </Button>
+            </Stack>
+          )}
 
           <Snackbar
             open={!!snackbarMsg}

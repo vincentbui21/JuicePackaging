@@ -410,9 +410,41 @@ async function getOrdersByStatus(status) {
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
         WHERE o.status = ?
+        ORDER BY o.created_at ASC
     `, [status]);
 
     return rows;
+}
+
+async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
+    const parsedPage = Number(page) || 1;
+    const parsedLimit = Number(limit) || 20;
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const [[countRow]] = await pool.query(
+        `SELECT COUNT(*) AS total FROM Orders WHERE status = ?`,
+        [status]
+    );
+
+    const [rows] = await pool.query(`
+        SELECT 
+            o.order_id,
+            o.weight_kg,
+            o.status,
+            o.boxes_count,
+            o.pouches_count,
+            o.actual_pouches,
+            o.created_at,
+            c.name,
+            c.city
+        FROM Orders o
+        JOIN Customers c ON o.customer_id = c.customer_id
+        WHERE o.status = ?
+        ORDER BY o.created_at ASC
+        LIMIT ? OFFSET ?
+    `, [status, parsedLimit, offset]);
+
+    return { rows, total: Number(countRow?.total || 0) };
 }
 
 async function getPalletsByLocation(location, page, limit) {
@@ -623,8 +655,9 @@ async function updateOrderInfo(order_id, data = {}) {
   if (data.weight_kg != null)       { sets.push('weight_kg = ?');     vals.push(Number(data.weight_kg) || 0); }
 
   // UI sends these:
+  if (data.actual_boxes != null)      { sets.push('boxes_count = ?');   vals.push(Number(data.actual_boxes) || 0); }
+  else if (data.estimated_boxes != null) { sets.push('boxes_count = ?'); vals.push(Number(data.estimated_boxes) || 0); }
   if (data.estimated_pouches != null) { sets.push('pouches_count = ?'); vals.push(Number(data.estimated_pouches) || 0); }
-  if (data.estimated_boxes != null)   { sets.push('boxes_count = ?');   vals.push(Number(data.estimated_boxes) || 0); }
   if (data.actual_pouches != null)    { sets.push('actual_pouches = ?'); vals.push(Number(data.actual_pouches) || 0); }
 
   // If you also allow editing notes, etc., add them here similarly.
@@ -2181,6 +2214,157 @@ async function getAdminReportRows({ startDate, endDate, cities = [] } = {}) {
   }));
 }
 
+async function getCostCenters() {
+  const [rows] = await pool.query(
+    `
+    SELECT center_id, name, category, created_at, updated_at
+    FROM CostCenters
+    ORDER BY name ASC
+    `
+  );
+  return rows.map((row) => ({
+    center_id: row.center_id,
+    name: row.name,
+    category: row.category,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+}
+
+async function createCostCenter({ name, category }) {
+  const [result] = await pool.query(
+    "INSERT INTO CostCenters (name, category) VALUES (?, ?)",
+    [name, category]
+  );
+  const [rows] = await pool.query(
+    "SELECT center_id, name, category, created_at, updated_at FROM CostCenters WHERE center_id = ?",
+    [result.insertId]
+  );
+  return rows[0] || null;
+}
+
+async function updateCostCenter(centerId, { name, category }) {
+  const fields = [];
+  const values = [];
+  if (name != null) {
+    fields.push("name = ?");
+    values.push(name);
+  }
+  if (category != null) {
+    fields.push("category = ?");
+    values.push(category);
+  }
+  if (!fields.length) return null;
+
+  values.push(centerId);
+  await pool.query(
+    `UPDATE CostCenters SET ${fields.join(", ")} WHERE center_id = ?`,
+    values
+  );
+  const [rows] = await pool.query(
+    "SELECT center_id, name, category, created_at, updated_at FROM CostCenters WHERE center_id = ?",
+    [centerId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteCostCenter(centerId) {
+  await pool.query("DELETE FROM CostCenters WHERE center_id = ?", [centerId]);
+}
+
+async function getCostEntries({ startDate, endDate } = {}) {
+  const params = [];
+  const filters = [];
+  if (startDate) {
+    filters.push("ce.incurred_date >= ?");
+    params.push(startDate);
+  }
+  if (endDate) {
+    filters.push("ce.incurred_date <= ?");
+    params.push(endDate);
+  }
+  const whereSql = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+  const [rows] = await pool.query(
+    `
+    SELECT
+      ce.entry_id,
+      ce.center_id,
+      ce.amount,
+      ce.incurred_date,
+      ce.notes,
+      cc.name AS center_name,
+      cc.category AS center_category
+    FROM CostEntries ce
+    JOIN CostCenters cc ON cc.center_id = ce.center_id
+    ${whereSql}
+    ORDER BY ce.incurred_date DESC, ce.entry_id DESC
+    `,
+    params
+  );
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || ""));
+  return rows.map((row) => ({
+    entry_id: row.entry_id,
+    center_id: row.center_id,
+    center_name: row.center_name,
+    center_category: row.center_category,
+    amount: Number(Number(row.amount || 0).toFixed(2)),
+    incurred_date: toDateStr(row.incurred_date),
+    notes: row.notes || "",
+  }));
+}
+
+async function createCostEntry({ centerId, amount, incurredDate, notes }) {
+  const [result] = await pool.query(
+    "INSERT INTO CostEntries (center_id, amount, incurred_date, notes) VALUES (?, ?, ?, ?)",
+    [centerId, amount, incurredDate, notes || null]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT
+      ce.entry_id,
+      ce.center_id,
+      ce.amount,
+      ce.incurred_date,
+      ce.notes,
+      cc.name AS center_name,
+      cc.category AS center_category
+    FROM CostEntries ce
+    JOIN CostCenters cc ON cc.center_id = ce.center_id
+    WHERE ce.entry_id = ?
+    `,
+    [result.insertId]
+  );
+  return rows[0] || null;
+}
+
+async function updateCostEntry(entryId, { centerId, amount, incurredDate, notes }) {
+  await pool.query(
+    "UPDATE CostEntries SET center_id = ?, amount = ?, incurred_date = ?, notes = ? WHERE entry_id = ?",
+    [centerId, amount, incurredDate, notes || null, entryId]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT
+      ce.entry_id,
+      ce.center_id,
+      ce.amount,
+      ce.incurred_date,
+      ce.notes,
+      cc.name AS center_name,
+      cc.category AS center_category
+    FROM CostEntries ce
+    JOIN CostCenters cc ON cc.center_id = ce.center_id
+    WHERE ce.entry_id = ?
+    `,
+    [entryId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteCostEntry(entryId) {
+  await pool.query("DELETE FROM CostEntries WHERE entry_id = ?", [entryId]);
+}
+
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -2195,6 +2379,7 @@ module.exports = {
     updateCustomerData,
     get_crates_by_customer,
     getOrdersByStatus,
+    getOrdersByStatusPaged,
     markOrderAsDone,
     updateOrderInfo,
     deleteOrder,
@@ -2253,6 +2438,14 @@ module.exports = {
     getProductionDayBoundaries,
     getAdminReportRows,
     pctChange,
+    getCostCenters,
+    createCostCenter,
+    updateCostCenter,
+    deleteCostCenter,
+    getCostEntries,
+    createCostEntry,
+    updateCostEntry,
+    deleteCostEntry,
 }
 
 module.exports.pool = pool;

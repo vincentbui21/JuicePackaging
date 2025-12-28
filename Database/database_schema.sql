@@ -99,6 +99,34 @@ CREATE TABLE `Orders` (
     CONSTRAINT `Orders_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `Customers` (`customer_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Cost centers table
+DROP TABLE IF EXISTS `CostCenters`;
+CREATE TABLE `CostCenters` (
+    `center_id` int(11) NOT NULL AUTO_INCREMENT,
+    `name` varchar(255) NOT NULL,
+    `category` enum('direct','overhead') NOT NULL DEFAULT 'direct',
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`center_id`),
+    UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cost entries table
+DROP TABLE IF EXISTS `CostEntries`;
+CREATE TABLE `CostEntries` (
+    `entry_id` int(11) NOT NULL AUTO_INCREMENT,
+    `center_id` int(11) NOT NULL,
+    `amount` decimal(10,2) NOT NULL,
+    `incurred_date` date NOT NULL,
+    `notes` text DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`entry_id`),
+    KEY `idx_cost_entries_date` (`incurred_date`),
+    KEY `idx_cost_entries_center_id` (`center_id`),
+    CONSTRAINT `CostEntries_ibfk_1` FOREIGN KEY (`center_id`) REFERENCES `CostCenters` (`center_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Shelves table
 DROP TABLE IF EXISTS `Shelves`;
 CREATE TABLE `Shelves` (
@@ -111,3 +139,16 @@ CREATE TABLE `Shelves` (
     `created_at` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`shelf_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+CREATE TABLE IF NOT EXISTS `CostCenters` (
+  `center_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `category` enum('direct','overhead') NOT NULL DEFAULT 'direct',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`center_id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

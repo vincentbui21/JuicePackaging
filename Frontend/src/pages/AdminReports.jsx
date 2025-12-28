@@ -14,10 +14,18 @@ import {
   MenuItem,
   Grid,
   Divider,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  IconButton,
+  Tooltip,
   CircularProgress,
   Alert,
   Snackbar,
 } from "@mui/material";
+import { Edit as EditIcon, Delete as DeleteIcon, Close as CloseIcon } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, ResponsiveContainer } from "recharts";
 import { Download, FileText, Save } from "lucide-react";
@@ -68,6 +76,17 @@ const formatCurrency = (value) => {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 
+const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`;
+
+const escapeHtml = (value) => (
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+);
+
 const KpiCard = ({ title, value, subtext }) => (
   <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
     <CardContent>
@@ -92,8 +111,29 @@ export default function AdminReports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saveNotice, setSaveNotice] = useState(false);
+  const [costCenters, setCostCenters] = useState([]);
+  const [costEntries, setCostEntries] = useState([]);
+  const [centerForm, setCenterForm] = useState({ name: "", category: "direct" });
+  const [editingCenterId, setEditingCenterId] = useState(null);
+  const [entryForm, setEntryForm] = useState({ center_id: "", amount: "", incurred_date: "", notes: "" });
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
 
-  const report = useMemo(() => buildAdminReport(rows), [rows]);
+  const costTotals = useMemo(() => {
+    const totals = { direct: 0, overhead: 0, total: 0 };
+    costEntries.forEach((entry) => {
+      const amount = Number(entry.amount || 0);
+      if (entry.center_category === "overhead") {
+        totals.overhead += amount;
+      } else {
+        totals.direct += amount;
+      }
+    });
+    totals.total = totals.direct + totals.overhead;
+    return totals;
+  }, [costEntries]);
+
+  const report = useMemo(() => buildAdminReport(rows, costTotals), [rows, costTotals]);
 
   useEffect(() => {
     const saved = localStorage.getItem("adminReportsView");
@@ -124,14 +164,63 @@ export default function AdminReports() {
     const loadCities = async () => {
       try {
         const { data } = await api.get("/cities");
-        const list = Array.isArray(data) ? data.map((c) => c.name).filter(Boolean) : [];
-        setCityOptions(list);
+        const list = Array.isArray(data)
+          ? data
+              .map((city) => {
+                if (typeof city === "string") return city;
+                return city?.name || city?.location || city?.city || "";
+              })
+              .filter(Boolean)
+          : [];
+        const unique = Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+        setCityOptions(unique);
       } catch (err) {
         console.error("Failed to load cities", err);
       }
     };
     loadCities();
   }, []);
+
+  const showToast = (message, severity = "success") => {
+    setToast({ open: true, message, severity });
+  };
+
+  const loadCostCenters = async () => {
+    try {
+      const { data } = await api.get("/cost-centers");
+      const list = Array.isArray(data) ? data : [];
+      setCostCenters(list);
+      setEntryForm((prev) => {
+        if (prev.center_id || !list.length) return prev;
+        return { ...prev, center_id: list[0].center_id };
+      });
+    } catch (err) {
+      console.error("Failed to load cost centers", err);
+      showToast("Failed to load cost centers", "error");
+    }
+  };
+
+  const loadCostEntries = async () => {
+    try {
+      const params = {};
+      if (startDate) params.start = startDate;
+      if (endDate) params.end = endDate;
+      const { data } = await api.get("/cost-entries", { params });
+      setCostEntries(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load cost entries", err);
+      showToast("Failed to load cost entries", "error");
+    }
+  };
+
+  useEffect(() => {
+    loadCostCenters();
+  }, []);
+
+  useEffect(() => {
+    if (!startDate || !endDate) return;
+    loadCostEntries();
+  }, [startDate, endDate]);
 
   useEffect(() => {
     const loadReport = async () => {
@@ -155,6 +244,141 @@ export default function AdminReports() {
     loadReport();
   }, [startDate, endDate, selectedCities]);
 
+  useEffect(() => {
+    if (!entryForm.incurred_date && endDate) {
+      setEntryForm((prev) => ({ ...prev, incurred_date: endDate }));
+    }
+  }, [endDate, entryForm.incurred_date]);
+
+  const resetCenterForm = () => {
+    setCenterForm({ name: "", category: "direct" });
+    setEditingCenterId(null);
+  };
+
+  const resetEntryForm = () => {
+    setEntryForm((prev) => ({
+      center_id: prev.center_id || (costCenters[0]?.center_id ?? ""),
+      amount: "",
+      incurred_date: endDate || "",
+      notes: "",
+    }));
+    setEditingEntryId(null);
+  };
+
+  const handleSaveCenter = async () => {
+    const trimmedName = centerForm.name.trim();
+    if (!trimmedName) {
+      showToast("Cost center name is required", "error");
+      return;
+    }
+    try {
+      if (editingCenterId) {
+        await api.put(`/cost-centers/${editingCenterId}`, {
+          name: trimmedName,
+          category: centerForm.category,
+        });
+        showToast("Cost center updated");
+      } else {
+        await api.post("/cost-centers", {
+          name: trimmedName,
+          category: centerForm.category,
+        });
+        showToast("Cost center added");
+      }
+      resetCenterForm();
+      await loadCostCenters();
+    } catch (err) {
+      console.error("Failed to save cost center", err);
+      showToast("Failed to save cost center", "error");
+    }
+  };
+
+  const handleEditCenter = (center) => {
+    setEditingCenterId(center.center_id);
+    setCenterForm({ name: center.name || "", category: center.category || "direct" });
+  };
+
+  const handleDeleteCenter = async (centerId) => {
+    const confirmed = window.confirm("Delete this cost center? All related entries will be removed.");
+    if (!confirmed) return;
+    try {
+      await api.delete(`/cost-centers/${centerId}`);
+      showToast("Cost center deleted");
+      if (editingCenterId === centerId) resetCenterForm();
+      await loadCostCenters();
+      await loadCostEntries();
+    } catch (err) {
+      console.error("Failed to delete cost center", err);
+      showToast("Failed to delete cost center", "error");
+    }
+  };
+
+  const handleSaveEntry = async () => {
+    const centerId = Number(entryForm.center_id);
+    const amountNum = Number(entryForm.amount);
+    const dateStr = String(entryForm.incurred_date || "").trim();
+    if (!Number.isFinite(centerId)) {
+      showToast("Select a cost center", "error");
+      return;
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      showToast("Amount must be greater than 0", "error");
+      return;
+    }
+    if (!dateStr) {
+      showToast("Date is required", "error");
+      return;
+    }
+    try {
+      if (editingEntryId) {
+        await api.put(`/cost-entries/${editingEntryId}`, {
+          center_id: centerId,
+          amount: Number(amountNum.toFixed(2)),
+          incurred_date: dateStr,
+          notes: entryForm.notes,
+        });
+        showToast("Cost entry updated");
+      } else {
+        await api.post("/cost-entries", {
+          center_id: centerId,
+          amount: Number(amountNum.toFixed(2)),
+          incurred_date: dateStr,
+          notes: entryForm.notes,
+        });
+        showToast("Cost entry added");
+      }
+      resetEntryForm();
+      await loadCostEntries();
+    } catch (err) {
+      console.error("Failed to save cost entry", err);
+      showToast("Failed to save cost entry", "error");
+    }
+  };
+
+  const handleEditEntry = (entry) => {
+    setEditingEntryId(entry.entry_id);
+    setEntryForm({
+      center_id: entry.center_id,
+      amount: entry.amount ?? "",
+      incurred_date: entry.incurred_date || "",
+      notes: entry.notes || "",
+    });
+  };
+
+  const handleDeleteEntry = async (entryId) => {
+    const confirmed = window.confirm("Delete this cost entry?");
+    if (!confirmed) return;
+    try {
+      await api.delete(`/cost-entries/${entryId}`);
+      showToast("Cost entry deleted");
+      if (editingEntryId === entryId) resetEntryForm();
+      await loadCostEntries();
+    } catch (err) {
+      console.error("Failed to delete cost entry", err);
+      showToast("Failed to delete cost entry", "error");
+    }
+  };
+
   const handleExportCsv = () => {
     const headers = [
       "Date",
@@ -166,6 +390,7 @@ export default function AdminReports() {
       "Unit price (€ / pouch)",
       "Revenue (€)",
       "Direct cost (€)",
+      "Overhead / Expenses (€)",
       "Gross profit (€)",
       "Gross margin (%)",
     ];
@@ -186,6 +411,7 @@ export default function AdminReports() {
       r.unit_price,
       r.revenue,
       r.direct_cost,
+      "",
       r.gross_profit,
       r.gross_margin_pct,
     ]));
@@ -200,6 +426,7 @@ export default function AdminReports() {
       "",
       report.totals.revenue,
       report.totals.direct_cost,
+      report.totals.overhead_cost,
       report.totals.gross_profit,
       report.totals.gross_margin_pct,
     ]);
@@ -214,9 +441,124 @@ export default function AdminReports() {
     URL.revokeObjectURL(url);
   };
 
+  const buildPdfHtml = () => {
+    const title = "Apple Juice Production & Financial Report";
+    const rangeText = `${startDate || "—"} → ${endDate || "—"}`;
+    const cityText = selectedCities.length ? selectedCities.join(", ") : "All cities";
+    const rowsHtml = report.rows.length
+      ? report.rows.map((r) => (
+        `<tr>
+          <td>${escapeHtml(r.production_date || "")}</td>
+          <td>${escapeHtml(r.city || "")}</td>
+          <td>${escapeHtml(r.customer_name || "")}</td>
+          <td>${escapeHtml(r.order_id || "")}</td>
+          <td class="num">${escapeHtml(formatNumber(r.pouches_produced))}</td>
+          <td class="num">${escapeHtml(formatNumber(r.kilos))}</td>
+          <td class="num">${escapeHtml(formatCurrency(r.unit_price))}</td>
+          <td class="num">${escapeHtml(formatCurrency(r.revenue))}</td>
+          <td class="num">${escapeHtml(formatCurrency(r.direct_cost))}</td>
+          <td class="num"></td>
+          <td class="num">${escapeHtml(formatCurrency(r.gross_profit))}</td>
+          <td class="num">${escapeHtml(formatPercent(r.gross_margin_pct))}</td>
+        </tr>`
+      )).join("")
+      : `<tr><td colspan="12" class="empty">No data for the selected range.</td></tr>`;
+
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Admin Report ${escapeHtml(startDate || "")} - ${escapeHtml(endDate || "")}</title>
+    <style>
+      @page { margin: 18mm; }
+      body { font-family: "Arial", sans-serif; color: #222; }
+      h1 { font-size: 20px; margin: 0 0 6px; }
+      h2 { font-size: 14px; margin: 18px 0 8px; }
+      .meta { font-size: 12px; color: #555; margin-bottom: 12px; }
+      .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px; font-size: 12px; }
+      .summary strong { display: block; font-size: 13px; color: #111; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th, td { border: 1px solid #ddd; padding: 6px; vertical-align: top; }
+      th { background: #f4f6f8; text-align: left; }
+      td.num, th.num { text-align: right; }
+      .totals td { font-weight: bold; background: #fafafa; }
+      .empty { text-align: center; padding: 20px 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">Date range: ${escapeHtml(rangeText)} · Cities: ${escapeHtml(cityText)}</div>
+
+    <h2>Summary</h2>
+    <div class="summary">
+      <div><span>Total kilos</span><strong>${escapeHtml(formatNumber(report.totals.kilos))} kg</strong></div>
+      <div><span>Total pouches</span><strong>${escapeHtml(formatNumber(report.totals.pouches))}</strong></div>
+      <div><span>Revenue</span><strong>${escapeHtml(formatCurrency(report.totals.revenue))}</strong></div>
+      <div><span>Direct cost</span><strong>${escapeHtml(formatCurrency(report.totals.direct_cost))}</strong></div>
+      <div><span>Overhead / expenses</span><strong>${escapeHtml(formatCurrency(report.totals.overhead_cost))}</strong></div>
+      <div><span>Total costs</span><strong>${escapeHtml(formatCurrency(report.totals.total_costs))}</strong></div>
+      <div><span>Gross profit</span><strong>${escapeHtml(formatCurrency(report.totals.gross_profit))}</strong></div>
+      <div><span>Gross margin</span><strong>${escapeHtml(formatPercent(report.totals.gross_margin_pct))}</strong></div>
+      <div><span>Avg order value</span><strong>${escapeHtml(formatCurrency(report.totals.avg_order_value))}</strong></div>
+      <div><span>Yield</span><strong>${escapeHtml(formatPercent(report.totals.yield_pct))}</strong></div>
+      <div><span>Top city</span><strong>${escapeHtml(report.topCity || "—")}</strong></div>
+    </div>
+
+    <h2>Detailed Orders</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>City</th>
+          <th>Customer name</th>
+          <th>Order ID</th>
+          <th class="num">Pouches</th>
+          <th class="num">Kilos</th>
+          <th class="num">Unit price</th>
+          <th class="num">Revenue</th>
+          <th class="num">Direct cost</th>
+          <th class="num">Overhead</th>
+          <th class="num">Gross profit</th>
+          <th class="num">Gross margin</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+        <tr class="totals">
+          <td>Totals</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td class="num">${escapeHtml(formatNumber(report.totals.pouches))}</td>
+          <td class="num">${escapeHtml(formatNumber(report.totals.kilos))}</td>
+          <td></td>
+          <td class="num">${escapeHtml(formatCurrency(report.totals.revenue))}</td>
+          <td class="num">${escapeHtml(formatCurrency(report.totals.direct_cost))}</td>
+          <td class="num">${escapeHtml(formatCurrency(report.totals.overhead_cost))}</td>
+          <td class="num">${escapeHtml(formatCurrency(report.totals.gross_profit))}</td>
+          <td class="num">${escapeHtml(formatPercent(report.totals.gross_margin_pct))}</td>
+        </tr>
+      </tbody>
+    </table>
+    <script>
+      window.onload = () => {
+        window.focus();
+        window.print();
+      };
+    </script>
+  </body>
+</html>`;
+  };
+
   const handleExportPdf = () => {
-    // TODO: plug into a PDF export utility if/when one is added.
-    alert("PDF export is not available yet.");
+    const popup = window.open("", "_blank", "width=1200,height=900");
+    if (!popup) {
+      alert("Please allow pop-ups to export the PDF.");
+      return;
+    }
+    popup.document.open();
+    popup.document.write(buildPdfHtml());
+    popup.document.close();
   };
 
   const handleSaveView = () => {
@@ -276,7 +618,7 @@ export default function AdminReports() {
       type: "number",
       minWidth: 120,
       flex: 0.85,
-      valueFormatter: ({ value }) => `${Number(value || 0).toFixed(2)}%`,
+      valueFormatter: ({ value }) => formatPercent(value),
     },
   ]), []);
 
@@ -352,11 +694,19 @@ export default function AdminReports() {
                 label="City"
                 multiple
                 value={selectedCities}
-                onChange={(e) => setSelectedCities(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedCities(typeof value === "string" ? value.split(",") : value);
+                }}
                 renderValue={(selected) => (
                   selected.length ? selected.join(", ") : "All cities"
                 )}
               >
+                {cityOptions.length === 0 && (
+                  <MenuItem disabled value="">
+                    No cities available
+                  </MenuItem>
+                )}
                 {cityOptions.map((city) => (
                   <MenuItem key={city} value={city}>
                     {city}
@@ -437,50 +787,263 @@ export default function AdminReports() {
             </CardContent>
           </Card>
 
-          <Grid container spacing={2}>
-            <Grid item xs={12} lg={6}>
-              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-                <CardContent>
-                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                    Production vs Sales Over Time
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+            <CardContent>
+              <Stack spacing={2}>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  alignItems={{ xs: "flex-start", sm: "center" }}
+                  justifyContent="space-between"
+                  spacing={1}
+                >
+                  <Typography variant="subtitle1" fontWeight={800}>
+                    Cost Centers & Expenses
                   </Typography>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={report.timeSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <ReTooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="kilos" stroke="#2e7d32" name="Kilos produced" strokeWidth={2} />
-                      <Line type="monotone" dataKey="pouches" stroke="#ef6c00" name="Pouches sold" strokeWidth={2} />
-                      <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Sales revenue (€)" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} lg={6}>
-              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-                <CardContent>
-                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                    Performance by City
-                  </Typography>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={report.citySeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="city" />
-                      <YAxis />
-                      <ReTooltip />
-                      <Legend />
-                      <Bar dataKey="kilos" fill="#2e7d32" name="Kilos produced" />
-                      <Bar dataKey="pouches" fill="#ef6c00" name="Pouches sold" />
-                      <Bar dataKey="revenue" fill="#1976d2" name="Revenue (€)" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Chip size="small" label={`Direct: ${formatCurrency(costTotals.direct)}`} />
+                    <Chip size="small" label={`Overhead: ${formatCurrency(costTotals.overhead)}`} />
+                    <Chip size="small" variant="outlined" label={`Total costs: ${formatCurrency(costTotals.total)}`} />
+                  </Stack>
+                </Stack>
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12} lg={5}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Cost Centers
+                      </Typography>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                        <TextField
+                          label="Center name"
+                          size="small"
+                          value={centerForm.name}
+                          onChange={(e) => setCenterForm((prev) => ({ ...prev, name: e.target.value }))}
+                          fullWidth
+                        />
+                        <FormControl size="small" sx={{ minWidth: 160 }}>
+                          <InputLabel id="center-category-label">Category</InputLabel>
+                          <Select
+                            labelId="center-category-label"
+                            label="Category"
+                            value={centerForm.category}
+                            onChange={(e) => setCenterForm((prev) => ({ ...prev, category: e.target.value }))}
+                          >
+                            <MenuItem value="direct">Direct</MenuItem>
+                            <MenuItem value="overhead">Overhead</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Stack>
+                      <Stack direction="row" spacing={1}>
+                        <Button variant="contained" onClick={handleSaveCenter}>
+                          {editingCenterId ? "Update center" : "Add center"}
+                        </Button>
+                        {editingCenterId && (
+                          <Button variant="text" onClick={resetCenterForm} startIcon={<CloseIcon />}>
+                            Cancel
+                          </Button>
+                        )}
+                      </Stack>
+                      <Divider />
+                      {costCenters.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No cost centers yet.
+                        </Typography>
+                      ) : (
+                        <Stack spacing={1}>
+                          {costCenters.map((center) => (
+                            <Stack
+                              key={center.center_id}
+                              direction="row"
+                              alignItems="center"
+                              justifyContent="space-between"
+                              sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+                            >
+                              <Stack spacing={0.5}>
+                                <Typography variant="body2" fontWeight={600}>
+                                  {center.name}
+                                </Typography>
+                                <Chip
+                                  size="small"
+                                  label={center.category === "overhead" ? "Overhead / expense" : "Direct cost"}
+                                />
+                              </Stack>
+                              <Stack direction="row" spacing={0.5}>
+                                <Tooltip title="Edit">
+                                  <IconButton size="small" onClick={() => handleEditCenter(center)}>
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete">
+                                  <IconButton size="small" onClick={() => handleDeleteCenter(center.center_id)}>
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Stack>
+                            </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                    </Stack>
+                  </Grid>
+                  <Grid item xs={12} lg={7}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Costs / Expenses
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Entries are filtered to the selected date range.
+                      </Typography>
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
+                        <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
+                          <InputLabel id="entry-center-label">Cost center</InputLabel>
+                          <Select
+                            labelId="entry-center-label"
+                            label="Cost center"
+                            value={entryForm.center_id}
+                            onChange={(e) => setEntryForm((prev) => ({ ...prev, center_id: e.target.value }))}
+                          >
+                            {costCenters.map((center) => (
+                              <MenuItem key={center.center_id} value={center.center_id}>
+                                {center.name} ({center.category})
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <TextField
+                          label="Amount (€)"
+                          size="small"
+                          type="number"
+                          value={entryForm.amount}
+                          onChange={(e) => setEntryForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          inputProps={{ min: 0, step: "0.01" }}
+                        />
+                        <TextField
+                          label="Date"
+                          size="small"
+                          type="date"
+                          value={entryForm.incurred_date}
+                          onChange={(e) => setEntryForm((prev) => ({ ...prev, incurred_date: e.target.value }))}
+                          InputLabelProps={{ shrink: true }}
+                        />
+                        <TextField
+                          label="Notes"
+                          size="small"
+                          value={entryForm.notes}
+                          onChange={(e) => setEntryForm((prev) => ({ ...prev, notes: e.target.value }))}
+                          sx={{ flex: 1 }}
+                        />
+                      </Stack>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="contained"
+                          onClick={handleSaveEntry}
+                          disabled={!costCenters.length}
+                        >
+                          {editingEntryId ? "Update entry" : "Add entry"}
+                        </Button>
+                        {editingEntryId && (
+                          <Button variant="text" onClick={resetEntryForm} startIcon={<CloseIcon />}>
+                            Cancel
+                          </Button>
+                        )}
+                      </Stack>
+                      <Divider />
+                      <Table size="small" sx={{ tableLayout: "fixed" }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ width: 110 }}>Date</TableCell>
+                            <TableCell sx={{ width: 170 }}>Center</TableCell>
+                            <TableCell sx={{ width: 130 }}>Category</TableCell>
+                            <TableCell align="right" sx={{ width: 110 }}>Amount</TableCell>
+                            <TableCell>Notes</TableCell>
+                            <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {costEntries.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} align="center">
+                                <Typography variant="body2" color="text.secondary">
+                                  No cost entries for this range.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            costEntries.map((entry) => (
+                              <TableRow key={entry.entry_id}>
+                                <TableCell>{entry.incurred_date}</TableCell>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.center_name}</TableCell>
+                                <TableCell>
+                                  <Chip
+                                    size="small"
+                                    label={entry.center_category === "overhead" ? "Overhead" : "Direct"}
+                                  />
+                                </TableCell>
+                                <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.notes || "—"}</TableCell>
+                                <TableCell align="right">
+                                  <Tooltip title="Edit">
+                                    <IconButton size="small" onClick={() => handleEditEntry(entry)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete">
+                                    <IconButton size="small" onClick={() => handleDeleteEntry(entry.entry_id)}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </Stack>
+                  </Grid>
+                </Grid>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
+                Production vs Sales Over Time
+              </Typography>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={report.timeSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <ReTooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="kilos" stroke="#2e7d32" name="Kilos produced" strokeWidth={2} />
+                  <Line type="monotone" dataKey="pouches" stroke="#ef6c00" name="Pouches sold" strokeWidth={2} />
+                  <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Sales revenue (€)" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
+                Performance by City
+              </Typography>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={report.citySeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="city" />
+                  <YAxis />
+                  <ReTooltip />
+                  <Legend />
+                  <Bar dataKey="kilos" fill="#2e7d32" name="Kilos produced" />
+                  <Bar dataKey="pouches" fill="#ef6c00" name="Pouches sold" />
+                  <Bar dataKey="revenue" fill="#1976d2" name="Revenue (€)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
           <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
             <CardContent>
@@ -554,6 +1117,20 @@ export default function AdminReports() {
         onClose={() => setSaveNotice(false)}
         message="View saved"
       />
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+      >
+        <Alert
+          onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+          severity={toast.severity}
+          sx={{ width: "100%" }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
     </Stack>
   );
 }
