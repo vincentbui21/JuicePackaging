@@ -20,6 +20,7 @@
     "@mui/x-data-grid": "^8.5.3",
     "@mui/x-date-pickers": "^8.5.2",
     "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",

@@ -32,6 +32,11 @@ const management = [
   { label: "Delete Bin", to: "/delete-bin", icon: <Archive size={18} /> },
 ];
 
+const createNew = [
+  { label: "Create Pallet", to: "/create-pallet", icon: <Plus size={18} /> },
+  { label: "Create Shelf", to: "/create-shelve", icon: <Plus size={18} /> },
+];
+
 const adminItems = [
   { label: "Admin Reports", to: "/admin/reports", icon: <BarChart3 size={18} /> },
 ];
@@ -158,11 +163,8 @@ export default function AppSidebar({
       <Box sx={{ overflowY: "auto", overflowX: "hidden", pb: 1, flexGrow: 1 }}>
         <Section title="Operations" items={operations} />
         <Section title="Management" items={management} />
-<<<<<<< HEAD
         <Section title="Create New" items={createNew} />
         <Section title="Admin" items={adminItems} />
-=======
->>>>>>> a145e9f5367d53783b63cdbd08bcce2c9d7b0d8b
       </Box>
 
       <Divider />
