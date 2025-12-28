@@ -196,26 +196,31 @@ async function getCustomers(customerName, page, limit) {
         const parsedLimit = limit != null ? parseInt(limit, 10) : 10;
         const offset = (parsedPage - 1) * parsedLimit;
 
-        const where = customerName ? `WHERE c.name LIKE ?` : '';
-        const params = customerName ? [`%${customerName}%`] : [];
+        let where = 'WHERE c.is_deleted = false';
+        const params = [];
 
-        // Get total count
-        const countQuery = `SELECT COUNT(*) AS total FROM Orders AS o LEFT JOIN Customers AS c ON o.customer_id = c.customer_id ${where}`;
+        if (customerName) {
+            where += ` AND c.name LIKE ?`;
+            params.push(`%${customerName}%`);
+        }
+
+        // Get total count based on customers
+        const countQuery = `SELECT COUNT(*) AS total FROM Customers AS c ${where}`;
         const [[{ total }]] = await connection.query(countQuery, params);
 
-        // Get paginated rows
+        // Get paginated rows, starting from customers
         const dataQuery = `
             SELECT 
-                o.customer_id, o.created_at, o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes,
-                c.name, c.email, c.phone, c.city
-            FROM Orders AS o
-            LEFT JOIN Customers AS c ON o.customer_id = c.customer_id
+                c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
+                o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id
+            FROM Customers AS c
+            LEFT JOIN Orders AS o ON c.customer_id = o.customer_id
             ${where}
-            ORDER BY o.created_at DESC
+            ORDER BY c.created_at DESC
             LIMIT ? OFFSET ?
         `;
 
-        const rows = await connection.query(
+        const [rows] = await connection.query(
             dataQuery,
             [...params, parsedLimit, offset]
         );
@@ -223,17 +228,73 @@ async function getCustomers(customerName, page, limit) {
         connection.release();
 
         return {
-            rows: rows[0],
+            rows: rows,
             total,
         };
     } catch (error) {
-        console.error('Error fetching orders:', error);
+        console.error('Error fetching customers:', error);
         connection.release();
         throw error;
     }
 }
 
 async function delete_customer(customer_id) {
+    const connection = await pool.getConnection();
+    try {
+        const query = `
+            UPDATE Customers
+            SET is_deleted = true, deleted_at = NOW()
+            WHERE customer_id = ?
+        `;
+        await connection.query(query, [customer_id]);
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('Error soft deleting customer:', error);
+        connection.release();
+        return false;
+    }
+}
+
+async function get_deleted_customers() {
+    const connection = await pool.getConnection();
+    try {
+        const query = `
+            SELECT customer_id, name, email, phone, city, deleted_at
+            FROM Customers
+            WHERE is_deleted = true
+            ORDER BY deleted_at DESC
+        `;
+        const [rows] = await connection.query(query);
+        connection.release();
+        return rows;
+    } catch (error) {
+        console.error('Error fetching deleted customers:', error);
+        connection.release();
+        return [];
+    }
+}
+
+async function restore_customer(customer_id) {
+    const connection = await pool.getConnection();
+    try {
+        const query = `
+            UPDATE Customers
+            SET is_deleted = false, deleted_at = NULL
+            WHERE customer_id = ?
+        `;
+        await connection.query(query, [customer_id]);
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('Error restoring customer:', error);
+        connection.release();
+        return false;
+    }
+}
+
+
+async function force_delete_customer(customer_id) {
     const connection = await pool.getConnection();
 
     try {
@@ -686,14 +747,28 @@ async function updateOrderInfo(order_id, data = {}) {
         return rows;
       }
       
-      async function createPallet(location, capacity) {
-        const pallet_id = generateUUID(); // reuse your existing UUID function
-        await pool.query(
-          `INSERT INTO Pallets (pallet_id, location, status, capacity, holding, created_at)
-           VALUES (?, ?, 'available', ?, 0, NOW())`,
-          [pallet_id, location, capacity]
-        );
-        return pallet_id;
+      async function createPallet(location, capacity, palletName = null) {
+        const connection = await pool.getConnection();
+        try {
+          // Auto-number within the same location if no name given
+          const [[{ cnt }]] = await connection.query(
+            'SELECT COUNT(*) AS cnt FROM Pallets WHERE location = ?',
+            [location]
+          );
+          const pallet_name = palletName && palletName.trim()
+            ? palletName.trim()
+            : `${location} - Pallet ${cnt + 1}`;
+
+          const pallet_id = generateUUID();
+          await connection.query(
+            `INSERT INTO Pallets (pallet_id, location, status, capacity, holding, pallet_name, created_at)
+             VALUES (?, ?, 'available', ?, 0, ?, NOW())`,
+            [pallet_id, location, capacity, pallet_name]
+          );
+          return { pallet_id, pallet_name };
+        } finally {
+          connection.release();
+        }
       }
       
       async function deleteShelf(shelf_id) {
@@ -865,6 +940,7 @@ async function searchOrdersWithShelfInfo(query) {
 
       /* prefer persisted count; otherwise count distinct boxes for this order */
       COALESCE(o.boxes_count, COUNT(DISTINCT b.box_id)) AS box_count,
+      o.pouches_count,
 
       /* shelf via pallet OR via box (Kuopio) */
       COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name))   AS shelf_name,
@@ -2376,6 +2452,9 @@ module.exports = {
     update_order_status, 
     getCustomers,
     delete_customer,
+    force_delete_customer,
+    get_deleted_customers,
+    restore_customer,
     updateCustomerData,
     get_crates_by_customer,
     getOrdersByStatus,
@@ -2410,7 +2489,7 @@ module.exports = {
     findOrderIdForBox,
     getScanInfoByBoxId,
     updateBoxesCountForOrder,
-    assignBoxesToPallet,
+assignBoxesToPallet,
     updatePalletHolding,
     getBoxesOnPallet,
     markOrdersOnPalletReady,

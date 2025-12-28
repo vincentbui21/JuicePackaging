@@ -19,7 +19,7 @@ const settingsFilePath = path.join(__dirname, "default-setting.txt");
 
 const io = new Server(server, {
   cors: {
-    origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+    origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
@@ -30,7 +30,7 @@ app.set('io', io);
 
 // REST API CORS
 app.use(cors({
-  origin: ['https://system.mehustaja.fi', 'http://localhost:5173'],
+  origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -400,11 +400,47 @@ app.delete('/customer', async (req, res) => {
   const result = await database.delete_customer(customer_id);
 
   if (result) {
-    res.status(200).json({ message: 'Customer and related data deleted successfully.' });
+    res.status(200).json({ message: 'Customer moved to delete bin successfully.' });
   } else {
     res.status(500).json({ message: 'Failed to delete customer.' });
   }
 });
+
+app.get('/deleted-customers', async (req, res) => {
+    const result = await database.get_deleted_customers();
+    if (result) {
+        res.status(200).json(result);
+    } else {
+        res.status(500).json({ message: 'Failed to get deleted customers.' });
+    }
+});
+
+app.post('/restore-customer', async (req, res) => {
+    const { customer_id } = req.body;
+    if (!customer_id) {
+        return res.status(400).json({ message: 'Missing customerID in request body.' });
+    }
+    const result = await database.restore_customer(customer_id);
+    if (result) {
+        res.status(200).json({ message: 'Customer restored successfully.' });
+    } else {
+        res.status(500).json({ message: 'Failed to restore customer.' });
+    }
+});
+
+app.delete('/force-delete-customer', async (req, res) => {
+    const { customer_id } = req.body;
+    if (!customer_id) {
+        return res.status(400).json({ message: 'Missing customerID in request body.' });
+    }
+    const result = await database.force_delete_customer(customer_id);
+    if (result) {
+        res.status(200).json({ message: 'Customer permanently deleted.' });
+    } else {
+        res.status(500).json({ message: 'Failed to permanently delete customer.' });
+    }
+});
+
 
 app.put('/customer', async (req, res) => {
   const { customer_id, customerInfoChange = {}, orderInfoChange = {} } = req.body;
@@ -515,15 +551,15 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
   });
 
   app.post('/pallets', async (req, res) => {
-    const { location, capacity } = req.body;
-    if (!location || !capacity) {
-      return res.status(400).json({ error: "Location and capacity are required" });
+    const { location, capacity = 8, pallet_name } = req.body;
+    if (!location) {
+      return res.status(400).json({ error: "Location is required" });
     }
   
     try {
-      const pallet_id = await database.createPallet(location, capacity);
-      emitActivity('warehouse', `Pallet ${pallet_id} created (${location})`, { pallet_id, location });
-      res.status(201).json({ message: "Pallet created", pallet_id });
+      const result = await database.createPallet(location, capacity, pallet_name);
+      emitActivity('warehouse', `Pallet ${result.pallet_name} created (${location})`, { pallet_id: result.pallet_id, location });
+      res.status(201).json({ message: "Pallet created", pallet_id: result.pallet_id, pallet_name: result.pallet_name });
     } catch (err) {
       console.error("Failed to create pallet:", err);
       res.status(500).json({ error: "Failed to create pallet" });
@@ -575,7 +611,7 @@ app.post('/orders/:order_id/ready', async (req, res) => {
   
   app.get("/orders/pickup", async (req, res) => {
     const { query } = req.query;
-    console.log("Pickup query:", query); 
+    // console.log("Pickup query:", query); 
     try {
       const results = await database.searchOrdersWithShelfInfo(query);
       if (results.length === 0) {
@@ -900,8 +936,8 @@ app.get('/api/shelves/:location', async (req, res) => {
 app.post('/api/shelves', async (req, res) => {
   try {
     const { location, capacity, shelf_name } = req.body;
-    if (!location || capacity == null) {
-      return res.status(400).json({ message: "Location and capacity are required" });
+    if (!location) {
+      return res.status(400).json({ message: "Location is required" });
     }
     const shelf = await database.createShelf(location, capacity, shelf_name);
     emitActivity('warehouse', `Shelf created: ${shelf_name || shelf?.shelf_id} @ ${location}`, {

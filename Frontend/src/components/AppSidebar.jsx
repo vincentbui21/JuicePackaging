@@ -12,7 +12,7 @@ import { useLocation, Link, useNavigate } from "react-router-dom";
 import companyLogo from "../assets/company_logo.png";
 
 const EXPANDED_WIDTH = 260;
-const COLLAPSED_WIDTH = 72;
+const COLLAPSED_WIDTH = 100;
 
 const operations = [
   { label: "Dashboard", to: "/dashboard", icon: <Home size={18} /> },
@@ -25,15 +25,11 @@ const operations = [
 ];
 
 const management = [
-  { label: "Customer Management", to: "/customer-management", icon: <UserCog size={18} /> },
-  { label: "Pallets Management", to: "/pallets-management", icon: <Grid3X3 size={18} /> },
-  { label: "Shelves Management", to: "/shelve-management", icon: <Layers size={18} /> },
-  { label: "Juice Processing Management", to: "/juice-processing-management", icon: <Droplets size={18} /> },
-];
-
-const createNew = [
-  { label: "Create Pallet", to: "/create-pallet", icon: <Plus size={18} /> },
-  { label: "Create Shelf", to: "/create-shelve", icon: <Plus size={18} /> },
+  // { label: "Customer Management", to: "/customer-management", icon: <UserCog size={18} /> },
+  { label: "Shelves & Pallets Management", to: "/shelves-pallets-management", icon: <Grid3X3 size={18} /> },
+  // { label: "Juice Processing Management", to: "/juice-processing-management", icon: <Droplets size={18} /> },
+  { label: "Unified Management", to: "/unified-management", icon: <UserCog size={18} /> },
+  { label: "Delete Bin", to: "/delete-bin", icon: <Archive size={18} /> },
 ];
 
 const adminItems = [
@@ -162,8 +158,11 @@ export default function AppSidebar({
       <Box sx={{ overflowY: "auto", overflowX: "hidden", pb: 1, flexGrow: 1 }}>
         <Section title="Operations" items={operations} />
         <Section title="Management" items={management} />
+<<<<<<< HEAD
         <Section title="Create New" items={createNew} />
         <Section title="Admin" items={adminItems} />
+=======
+>>>>>>> a145e9f5367d53783b63cdbd08bcce2c9d7b0d8b
       </Box>
 
       <Divider />

@@ -1,250 +1,127 @@
-import {
-  Box,
-  Typography,
-  TextField,
-  Paper,
-  List,
-  ListItem,
-  ListItemText,
-  Button,
-  Snackbar,
-  Alert,
-  CircularProgress,
-  Divider,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  IconButton,
-} from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
-import { useState } from "react";
-import api from "../services/axios";
-import DrawerComponent from "../components/drawer";
+import { useEffect, useState, useCallback } from 'react';
+import { DataGrid } from '@mui/x-data-grid';
+import { Box, Button, Stack, Typography, Paper, Snackbar, Alert, CircularProgress } from '@mui/material';
+import api from '../services/axios';
+import DrawerComponent from '../components/drawer';
+import SearchBar from '../components/SearchBar'; // Import the SearchBar component
 
-function PickupPage() {
-  const [search, setSearch] = useState("");
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+export default function PickupPage() {
+    const [orders, setOrders] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+    const [searchTerm, setSearchTerm] = useState(''); // New state for search term
 
-  // selected order + dialog open
-  const [selected, setSelected] = useState(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+    const fetchReadyOrders = useCallback((query = '') => { // Modified to accept a query parameter
+        setLoading(true);
+        api.get(`/orders/pickup?query=${query}`) // Use the query parameter in the API call
+            .then((res) => {
+                const validOrders = Array.isArray(res.data) ? res.data.filter(order => order && order.status === 'Ready for pickup') : [];
+                setOrders(validOrders);
+            })
+            .catch((err) => {
+                console.error('Failed to fetch ready orders:', err);
+                setSnackbar({ open: true, message: 'Failed to fetch orders.', severity: 'error' });
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+    }, []); // Empty dependency array for useCallback
 
-  const [snackbarMsg, setSnackbarMsg] = useState("");
+    useEffect(() => {
+        fetchReadyOrders(searchTerm); // Pass searchTerm to fetchReadyOrders
+    }, [fetchReadyOrders, searchTerm]); // Re-fetch when searchTerm changes
 
-  const handleSearch = async (e) => {
-    const q = e.target.value;
-    setSearch(q);
-    setSelected(null);
-    setDetailsOpen(false);
+    useEffect(() => {
+        console.log('orders from API:', orders);
+    }, [orders]);
 
-    if (!q.trim()) {
-      setResults([]);
-      return;
-    }
+    const handleMarkAsPickedUp = (orderId, customerName) => {
+        if (!orderId) return;
+        api.post(`/orders/${orderId}/pickup`)
+            .then(() => {
+                setSnackbar({ open: true, message: `Order for ${customerName} marked as picked up.`, severity: 'success' });
+                fetchReadyOrders(searchTerm); // Re-fetch with current search term
+            })
+            .catch((err) => {
+                console.error('Failed to confirm pickup:', err);
+                setSnackbar({ open: true, message: 'Failed to update order status.', severity: 'error' });
+            });
+    };
 
-    setLoading(true);
-    try {
-      const res = await api.get(`/orders/pickup?query=${encodeURIComponent(q)}`);
-      setResults(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Search failed", err);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const columns = [
+        { field: 'name', headerName: 'Customer Name', width: 200 },
+        { field: 'phone', headerName: 'Phone', width: 150 },
+        { field: 'city', headerName: 'City', width: 120 },
+        { field: 'box_count', headerName: 'Boxes', type: 'number', width: 90 },
+        { field: 'pouches_count', headerName: 'Pouches', type: 'number', width: 90 },
+        {
+        field: 'shelf_name',
+        headerName: 'Shelf',
+        width: 150,
+        valueGetter: (value, row) => row?.shelf_name ?? 'N/A',
+        },
 
-  const openDetails = (order) => {
-    setSelected(order);
-    setDetailsOpen(true);
-  };
 
-  const closeDetails = () => {
-    setDetailsOpen(false);
-    setSelected(null);
-  };
-
-  const confirmPickup = async () => {
-    if (!selected) return;
-    try {
-      await api.post(`/orders/${selected.order_id}/pickup`);
-      setSnackbarMsg(`Order for ${selected.name} marked as picked up.`);
-      setResults((prev) => prev.filter((r) => r.order_id !== selected.order_id));
-      closeDetails();
-    } catch (err) {
-      console.error("Failed to confirm pickup", err);
-      setSnackbarMsg("Failed to confirm pickup");
-    }
-  };
-
-  return (
-    <>
-      <DrawerComponent />
-
-      <Box
-        sx={{
-          backgroundColor: "#ffffff",
-          minHeight: "90vh",
-          py: 4,
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
-        <Paper
-          elevation={3}
-          sx={{
-            width: "min(90%, 800px)",
-            p: 4,
-            backgroundColor: "#ffffff",
-            borderRadius: 2,
-          }}
-        >
-          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
-            Pickup Confirmation
-          </Typography>
-
-          <Paper
-            elevation={1}
-            sx={{
-              p: 2,
-              backgroundColor: "#fcfcfc",
-              borderRadius: 2,
-              width: "min(600px, 95%)",
-              mx: "auto",
-            }}
-          >
-            <TextField
-              label="Search by Name or Phone"
-              value={search}
-              onChange={handleSearch}
-              fullWidth
-              sx={{ backgroundColor: "white", borderRadius: 1 }}
-            />
-
-            {loading && (
-              <Box mt={2} textAlign="center">
-                <CircularProgress />
-              </Box>
-            )}
-
-            <List>
-              {results.map((res) => {
-                const shelfDisplay = res.shelf_name
-                  ? `${res.shelf_name}${
-                      res.shelf_location || res.city ? ` (${res.shelf_location || res.city})` : ""
-                    }`
-                  : res.shelf_location || "";
-
+        {
+            field: 'actions',
+            headerName: 'Actions',
+            width: 200,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => {
+                if (!params.row) {
+                    return null;
+                }
                 return (
-                  <ListItem
-                    key={res.order_id}
-                    button
-                    onClick={() => openDetails(res)}
-                    sx={{
-                      mt: 1,
-                      backgroundColor: "#fff",
-                      borderRadius: 1,
-                      "&:hover": { backgroundColor: "#f5f5f5" },
-                    }}
-                  >
-                    <ListItemText
-                      primary={`${res.name} (${res.phone})`}
-                      secondary={[
-                        `Status: ${res.status}`,
-                        `City: ${res.city}`,
-                        `Boxes: ${res.box_count}`,
-                        shelfDisplay ? `Shelf: ${shelfDisplay}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" | ")}
-                    />
-                  </ListItem>
+                    <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        onClick={() => handleMarkAsPickedUp(params.row.order_id, params.row.name)}
+                    >
+                        Mark as Picked Up
+                    </Button>
                 );
-              })}
-            </List>
-          </Paper>
-        </Paper>
-      </Box>
+            },
+        },
+    ];
 
-      {/* Details dialog (popup) */}
-      <Dialog open={detailsOpen} onClose={closeDetails} fullWidth maxWidth="sm">
-        <DialogTitle sx={{ pr: 6 }}>
-          Pickup Details
-          <IconButton
-            aria-label="close"
-            onClick={closeDetails}
-            sx={{ position: "absolute", right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
+    return (
+        <>
+            <DrawerComponent />
+            <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
+                <Paper elevation={3} sx={{ width: '100%', maxWidth: '1200px', p: 3 }}>
+                    <Typography variant="h4" sx={{ textAlign: 'center', mb: 3, fontWeight: 'bold' }}>
+                        Pickup Coordination
+                    </Typography>
+                    <SearchBar onSearch={setSearchTerm} /> {/* Integrate the SearchBar */}
+                    {loading && (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
+                            <CircularProgress />
+                        </Box>
+                    )}
+                    <Box sx={{ height: 600, width: '100%' }}>
+                        <DataGrid
+                            rows={orders}
+                            columns={columns}
+                            loading={loading}
+                            getRowId={(row) => row ? row.order_id : Math.random().toString()}
+                            autoHeight={false}
+                        />
+                    </Box>
+                </Paper>
+            </Box>
 
-        <DialogContent dividers>
-          {!selected ? (
-            <Typography>Select an order from the list.</Typography>
-          ) : (
-            <>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                {selected.name} ({selected.phone})
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                {selected.city}
-              </Typography>
-
-              <Divider sx={{ my: 1.5 }} />
-
-              <Typography variant="subtitle2">Order ID</Typography>
-              <Typography variant="body2" gutterBottom>
-                {selected.order_id}
-              </Typography>
-
-              <Typography variant="subtitle2">Status</Typography>
-              <Typography variant="body2" gutterBottom>
-                {selected.status}
-              </Typography>
-
-              <Typography variant="subtitle2">Boxes</Typography>
-              <Typography variant="body2" gutterBottom>
-                {selected.box_count}
-              </Typography>
-
-              {(selected.shelf_name || selected.shelf_location) && (
-                <>
-                  <Typography variant="subtitle2">Shelf</Typography>
-                  <Typography variant="body2" gutterBottom sx={{ fontWeight: "bold", color: "green" }}>
-                    {selected.shelf_name
-                      ? `${selected.shelf_name}${
-                          selected.shelf_location || selected.city
-                            ? ` (${selected.shelf_location || selected.city})`
-                            : ""
-                        }`
-                      : selected.shelf_location}
-                  </Typography>
-                </>
-              )}
-            </>
-          )}
-        </DialogContent>
-
-        <DialogActions>
-          <Button onClick={closeDetails}>Close</Button>
-          {selected?.status === "Ready for pickup" && (
-            <Button variant="contained" color="success" onClick={confirmPickup}>
-              Mark as Picked Up
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar open={!!snackbarMsg} autoHideDuration={4000} onClose={() => setSnackbarMsg("")}>
-        <Alert severity="info" sx={{ width: "100%" }}>
-          {snackbarMsg}
-        </Alert>
-      </Snackbar>
-    </>
-  );
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={6000}
+                onClose={() => setSnackbar({ ...snackbar, open: false })}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+        </>
+    );
 }
-
-export default PickupPage;

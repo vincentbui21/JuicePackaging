@@ -30,7 +30,6 @@ function PalletsManagementPage() {
   const [cities, setCities] = useState([]);
   const [selectedCity, setSelectedCity] = useState("");
 
-  const [capacity, setCapacity] = useState(8);
   const [newCity, setNewCity] = useState("");
 
   const [qrImage, setQrImage] = useState("");
@@ -81,7 +80,7 @@ function PalletsManagementPage() {
 
   const handleCreatePallet = async () => {
     try {
-      await api.post("/pallets", { location: selectedCity, capacity: Number(capacity) || 8 });
+      await api.post("/pallets", { location: selectedCity });
       setSnackbarMsg("Pallet created");
       fetchPallets();
     } catch (err) {
@@ -156,17 +155,18 @@ function PalletsManagementPage() {
     if (!q) return pallets;
     return pallets.filter((p) => {
       const id = String(p.pallet_id || "").toLowerCase();
+      const name = String(p.pallet_name || "").toLowerCase();
       const status = String(p.status || "").toLowerCase();
       const loc = String(p.location || "").toLowerCase();
-      return id.includes(q) || status.includes(q) || loc.includes(q);
+      return id.includes(q) || name.includes(q) || status.includes(q) || loc.includes(q);
     });
   }, [pallets, searchText]);
 
   const columns = [
     { field: "pallet_id", headerName: "Pallet ID", flex: 1.5 },
+    { field: "pallet_name", headerName: "Pallet Name", flex: 1.2 },
     { field: "location", headerName: "City", flex: 1 },
     { field: "status", headerName: "Status", flex: 1 },
-    { field: "capacity", headerName: "Capacity", flex: 0.8 },
     { field: "holding", headerName: "Holding", flex: 0.8 },
     {
       field: "actions",

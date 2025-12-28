@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import company_logo from "../assets/company_logo.png";
 import api from "../services/axios";
+import "../css/LoginPage.css"; // Import the CSS file
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -24,7 +25,22 @@ function LoginPage() {
     <Box sx={{ height: "98vh", display: "flex", justifyContent: "center", alignItems: "center", px: 2 }}>
       <Paper
         elevation={24}
-        sx={{ width: "min(500px, 90%)", minHeight: 420, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 3, borderRadius: 3, border: 2, borderColor: "#c2c2c2", p: 4 }}
+        className="login-paper-animation" // Apply the animation class
+        sx={{
+          width: "min(500px, 90%)",
+          minHeight: 420,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: 3,
+          borderRadius: 3,
+          border: 2,
+          borderColor: "#c2c2c2",
+          p: 4,
+          transform: "translateY(0)", // Ensure base transform for animation
+          opacity: 1, // Ensure base opacity for animation
+        }}
       >
         <img src={company_logo} alt="company logo" width={150} />
 
@@ -38,7 +54,18 @@ function LoginPage() {
           sx={{ width: "60%" }}
         />
 
-        <Button variant="contained" onClick={handleLogin}>Login</Button>
+        <Button
+          variant="contained"
+          onClick={handleLogin}
+          sx={{
+            "&:hover": {
+              transform: "scale(1.05)", // Subtle hover effect
+              transition: "transform 0.2s ease-in-out",
+            },
+          }}
+        >
+          Login
+        </Button>
 
         <Snackbar open={!!error} autoHideDuration={4000} onClose={() => setError("")}>
           <Alert severity="error">{error}</Alert>
