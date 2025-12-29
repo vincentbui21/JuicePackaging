@@ -19,6 +19,8 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tabs,
+  Tab,
   IconButton,
   Tooltip,
   CircularProgress,
@@ -134,8 +136,15 @@ const KpiCard = ({ title, value, subtext }) => (
   </Card>
 );
 
+const TabPanel = ({ value, tab, children }) => (
+  <Box role="tabpanel" hidden={value !== tab} sx={{ pt: 2 }}>
+    {value === tab ? children : null}
+  </Box>
+);
+
 export default function AdminReports() {
   const [preset, setPreset] = useState("month");
+  const [activeTab, setActiveTab] = useState("overview");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [selectedCities, setSelectedCities] = useState([]);
@@ -1348,1022 +1357,1056 @@ export default function AdminReports() {
 
       {!loading && !error && (
         <>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6} lg={3}>
-              <KpiCard
-                title="Total Kilos Produced"
-                value={`${formatNumber(report.totals.kilos)} kg`}
-              />
-            </Grid>
-            <Grid item xs={12} md={6} lg={3}>
-              <KpiCard
-                title="Pouches Produced"
-                value={formatNumber(report.totals.pouches)}
-                subtext={`Average weight per pouch: ${report.totals.avg_weight_per_pouch_g} g`}
-              />
-            </Grid>
-            <Grid item xs={12} md={6} lg={3}>
-              <KpiCard
-                title="Revenue from Pouches"
-                value={formatCurrency(report.totals.revenue)}
-                subtext="Collected: €— | Outstanding: €—"
-              />
-            </Grid>
-            <Grid item xs={12} md={6} lg={3}>
-              <KpiCard
-                title="Gross Profit"
-                value={formatCurrency(report.totals.gross_profit)}
-                subtext={`Gross margin: ${report.totals.gross_margin_pct}%`}
-              />
-            </Grid>
-            <Grid item xs={12} md={6} lg={3}>
-              <KpiCard
-                title="Net Profit"
-                value={formatCurrency(report.totals.net_profit)}
-                subtext={`Net margin: ${report.totals.net_margin_pct}%`}
-              />
-            </Grid>
-            <Grid item xs={12} md={6} lg={3}>
-              <KpiCard
-                title="Yield"
-                value={`${report.totals.yield_pct}%`}
-                subtext={`Expected pouches: ${formatNumber(report.totals.expected_pouches)}`}
-              />
-            </Grid>
-          </Grid>
+          <Tabs
+            value={activeTab}
+            onChange={(_, value) => setActiveTab(value)}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{ borderBottom: 1, borderColor: "divider" }}
+          >
+            <Tab label="Overview" value="overview" />
+            <Tab label="Costs" value="costs" />
+            <Tab label="Inventory" value="inventory" />
+            <Tab label="Statements" value="statements" />
+            <Tab label="Orders" value="orders" />
+          </Tabs>
 
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1.5 }}>
-                Operational Insights
-              </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
-                <Typography variant="body2">
-                  Orders in range: <strong>{formatNumber(report.totals.orders)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Avg order value: <strong>{formatCurrency(report.totals.avg_order_value)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Top city: <strong>{report.topCity}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Avg revenue per kg: <strong>{report.totals.kilos ? formatCurrency(report.totals.revenue / report.totals.kilos) : "€0.00"}</strong>
-                </Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={1.5}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="subtitle1" fontWeight={800}>
-                    Income Statement
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<FileText size={16} />}
-                    onClick={handleExportIncomeStatement}
-                  >
-                    Export statement
-                  </Button>
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  Updated for the selected date range and city filters.
-                </Typography>
-                <Table size="small">
-                  <TableBody>
-                    <TableRow>
-                      <TableCell>Revenue</TableCell>
-                      <TableCell align="right">{formatCurrency(incomeStatement.revenue)}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Direct costs</TableCell>
-                      <TableCell align="right">{formatCurrency(incomeStatement.directCosts)}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 700 }}>Gross profit</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        {formatCurrency(incomeStatement.grossProfit)}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Overhead / expenses</TableCell>
-                      <TableCell align="right">{formatCurrency(incomeStatement.overheadCosts)}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 700 }}>Net profit</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        {formatCurrency(incomeStatement.netProfit)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </Stack>
-            </CardContent>
-          </Card>
-
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={2}>
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  alignItems={{ xs: "flex-start", sm: "center" }}
-                  justifyContent="space-between"
-                  spacing={1}
-                >
-                  <Typography variant="subtitle1" fontWeight={800}>
-                    Cost Centers & Expenses
-                  </Typography>
-                  <Stack direction="row" spacing={1} flexWrap="wrap">
-                    <Chip size="small" label={`Direct: ${formatCurrency(costTotals.direct)}`} />
-                    <Chip size="small" label={`Overhead: ${formatCurrency(costTotals.overhead)}`} />
-                    <Chip size="small" variant="outlined" label={`Total costs: ${formatCurrency(costTotals.total)}`} />
-                  </Stack>
-                </Stack>
-
-                <Grid container spacing={2}>
-                  <Grid item xs={12} lg={5}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Cost Centers
-                      </Typography>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                        <TextField
-                          label="Center name"
-                          size="small"
-                          value={centerForm.name}
-                          onChange={(e) => setCenterForm((prev) => ({ ...prev, name: e.target.value }))}
-                          fullWidth
-                        />
-                        <FormControl size="small" sx={{ minWidth: 160 }}>
-                          <InputLabel id="center-category-label">Category</InputLabel>
-                          <Select
-                            labelId="center-category-label"
-                            label="Category"
-                            value={centerForm.category}
-                            onChange={(e) => setCenterForm((prev) => ({ ...prev, category: e.target.value }))}
-                          >
-                            <MenuItem value="direct">Direct</MenuItem>
-                            <MenuItem value="overhead">Overhead</MenuItem>
-                          </Select>
-                        </FormControl>
-                      </Stack>
-                      <Stack direction="row" spacing={1}>
-                        <Button variant="contained" onClick={handleSaveCenter}>
-                          {editingCenterId ? "Update center" : "Add center"}
-                        </Button>
-                        {editingCenterId && (
-                          <Button variant="text" onClick={resetCenterForm} startIcon={<CloseIcon />}>
-                            Cancel
-                          </Button>
-                        )}
-                      </Stack>
-                      <Divider />
-                      {costCenters.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">
-                          No cost centers yet.
-                        </Typography>
-                      ) : (
-                        <Stack spacing={1}>
-                          {costCenters.map((center) => (
-                            <Stack
-                              key={center.center_id}
-                              direction="row"
-                              alignItems="center"
-                              justifyContent="space-between"
-                              sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
-                            >
-                              <Stack spacing={0.5}>
-                                <Typography variant="body2" fontWeight={600}>
-                                  {center.name}
-                                </Typography>
-                                <Chip
-                                  size="small"
-                                  label={center.category === "overhead" ? "Overhead / expense" : "Direct cost"}
-                                />
-                              </Stack>
-                              <Stack direction="row" spacing={0.5}>
-                                <Tooltip title="Edit">
-                                  <IconButton size="small" onClick={() => handleEditCenter(center)}>
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Delete">
-                                  <IconButton size="small" onClick={() => handleDeleteCenter(center.center_id)}>
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Stack>
-                            </Stack>
-                          ))}
-                        </Stack>
-                      )}
-                    </Stack>
-                  </Grid>
-                  <Grid item xs={12} lg={7}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Costs / Expenses
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Entries are filtered to the selected date range.
-                      </Typography>
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
-                        <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
-                          <InputLabel id="entry-center-label">Cost center</InputLabel>
-                          <Select
-                            labelId="entry-center-label"
-                            label="Cost center"
-                            value={entryForm.center_id}
-                            onChange={(e) => setEntryForm((prev) => ({ ...prev, center_id: e.target.value }))}
-                          >
-                            {costCenters.map((center) => (
-                              <MenuItem key={center.center_id} value={center.center_id}>
-                                {center.name} ({center.category})
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                        <TextField
-                          label="Amount (€)"
-                          size="small"
-                          type="number"
-                          value={entryForm.amount}
-                          onChange={(e) => setEntryForm((prev) => ({ ...prev, amount: e.target.value }))}
-                          inputProps={{ min: 0, step: "0.01" }}
-                        />
-                        <TextField
-                          label="Date"
-                          size="small"
-                          type="date"
-                          value={entryForm.incurred_date}
-                          onChange={(e) => setEntryForm((prev) => ({ ...prev, incurred_date: e.target.value }))}
-                          InputLabelProps={{ shrink: true }}
-                        />
-                        <TextField
-                          label="Notes"
-                          size="small"
-                          value={entryForm.notes}
-                          onChange={(e) => setEntryForm((prev) => ({ ...prev, notes: e.target.value }))}
-                          sx={{ flex: 1 }}
-                        />
-                      </Stack>
-                      <Stack direction="row" spacing={1}>
-                        <Button
-                          variant="contained"
-                          onClick={handleSaveEntry}
-                          disabled={!costCenters.length}
-                        >
-                          {editingEntryId ? "Update entry" : "Add entry"}
-                        </Button>
-                        {editingEntryId && (
-                          <Button variant="text" onClick={resetEntryForm} startIcon={<CloseIcon />}>
-                            Cancel
-                          </Button>
-                        )}
-                      </Stack>
-                      <Divider />
-                      <Table size="small" sx={{ tableLayout: "fixed" }}>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell sx={{ width: 110 }}>Date</TableCell>
-                            <TableCell sx={{ width: 170 }}>Center</TableCell>
-                            <TableCell sx={{ width: 130 }}>Category</TableCell>
-                            <TableCell align="right" sx={{ width: 110 }}>Amount</TableCell>
-                            <TableCell>Notes</TableCell>
-                            <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {costEntries.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} align="center">
-                                <Typography variant="body2" color="text.secondary">
-                                  No cost entries for this range.
-                                </Typography>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            costEntries.map((entry) => (
-                              <TableRow key={entry.entry_id}>
-                                <TableCell>{entry.incurred_date}</TableCell>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.center_name}</TableCell>
-                                <TableCell>
-                                  <Chip
-                                    size="small"
-                                    label={entry.center_category === "overhead" ? "Overhead" : "Direct"}
-                                  />
-                                </TableCell>
-                                <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.notes || "—"}</TableCell>
-                                <TableCell align="right">
-                                  <Tooltip title="Edit">
-                                    <IconButton size="small" onClick={() => handleEditEntry(entry)}>
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete">
-                                    <IconButton size="small" onClick={() => handleDeleteEntry(entry.entry_id)}>
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </Stack>
-                  </Grid>
+          <TabPanel value={activeTab} tab="overview">
+            <Stack spacing={2}>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6} lg={3}>
+                  <KpiCard
+                    title="Total Kilos Produced"
+                    value={`${formatNumber(report.totals.kilos)} kg`}
+                  />
                 </Grid>
-              </Stack>
-            </CardContent>
-          </Card>
-
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={2}>
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  alignItems={{ xs: "flex-start", sm: "center" }}
-                  justifyContent="space-between"
-                  spacing={1}
-                >
-                  <Typography variant="subtitle1" fontWeight={800}>
-                    Inventory & Stock
-                  </Typography>
-                  <Stack direction="row" spacing={1} flexWrap="wrap">
-                    <Chip size="small" label={`On hand: ${formatNumber(inventoryTotals.onHandCount)}`} />
-                    <Chip size="small" label={`Inventory value: ${formatCurrency(inventoryTotals.inventoryValue)}`} />
-                  </Stack>
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  Purchases and adjustments can sync to direct cost centers when an item is linked to a cost center.
-                </Typography>
-                <Table size="small" sx={{ tableLayout: "fixed" }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Item</TableCell>
-                      <TableCell align="right">On hand</TableCell>
-                      <TableCell>Unit</TableCell>
-                      <TableCell align="right">Last unit cost</TableCell>
-                      <TableCell align="right">Inventory value</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {inventorySummary.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} align="center">
-                          <Typography variant="body2" color="text.secondary">
-                            No inventory data yet.
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      inventorySummary.map((item) => (
-                        <TableRow key={item.item_id}>
-                          <TableCell>{item.name}</TableCell>
-                          <TableCell align="right">{formatNumber(item.on_hand)}</TableCell>
-                          <TableCell>{item.unit}</TableCell>
-                          <TableCell align="right">
-                            {item.last_unit_cost != null ? formatCurrency(item.last_unit_cost) : "—"}
-                          </TableCell>
-                          <TableCell align="right">{formatCurrency(item.inventory_value)}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-
-                <Grid container spacing={2}>
-                  <Grid item xs={12} lg={5}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Inventory Items
-                      </Typography>
-                      <Stack spacing={1}>
-                        <TextField
-                          label="Item name"
-                          size="small"
-                          value={itemForm.name}
-                          onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))}
-                          fullWidth
-                        />
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                          <TextField
-                            label="SKU"
-                            size="small"
-                            value={itemForm.sku}
-                            onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))}
-                            fullWidth
-                          />
-                          <TextField
-                            label="Unit"
-                            size="small"
-                            value={itemForm.unit}
-                            onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
-                            sx={{ minWidth: 120 }}
-                          />
-                        </Stack>
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                          <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                            <InputLabel id="item-category-label">Category</InputLabel>
-                            <Select
-                              labelId="item-category-label"
-                              label="Category"
-                              value={itemForm.category}
-                              onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
-                            >
-                              {inventoryCategoryOptions.map((option) => (
-                                <MenuItem key={option} value={option}>
-                                  {option}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <FormControl size="small" sx={{ minWidth: 180 }}>
-                            <InputLabel id="item-cost-center-label">Cost center</InputLabel>
-                            <Select
-                              labelId="item-cost-center-label"
-                              label="Cost center"
-                              value={itemForm.cost_center_id}
-                              onChange={(e) => setItemForm((prev) => ({ ...prev, cost_center_id: e.target.value }))}
-                            >
-                              <MenuItem value="">None</MenuItem>
-                              {costCenters.map((center) => (
-                                <MenuItem key={center.center_id} value={center.center_id}>
-                                  {center.name} ({center.category})
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        </Stack>
-                      </Stack>
-                      <Stack direction="row" spacing={1}>
-                        <Button variant="contained" onClick={handleSaveItem}>
-                          {editingItemId ? "Update item" : "Add item"}
-                        </Button>
-                        {editingItemId && (
-                          <Button variant="text" onClick={resetItemForm} startIcon={<CloseIcon />}>
-                            Cancel
-                          </Button>
-                        )}
-                      </Stack>
-                      <Divider />
-                      {inventoryItems.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">
-                          No inventory items yet.
-                        </Typography>
-                      ) : (
-                        <Stack spacing={1}>
-                          {inventoryItems.map((item) => {
-                            const center = costCenterMap.get(item.cost_center_id);
-                            return (
-                              <Stack
-                                key={item.item_id}
-                                direction="row"
-                                alignItems="center"
-                                justifyContent="space-between"
-                                sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
-                              >
-                                <Stack spacing={0.5}>
-                                  <Typography variant="body2" fontWeight={600}>
-                                    {item.name}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Unit: {item.unit || "unit"} · Category: {item.category || "—"} · Cost center: {center?.name || "—"}
-                                  </Typography>
-                                </Stack>
-                                <Stack direction="row" spacing={0.5}>
-                                  <Tooltip title="Edit">
-                                    <IconButton size="small" onClick={() => handleEditItem(item)}>
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete">
-                                    <IconButton size="small" onClick={() => handleDeleteItem(item.item_id)}>
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Stack>
-                              </Stack>
-                            );
-                          })}
-                        </Stack>
-                      )}
-                    </Stack>
-                  </Grid>
-                  <Grid item xs={12} lg={7}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Inventory Transactions
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Transactions are filtered to the selected date range.
-                      </Typography>
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
-                        <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
-                          <InputLabel id="tx-item-label">Item</InputLabel>
-                          <Select
-                            labelId="tx-item-label"
-                            label="Item"
-                            value={txForm.item_id}
-                            onChange={(e) => setTxForm((prev) => ({ ...prev, item_id: e.target.value }))}
-                          >
-                            {inventoryItems.map((item) => (
-                              <MenuItem key={item.item_id} value={item.item_id}>
-                                {item.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                        <FormControl size="small" sx={{ minWidth: 150 }}>
-                          <InputLabel id="tx-type-label">Type</InputLabel>
-                          <Select
-                            labelId="tx-type-label"
-                            label="Type"
-                            value={txForm.tx_type}
-                            onChange={(e) => setTxForm((prev) => ({ ...prev, tx_type: e.target.value }))}
-                          >
-                            <MenuItem value="purchase">Purchase</MenuItem>
-                            <MenuItem value="usage">Usage</MenuItem>
-                            <MenuItem value="adjustment">Adjustment</MenuItem>
-                          </Select>
-                        </FormControl>
-                        <TextField
-                          label="Quantity"
-                          size="small"
-                          type="number"
-                          value={txForm.quantity}
-                          onChange={(e) => setTxForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                          inputProps={{ step: "0.01" }}
-                        />
-                        <TextField
-                          label="Unit cost (€)"
-                          size="small"
-                          type="number"
-                          value={txForm.unit_cost}
-                          onChange={(e) => setTxForm((prev) => ({ ...prev, unit_cost: e.target.value }))}
-                          inputProps={{ step: "0.01" }}
-                        />
-                        <TextField
-                          label="Date"
-                          size="small"
-                          type="date"
-                          value={txForm.tx_date}
-                          onChange={(e) => setTxForm((prev) => ({ ...prev, tx_date: e.target.value }))}
-                          InputLabelProps={{ shrink: true }}
-                        />
-                      </Stack>
-                      <TextField
-                        label="Notes"
-                        size="small"
-                        value={txForm.notes}
-                        onChange={(e) => setTxForm((prev) => ({ ...prev, notes: e.target.value }))}
-                        fullWidth
-                      />
-                      <Stack direction="row" spacing={1}>
-                        <Button
-                          variant="contained"
-                          onClick={handleSaveTx}
-                          disabled={!inventoryItems.length}
-                        >
-                          {editingTxId ? "Update transaction" : "Add transaction"}
-                        </Button>
-                        {editingTxId && (
-                          <Button variant="text" onClick={resetTxForm} startIcon={<CloseIcon />}>
-                            Cancel
-                          </Button>
-                        )}
-                      </Stack>
-                      <Divider />
-                      <Table size="small" sx={{ tableLayout: "fixed" }}>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell sx={{ width: 100 }}>Date</TableCell>
-                            <TableCell sx={{ width: 140 }}>Item</TableCell>
-                            <TableCell sx={{ width: 110 }}>Type</TableCell>
-                            <TableCell align="right" sx={{ width: 90 }}>Qty</TableCell>
-                            <TableCell align="right" sx={{ width: 110 }}>Unit cost</TableCell>
-                            <TableCell align="right" sx={{ width: 120 }}>Total</TableCell>
-                            <TableCell>Notes</TableCell>
-                            <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {inventoryTransactions.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={8} align="center">
-                                <Typography variant="body2" color="text.secondary">
-                                  No inventory transactions for this range.
-                                </Typography>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            inventoryTransactions.map((tx) => (
-                              <TableRow key={tx.tx_id}>
-                                <TableCell>{tx.tx_date}</TableCell>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
-                                <TableCell>{tx.tx_type}</TableCell>
-                                <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
-                                <TableCell align="right">
-                                  {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
-                                </TableCell>
-                                <TableCell align="right">
-                                  {tx.total_cost != null ? formatCurrency(tx.total_cost) : "—"}
-                                </TableCell>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.notes || "—"}</TableCell>
-                                <TableCell align="right">
-                                  <Tooltip title="Edit">
-                                    <IconButton size="small" onClick={() => handleEditTx(tx)}>
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete">
-                                    <IconButton size="small" onClick={() => handleDeleteTx(tx.tx_id)}>
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </Stack>
-                  </Grid>
+                <Grid item xs={12} md={6} lg={3}>
+                  <KpiCard
+                    title="Pouches Produced"
+                    value={formatNumber(report.totals.pouches)}
+                    subtext={`Average weight per pouch: ${report.totals.avg_weight_per_pouch_g} g`}
+                  />
                 </Grid>
-              </Stack>
-            </CardContent>
-          </Card>
+                <Grid item xs={12} md={6} lg={3}>
+                  <KpiCard
+                    title="Revenue from Pouches"
+                    value={formatCurrency(report.totals.revenue)}
+                    subtext="Collected: €— | Outstanding: €—"
+                  />
+                </Grid>
+                <Grid item xs={12} md={6} lg={3}>
+                  <KpiCard
+                    title="Gross Profit"
+                    value={formatCurrency(report.totals.gross_profit)}
+                    subtext={`Gross margin: ${report.totals.gross_margin_pct}%`}
+                  />
+                </Grid>
+                <Grid item xs={12} md={6} lg={3}>
+                  <KpiCard
+                    title="Net Profit"
+                    value={formatCurrency(report.totals.net_profit)}
+                    subtext={`Net margin: ${report.totals.net_margin_pct}%`}
+                  />
+                </Grid>
+                <Grid item xs={12} md={6} lg={3}>
+                  <KpiCard
+                    title="Yield"
+                    value={`${report.totals.yield_pct}%`}
+                    subtext={`Expected pouches: ${formatNumber(report.totals.expected_pouches)}`}
+                  />
+                </Grid>
+              </Grid>
 
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                Production vs Sales Over Time
-              </Typography>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={report.timeSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <ReTooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="kilos" stroke="#2e7d32" name="Kilos produced" strokeWidth={2} />
-                  <Line type="monotone" dataKey="pouches" stroke="#ef6c00" name="Pouches sold" strokeWidth={2} />
-                  <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Sales revenue (€)" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                Performance by City
-              </Typography>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={report.citySeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="city" />
-                  <YAxis />
-                  <ReTooltip />
-                  <Legend />
-                  <Bar dataKey="kilos" fill="#2e7d32" name="Kilos produced" />
-                  <Bar dataKey="pouches" fill="#ef6c00" name="Pouches sold" />
-                  <Bar dataKey="revenue" fill="#1976d2" name="Revenue (€)" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                Yield Variance (Monthly)
-              </Typography>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={report.varianceSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="period" />
-                  <YAxis />
-                  <ReTooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="pouches" stroke="#2e7d32" name="Actual pouches" strokeWidth={2} />
-                  <Line type="monotone" dataKey="expected_pouches" stroke="#9e9e9e" name="Expected pouches" strokeWidth={2} />
-                  <Line type="monotone" dataKey="variance_pct" stroke="#d32f2f" name="Variance (%)" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Stack spacing={2}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="subtitle1" fontWeight={800}>
-                    Statement of Financial Position
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1.5 }}>
+                    Operational Insights
                   </Typography>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<FileText size={16} />}
-                    onClick={handleExportBalanceSheet}
-                  >
-                    Export statement
-                  </Button>
-                </Stack>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap">
-                  <Chip size="small" label={`Total assets: ${formatCurrency(balanceSheet.totalAssets)}`} />
-                  <Chip size="small" label={`Total liabilities: ${formatCurrency(balanceSheet.totalLiabilities)}`} />
-                  <Chip size="small" variant="outlined" label={`Equity: ${formatCurrency(balanceSheet.equity)}`} />
-                </Stack>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} lg={6}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Assets
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Inventory value is computed from on-hand stock as of the selected end date.
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
+                    <Typography variant="body2">
+                      Orders in range: <strong>{formatNumber(report.totals.orders)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Avg order value: <strong>{formatCurrency(report.totals.avg_order_value)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Top city: <strong>{report.topCity}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Avg revenue per kg: <strong>{report.totals.kilos ? formatCurrency(report.totals.revenue / report.totals.kilos) : "€0.00"}</strong>
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
+                    Production vs Sales Over Time
+                  </Typography>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={report.timeSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <ReTooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="kilos" stroke="#2e7d32" name="Kilos produced" strokeWidth={2} />
+                      <Line type="monotone" dataKey="pouches" stroke="#ef6c00" name="Pouches sold" strokeWidth={2} />
+                      <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Sales revenue (€)" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
+                    Performance by City
+                  </Typography>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={report.citySeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="city" />
+                      <YAxis />
+                      <ReTooltip />
+                      <Legend />
+                      <Bar dataKey="kilos" fill="#2e7d32" name="Kilos produced" />
+                      <Bar dataKey="pouches" fill="#ef6c00" name="Pouches sold" />
+                      <Bar dataKey="revenue" fill="#1976d2" name="Revenue (€)" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
+                    Yield Variance (Monthly)
+                  </Typography>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={report.varianceSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="period" />
+                      <YAxis />
+                      <ReTooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="pouches" stroke="#2e7d32" name="Actual pouches" strokeWidth={2} />
+                      <Line type="monotone" dataKey="expected_pouches" stroke="#9e9e9e" name="Expected pouches" strokeWidth={2} />
+                      <Line type="monotone" dataKey="variance_pct" stroke="#d32f2f" name="Variance (%)" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </Stack>
+          </TabPanel>
+
+          <TabPanel value={activeTab} tab="costs">
+            <Stack spacing={2}>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      alignItems={{ xs: "flex-start", sm: "center" }}
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        Cost Centers & Expenses
                       </Typography>
                       <Stack direction="row" spacing={1} flexWrap="wrap">
-                        <Chip size="small" label={`Inventory: ${formatCurrency(balanceSheet.inventoryValue)}`} />
-                        <Chip size="small" label={`Fixed assets: ${formatCurrency(balanceSheet.fixedAssets)}`} />
+                        <Chip size="small" label={`Direct: ${formatCurrency(costTotals.direct)}`} />
+                        <Chip size="small" label={`Overhead: ${formatCurrency(costTotals.overhead)}`} />
+                        <Chip size="small" variant="outlined" label={`Total costs: ${formatCurrency(costTotals.total)}`} />
                       </Stack>
-                      <Stack spacing={1}>
-                        <TextField
-                          label="Asset name"
-                          size="small"
-                          value={assetForm.name}
-                          onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
-                          fullWidth
-                        />
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                          <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                            <InputLabel id="asset-category-label">Category</InputLabel>
-                            <Select
-                              labelId="asset-category-label"
-                              label="Category"
-                              value={assetForm.category}
-                              onChange={(e) => setAssetForm((prev) => ({ ...prev, category: e.target.value }))}
-                            >
-                              {assetCategoryOptions.map((option) => (
-                                <MenuItem key={option} value={option}>
-                                  {option}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <TextField
-                            label="Value (€)"
-                            size="small"
-                            type="number"
-                            value={assetForm.value}
-                            onChange={(e) => setAssetForm((prev) => ({ ...prev, value: e.target.value }))}
-                            inputProps={{ step: "0.01" }}
-                          />
-                          <TextField
-                            label="Acquired date"
-                            size="small"
-                            type="date"
-                            value={assetForm.acquired_date}
-                            onChange={(e) => setAssetForm((prev) => ({ ...prev, acquired_date: e.target.value }))}
-                            InputLabelProps={{ shrink: true }}
-                          />
-                        </Stack>
-                        <TextField
-                          label="Notes"
-                          size="small"
-                          value={assetForm.notes}
-                          onChange={(e) => setAssetForm((prev) => ({ ...prev, notes: e.target.value }))}
-                          fullWidth
-                        />
-                      </Stack>
-                      <Stack direction="row" spacing={1}>
-                        <Button variant="contained" onClick={handleSaveAsset}>
-                          {editingAssetId ? "Update asset" : "Add asset"}
-                        </Button>
-                        {editingAssetId && (
-                          <Button variant="text" onClick={resetAssetForm} startIcon={<CloseIcon />}>
-                            Cancel
-                          </Button>
-                        )}
-                      </Stack>
-                      <Divider />
-                      <Table size="small" sx={{ tableLayout: "fixed" }}>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Asset</TableCell>
-                            <TableCell>Category</TableCell>
-                            <TableCell align="right">Value</TableCell>
-                            <TableCell>Date</TableCell>
-                            <TableCell>Notes</TableCell>
-                            <TableCell align="right">Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {assets.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} align="center">
-                                <Typography variant="body2" color="text.secondary">
-                                  No assets yet.
-                                </Typography>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            assets.map((asset) => (
-                              <TableRow key={asset.asset_id}>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.name}</TableCell>
-                                <TableCell>{asset.category || "—"}</TableCell>
-                                <TableCell align="right">{formatCurrency(asset.value)}</TableCell>
-                                <TableCell>{asset.acquired_date}</TableCell>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.notes || "—"}</TableCell>
-                                <TableCell align="right">
-                                  <Tooltip title="Edit">
-                                    <IconButton size="small" onClick={() => handleEditAsset(asset)}>
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete">
-                                    <IconButton size="small" onClick={() => handleDeleteAsset(asset.asset_id)}>
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
                     </Stack>
-                  </Grid>
-                  <Grid item xs={12} lg={6}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Liabilities
-                      </Typography>
-                      <Stack spacing={1}>
-                        <TextField
-                          label="Liability name"
-                          size="small"
-                          value={liabilityForm.name}
-                          onChange={(e) => setLiabilityForm((prev) => ({ ...prev, name: e.target.value }))}
-                          fullWidth
-                        />
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                          <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                            <InputLabel id="liability-category-label">Category</InputLabel>
-                            <Select
-                              labelId="liability-category-label"
-                              label="Category"
-                              value={liabilityForm.category}
-                              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, category: e.target.value }))}
-                            >
-                              {liabilityCategoryOptions.map((option) => (
-                                <MenuItem key={option} value={option}>
-                                  {option}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <TextField
-                            label="Value (€)"
-                            size="small"
-                            type="number"
-                            value={liabilityForm.value}
-                            onChange={(e) => setLiabilityForm((prev) => ({ ...prev, value: e.target.value }))}
-                            inputProps={{ step: "0.01" }}
-                          />
-                          <TextField
-                            label="As of date"
-                            size="small"
-                            type="date"
-                            value={liabilityForm.as_of_date}
-                            onChange={(e) => setLiabilityForm((prev) => ({ ...prev, as_of_date: e.target.value }))}
-                            InputLabelProps={{ shrink: true }}
-                          />
-                        </Stack>
-                        <TextField
-                          label="Notes"
-                          size="small"
-                          value={liabilityForm.notes}
-                          onChange={(e) => setLiabilityForm((prev) => ({ ...prev, notes: e.target.value }))}
-                          fullWidth
-                        />
-                      </Stack>
-                      <Stack direction="row" spacing={1}>
-                        <Button variant="contained" onClick={handleSaveLiability}>
-                          {editingLiabilityId ? "Update liability" : "Add liability"}
-                        </Button>
-                        {editingLiabilityId && (
-                          <Button variant="text" onClick={resetLiabilityForm} startIcon={<CloseIcon />}>
-                            Cancel
-                          </Button>
-                        )}
-                      </Stack>
-                      <Divider />
-                      <Table size="small" sx={{ tableLayout: "fixed" }}>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Liability</TableCell>
-                            <TableCell>Category</TableCell>
-                            <TableCell align="right">Value</TableCell>
-                            <TableCell>Date</TableCell>
-                            <TableCell>Notes</TableCell>
-                            <TableCell align="right">Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {liabilities.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} align="center">
-                                <Typography variant="body2" color="text.secondary">
-                                  No liabilities yet.
-                                </Typography>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            liabilities.map((liability) => (
-                              <TableRow key={liability.liability_id}>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.name}</TableCell>
-                                <TableCell>{liability.category || "—"}</TableCell>
-                                <TableCell align="right">{formatCurrency(liability.value)}</TableCell>
-                                <TableCell>{liability.as_of_date}</TableCell>
-                                <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.notes || "—"}</TableCell>
-                                <TableCell align="right">
-                                  <Tooltip title="Edit">
-                                    <IconButton size="small" onClick={() => handleEditLiability(liability)}>
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete">
-                                    <IconButton size="small" onClick={() => handleDeleteLiability(liability.liability_id)}>
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </Stack>
-                  </Grid>
-                </Grid>
-              </Stack>
-            </CardContent>
-          </Card>
 
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-            <CardContent>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                <Typography variant="subtitle1" fontWeight={800}>Detailed Orders</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {startDate} → {endDate}
-                </Typography>
-              </Stack>
-              <Divider sx={{ mb: 2 }} />
-              <DataGrid
-                autoHeight
-                rows={report.rows.map((r) => ({ id: r.order_id, ...r }))}
-                columns={columns}
-                pageSizeOptions={[10, 25, 50]}
-                initialState={{
-                  pagination: { paginationModel: { pageSize: 10 } },
-                  sorting: { sortModel: [{ field: "production_date", sort: "desc" }] },
-                }}
-                disableRowSelectionOnClick
-                sx={{
-                  width: "100%",
-                  "& .MuiDataGrid-columnHeaderTitle": {
-                    whiteSpace: "normal",
-                    lineHeight: 1.2,
-                  },
-                }}
-              />
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }}>
-                <Typography variant="body2">
-                  Total kilos: <strong>{formatNumber(report.totals.kilos)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Total pouches: <strong>{formatNumber(report.totals.pouches)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Total revenue: <strong>{formatCurrency(report.totals.revenue)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Total gross profit: <strong>{formatCurrency(report.totals.gross_profit)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Total net profit: <strong>{formatCurrency(report.totals.net_profit)}</strong>
-                </Typography>
-              </Stack>
-            </CardContent>
-          </Card>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} lg={5}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Cost Centers
+                          </Typography>
+                          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                            <TextField
+                              label="Center name"
+                              size="small"
+                              value={centerForm.name}
+                              onChange={(e) => setCenterForm((prev) => ({ ...prev, name: e.target.value }))}
+                              fullWidth
+                            />
+                            <FormControl size="small" sx={{ minWidth: 160 }}>
+                              <InputLabel id="center-category-label">Category</InputLabel>
+                              <Select
+                                labelId="center-category-label"
+                                label="Category"
+                                value={centerForm.category}
+                                onChange={(e) => setCenterForm((prev) => ({ ...prev, category: e.target.value }))}
+                              >
+                                <MenuItem value="direct">Direct</MenuItem>
+                                <MenuItem value="overhead">Overhead</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Stack>
+                          <Stack direction="row" spacing={1}>
+                            <Button variant="contained" onClick={handleSaveCenter}>
+                              {editingCenterId ? "Update center" : "Add center"}
+                            </Button>
+                            {editingCenterId && (
+                              <Button variant="text" onClick={resetCenterForm} startIcon={<CloseIcon />}>
+                                Cancel
+                              </Button>
+                            )}
+                          </Stack>
+                          <Divider />
+                          {costCenters.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              No cost centers yet.
+                            </Typography>
+                          ) : (
+                            <Stack spacing={1}>
+                              {costCenters.map((center) => (
+                                <Stack
+                                  key={center.center_id}
+                                  direction="row"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+                                >
+                                  <Stack spacing={0.5}>
+                                    <Typography variant="body2" fontWeight={600}>
+                                      {center.name}
+                                    </Typography>
+                                    <Chip
+                                      size="small"
+                                      label={center.category === "overhead" ? "Overhead / expense" : "Direct cost"}
+                                    />
+                                  </Stack>
+                                  <Stack direction="row" spacing={0.5}>
+                                    <Tooltip title="Edit">
+                                      <IconButton size="small" onClick={() => handleEditCenter(center)}>
+                                        <EditIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete">
+                                      <IconButton size="small" onClick={() => handleDeleteCenter(center.center_id)}>
+                                        <DeleteIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Stack>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Grid>
+                      <Grid item xs={12} lg={7}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Costs / Expenses
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Entries are filtered to the selected date range.
+                          </Typography>
+                          <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
+                            <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
+                              <InputLabel id="entry-center-label">Cost center</InputLabel>
+                              <Select
+                                labelId="entry-center-label"
+                                label="Cost center"
+                                value={entryForm.center_id}
+                                onChange={(e) => setEntryForm((prev) => ({ ...prev, center_id: e.target.value }))}
+                              >
+                                {costCenters.map((center) => (
+                                  <MenuItem key={center.center_id} value={center.center_id}>
+                                    {center.name} ({center.category})
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                            <TextField
+                              label="Amount (€)"
+                              size="small"
+                              type="number"
+                              value={entryForm.amount}
+                              onChange={(e) => setEntryForm((prev) => ({ ...prev, amount: e.target.value }))}
+                              inputProps={{ min: 0, step: "0.01" }}
+                            />
+                            <TextField
+                              label="Date"
+                              size="small"
+                              type="date"
+                              value={entryForm.incurred_date}
+                              onChange={(e) => setEntryForm((prev) => ({ ...prev, incurred_date: e.target.value }))}
+                              InputLabelProps={{ shrink: true }}
+                            />
+                            <TextField
+                              label="Notes"
+                              size="small"
+                              value={entryForm.notes}
+                              onChange={(e) => setEntryForm((prev) => ({ ...prev, notes: e.target.value }))}
+                              sx={{ flex: 1 }}
+                            />
+                          </Stack>
+                          <Stack direction="row" spacing={1}>
+                            <Button
+                              variant="contained"
+                              onClick={handleSaveEntry}
+                              disabled={!costCenters.length}
+                            >
+                              {editingEntryId ? "Update entry" : "Add entry"}
+                            </Button>
+                            {editingEntryId && (
+                              <Button variant="text" onClick={resetEntryForm} startIcon={<CloseIcon />}>
+                                Cancel
+                              </Button>
+                            )}
+                          </Stack>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell sx={{ width: 110 }}>Date</TableCell>
+                                <TableCell sx={{ width: 170 }}>Center</TableCell>
+                                <TableCell sx={{ width: 130 }}>Category</TableCell>
+                                <TableCell align="right" sx={{ width: 110 }}>Amount</TableCell>
+                                <TableCell>Notes</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {costEntries.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={6} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      No cost entries for this range.
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                costEntries.map((entry) => (
+                                  <TableRow key={entry.entry_id}>
+                                    <TableCell>{entry.incurred_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.center_name}</TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        size="small"
+                                        label={entry.center_category === "overhead" ? "Overhead" : "Direct"}
+                                      />
+                                    </TableCell>
+                                    <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title="Edit">
+                                        <IconButton size="small" onClick={() => handleEditEntry(entry)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Delete">
+                                        <IconButton size="small" onClick={() => handleDeleteEntry(entry.entry_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+          </TabPanel>
+
+          <TabPanel value={activeTab} tab="inventory">
+            <Stack spacing={2}>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      alignItems={{ xs: "flex-start", sm: "center" }}
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        Inventory & Stock
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip size="small" label={`On hand: ${formatNumber(inventoryTotals.onHandCount)}`} />
+                        <Chip size="small" label={`Inventory value: ${formatCurrency(inventoryTotals.inventoryValue)}`} />
+                      </Stack>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      Purchases and adjustments can sync to direct cost centers when an item is linked to a cost center.
+                    </Typography>
+                    <Table size="small" sx={{ tableLayout: "fixed" }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Item</TableCell>
+                          <TableCell align="right">On hand</TableCell>
+                          <TableCell>Unit</TableCell>
+                          <TableCell align="right">Last unit cost</TableCell>
+                          <TableCell align="right">Inventory value</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {inventorySummary.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} align="center">
+                              <Typography variant="body2" color="text.secondary">
+                                No inventory data yet.
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          inventorySummary.map((item) => (
+                            <TableRow key={item.item_id}>
+                              <TableCell>{item.name}</TableCell>
+                              <TableCell align="right">{formatNumber(item.on_hand)}</TableCell>
+                              <TableCell>{item.unit}</TableCell>
+                              <TableCell align="right">
+                                {item.last_unit_cost != null ? formatCurrency(item.last_unit_cost) : "—"}
+                              </TableCell>
+                              <TableCell align="right">{formatCurrency(item.inventory_value)}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} lg={5}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Inventory Items
+                          </Typography>
+                          <Stack spacing={1}>
+                            <TextField
+                              label="Item name"
+                              size="small"
+                              value={itemForm.name}
+                              onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))}
+                              fullWidth
+                            />
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                              <TextField
+                                label="SKU"
+                                size="small"
+                                value={itemForm.sku}
+                                onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))}
+                                fullWidth
+                              />
+                              <TextField
+                                label="Unit"
+                                size="small"
+                                value={itemForm.unit}
+                                onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
+                                sx={{ minWidth: 120 }}
+                              />
+                            </Stack>
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                                <InputLabel id="item-category-label">Category</InputLabel>
+                                <Select
+                                  labelId="item-category-label"
+                                  label="Category"
+                                  value={itemForm.category}
+                                  onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
+                                >
+                                  {inventoryCategoryOptions.map((option) => (
+                                    <MenuItem key={option} value={option}>
+                                      {option}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                              <FormControl size="small" sx={{ minWidth: 180 }}>
+                                <InputLabel id="item-cost-center-label">Cost center</InputLabel>
+                                <Select
+                                  labelId="item-cost-center-label"
+                                  label="Cost center"
+                                  value={itemForm.cost_center_id}
+                                  onChange={(e) => setItemForm((prev) => ({ ...prev, cost_center_id: e.target.value }))}
+                                >
+                                  <MenuItem value="">None</MenuItem>
+                                  {costCenters.map((center) => (
+                                    <MenuItem key={center.center_id} value={center.center_id}>
+                                      {center.name} ({center.category})
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            </Stack>
+                          </Stack>
+                          <Stack direction="row" spacing={1}>
+                            <Button variant="contained" onClick={handleSaveItem}>
+                              {editingItemId ? "Update item" : "Add item"}
+                            </Button>
+                            {editingItemId && (
+                              <Button variant="text" onClick={resetItemForm} startIcon={<CloseIcon />}>
+                                Cancel
+                              </Button>
+                            )}
+                          </Stack>
+                          <Divider />
+                          {inventoryItems.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              No inventory items yet.
+                            </Typography>
+                          ) : (
+                            <Stack spacing={1}>
+                              {inventoryItems.map((item) => {
+                                const center = costCenterMap.get(item.cost_center_id);
+                                return (
+                                  <Stack
+                                    key={item.item_id}
+                                    direction="row"
+                                    alignItems="center"
+                                    justifyContent="space-between"
+                                    sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+                                  >
+                                    <Stack spacing={0.5}>
+                                      <Typography variant="body2" fontWeight={600}>
+                                        {item.name}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        Unit: {item.unit || "unit"} · Category: {item.category || "—"} · Cost center: {center?.name || "—"}
+                                      </Typography>
+                                    </Stack>
+                                    <Stack direction="row" spacing={0.5}>
+                                      <Tooltip title="Edit">
+                                        <IconButton size="small" onClick={() => handleEditItem(item)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Delete">
+                                        <IconButton size="small" onClick={() => handleDeleteItem(item.item_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </Stack>
+                                  </Stack>
+                                );
+                              })}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Grid>
+                      <Grid item xs={12} lg={7}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Inventory Transactions
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Transactions are filtered to the selected date range.
+                          </Typography>
+                          <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
+                            <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
+                              <InputLabel id="tx-item-label">Item</InputLabel>
+                              <Select
+                                labelId="tx-item-label"
+                                label="Item"
+                                value={txForm.item_id}
+                                onChange={(e) => setTxForm((prev) => ({ ...prev, item_id: e.target.value }))}
+                              >
+                                {inventoryItems.map((item) => (
+                                  <MenuItem key={item.item_id} value={item.item_id}>
+                                    {item.name}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                            <FormControl size="small" sx={{ minWidth: 150 }}>
+                              <InputLabel id="tx-type-label">Type</InputLabel>
+                              <Select
+                                labelId="tx-type-label"
+                                label="Type"
+                                value={txForm.tx_type}
+                                onChange={(e) => setTxForm((prev) => ({ ...prev, tx_type: e.target.value }))}
+                              >
+                                <MenuItem value="purchase">Purchase</MenuItem>
+                                <MenuItem value="usage">Usage</MenuItem>
+                                <MenuItem value="adjustment">Adjustment</MenuItem>
+                              </Select>
+                            </FormControl>
+                            <TextField
+                              label="Quantity"
+                              size="small"
+                              type="number"
+                              value={txForm.quantity}
+                              onChange={(e) => setTxForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                              inputProps={{ step: "0.01" }}
+                            />
+                            <TextField
+                              label="Unit cost (€)"
+                              size="small"
+                              type="number"
+                              value={txForm.unit_cost}
+                              onChange={(e) => setTxForm((prev) => ({ ...prev, unit_cost: e.target.value }))}
+                              inputProps={{ step: "0.01" }}
+                            />
+                            <TextField
+                              label="Date"
+                              size="small"
+                              type="date"
+                              value={txForm.tx_date}
+                              onChange={(e) => setTxForm((prev) => ({ ...prev, tx_date: e.target.value }))}
+                              InputLabelProps={{ shrink: true }}
+                            />
+                          </Stack>
+                          <TextField
+                            label="Notes"
+                            size="small"
+                            value={txForm.notes}
+                            onChange={(e) => setTxForm((prev) => ({ ...prev, notes: e.target.value }))}
+                            fullWidth
+                          />
+                          <Stack direction="row" spacing={1}>
+                            <Button
+                              variant="contained"
+                              onClick={handleSaveTx}
+                              disabled={!inventoryItems.length}
+                            >
+                              {editingTxId ? "Update transaction" : "Add transaction"}
+                            </Button>
+                            {editingTxId && (
+                              <Button variant="text" onClick={resetTxForm} startIcon={<CloseIcon />}>
+                                Cancel
+                              </Button>
+                            )}
+                          </Stack>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell sx={{ width: 100 }}>Date</TableCell>
+                                <TableCell sx={{ width: 140 }}>Item</TableCell>
+                                <TableCell sx={{ width: 110 }}>Type</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>Qty</TableCell>
+                                <TableCell align="right" sx={{ width: 110 }}>Unit cost</TableCell>
+                                <TableCell align="right" sx={{ width: 120 }}>Total</TableCell>
+                                <TableCell>Notes</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {inventoryTransactions.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      No inventory transactions for this range.
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                inventoryTransactions.map((tx) => (
+                                  <TableRow key={tx.tx_id}>
+                                    <TableCell>{tx.tx_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
+                                    <TableCell>{tx.tx_type}</TableCell>
+                                    <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
+                                    <TableCell align="right">
+                                      {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {tx.total_cost != null ? formatCurrency(tx.total_cost) : "—"}
+                                    </TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title="Edit">
+                                        <IconButton size="small" onClick={() => handleEditTx(tx)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Delete">
+                                        <IconButton size="small" onClick={() => handleDeleteTx(tx.tx_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+          </TabPanel>
+
+          <TabPanel value={activeTab} tab="statements">
+            <Stack spacing={2}>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between">
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        Income Statement
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FileText size={16} />}
+                        onClick={handleExportIncomeStatement}
+                      >
+                        Export statement
+                      </Button>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      Updated for the selected date range and city filters.
+                    </Typography>
+                    <Table size="small">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>Revenue</TableCell>
+                          <TableCell align="right">{formatCurrency(incomeStatement.revenue)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Direct costs</TableCell>
+                          <TableCell align="right">{formatCurrency(incomeStatement.directCosts)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>Gross profit</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>
+                            {formatCurrency(incomeStatement.grossProfit)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Overhead / expenses</TableCell>
+                          <TableCell align="right">{formatCurrency(incomeStatement.overheadCosts)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>Net profit</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>
+                            {formatCurrency(incomeStatement.netProfit)}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between">
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        Statement of Financial Position
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FileText size={16} />}
+                        onClick={handleExportBalanceSheet}
+                      >
+                        Export statement
+                      </Button>
+                    </Stack>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap">
+                      <Chip size="small" label={`Total assets: ${formatCurrency(balanceSheet.totalAssets)}`} />
+                      <Chip size="small" label={`Total liabilities: ${formatCurrency(balanceSheet.totalLiabilities)}`} />
+                      <Chip size="small" variant="outlined" label={`Equity: ${formatCurrency(balanceSheet.equity)}`} />
+                    </Stack>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} lg={6}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Assets
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Inventory value is computed from on-hand stock as of the selected end date.
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap">
+                            <Chip size="small" label={`Inventory: ${formatCurrency(balanceSheet.inventoryValue)}`} />
+                            <Chip size="small" label={`Fixed assets: ${formatCurrency(balanceSheet.fixedAssets)}`} />
+                          </Stack>
+                          <Stack spacing={1}>
+                            <TextField
+                              label="Asset name"
+                              size="small"
+                              value={assetForm.name}
+                              onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
+                              fullWidth
+                            />
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                                <InputLabel id="asset-category-label">Category</InputLabel>
+                                <Select
+                                  labelId="asset-category-label"
+                                  label="Category"
+                                  value={assetForm.category}
+                                  onChange={(e) => setAssetForm((prev) => ({ ...prev, category: e.target.value }))}
+                                >
+                                  {assetCategoryOptions.map((option) => (
+                                    <MenuItem key={option} value={option}>
+                                      {option}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                              <TextField
+                                label="Value (€)"
+                                size="small"
+                                type="number"
+                                value={assetForm.value}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, value: e.target.value }))}
+                                inputProps={{ step: "0.01" }}
+                              />
+                              <TextField
+                                label="Acquired date"
+                                size="small"
+                                type="date"
+                                value={assetForm.acquired_date}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, acquired_date: e.target.value }))}
+                                InputLabelProps={{ shrink: true }}
+                              />
+                            </Stack>
+                            <TextField
+                              label="Notes"
+                              size="small"
+                              value={assetForm.notes}
+                              onChange={(e) => setAssetForm((prev) => ({ ...prev, notes: e.target.value }))}
+                              fullWidth
+                            />
+                          </Stack>
+                          <Stack direction="row" spacing={1}>
+                            <Button variant="contained" onClick={handleSaveAsset}>
+                              {editingAssetId ? "Update asset" : "Add asset"}
+                            </Button>
+                            {editingAssetId && (
+                              <Button variant="text" onClick={resetAssetForm} startIcon={<CloseIcon />}>
+                                Cancel
+                              </Button>
+                            )}
+                          </Stack>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Asset</TableCell>
+                                <TableCell>Category</TableCell>
+                                <TableCell align="right">Value</TableCell>
+                                <TableCell>Date</TableCell>
+                                <TableCell>Notes</TableCell>
+                                <TableCell align="right">Actions</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {assets.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={6} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      No assets yet.
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                assets.map((asset) => (
+                                  <TableRow key={asset.asset_id}>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.name}</TableCell>
+                                    <TableCell>{asset.category || "—"}</TableCell>
+                                    <TableCell align="right">{formatCurrency(asset.value)}</TableCell>
+                                    <TableCell>{asset.acquired_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title="Edit">
+                                        <IconButton size="small" onClick={() => handleEditAsset(asset)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Delete">
+                                        <IconButton size="small" onClick={() => handleDeleteAsset(asset.asset_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                      <Grid item xs={12} lg={6}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Liabilities
+                          </Typography>
+                          <Stack spacing={1}>
+                            <TextField
+                              label="Liability name"
+                              size="small"
+                              value={liabilityForm.name}
+                              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, name: e.target.value }))}
+                              fullWidth
+                            />
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                                <InputLabel id="liability-category-label">Category</InputLabel>
+                                <Select
+                                  labelId="liability-category-label"
+                                  label="Category"
+                                  value={liabilityForm.category}
+                                  onChange={(e) => setLiabilityForm((prev) => ({ ...prev, category: e.target.value }))}
+                                >
+                                  {liabilityCategoryOptions.map((option) => (
+                                    <MenuItem key={option} value={option}>
+                                      {option}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                              <TextField
+                                label="Value (€)"
+                                size="small"
+                                type="number"
+                                value={liabilityForm.value}
+                                onChange={(e) => setLiabilityForm((prev) => ({ ...prev, value: e.target.value }))}
+                                inputProps={{ step: "0.01" }}
+                              />
+                              <TextField
+                                label="As of date"
+                                size="small"
+                                type="date"
+                                value={liabilityForm.as_of_date}
+                                onChange={(e) => setLiabilityForm((prev) => ({ ...prev, as_of_date: e.target.value }))}
+                                InputLabelProps={{ shrink: true }}
+                              />
+                            </Stack>
+                            <TextField
+                              label="Notes"
+                              size="small"
+                              value={liabilityForm.notes}
+                              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, notes: e.target.value }))}
+                              fullWidth
+                            />
+                          </Stack>
+                          <Stack direction="row" spacing={1}>
+                            <Button variant="contained" onClick={handleSaveLiability}>
+                              {editingLiabilityId ? "Update liability" : "Add liability"}
+                            </Button>
+                            {editingLiabilityId && (
+                              <Button variant="text" onClick={resetLiabilityForm} startIcon={<CloseIcon />}>
+                                Cancel
+                              </Button>
+                            )}
+                          </Stack>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Liability</TableCell>
+                                <TableCell>Category</TableCell>
+                                <TableCell align="right">Value</TableCell>
+                                <TableCell>Date</TableCell>
+                                <TableCell>Notes</TableCell>
+                                <TableCell align="right">Actions</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {liabilities.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={6} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      No liabilities yet.
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                liabilities.map((liability) => (
+                                  <TableRow key={liability.liability_id}>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.name}</TableCell>
+                                    <TableCell>{liability.category || "—"}</TableCell>
+                                    <TableCell align="right">{formatCurrency(liability.value)}</TableCell>
+                                    <TableCell>{liability.as_of_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title="Edit">
+                                        <IconButton size="small" onClick={() => handleEditLiability(liability)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Delete">
+                                        <IconButton size="small" onClick={() => handleDeleteLiability(liability.liability_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+          </TabPanel>
+
+          <TabPanel value={activeTab} tab="orders">
+            <Stack spacing={2}>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                    <Typography variant="subtitle1" fontWeight={800}>Detailed Orders</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {startDate} → {endDate}
+                    </Typography>
+                  </Stack>
+                  <Divider sx={{ mb: 2 }} />
+                  <DataGrid
+                    autoHeight
+                    rows={report.rows.map((r) => ({ id: r.order_id, ...r }))}
+                    columns={columns}
+                    pageSizeOptions={[10, 25, 50]}
+                    initialState={{
+                      pagination: { paginationModel: { pageSize: 10 } },
+                      sorting: { sortModel: [{ field: "production_date", sort: "desc" }] },
+                    }}
+                    disableRowSelectionOnClick
+                    sx={{
+                      width: "100%",
+                      "& .MuiDataGrid-columnHeaderTitle": {
+                        whiteSpace: "normal",
+                        lineHeight: 1.2,
+                      },
+                    }}
+                  />
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }}>
+                    <Typography variant="body2">
+                      Total kilos: <strong>{formatNumber(report.totals.kilos)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Total pouches: <strong>{formatNumber(report.totals.pouches)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Total revenue: <strong>{formatCurrency(report.totals.revenue)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Total gross profit: <strong>{formatCurrency(report.totals.gross_profit)}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Total net profit: <strong>{formatCurrency(report.totals.net_profit)}</strong>
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+          </TabPanel>
         </>
       )}
 
