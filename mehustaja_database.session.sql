@@ -1,3 +1,8 @@
 SELECT * FROM Accounts  
 
 ALTER TABLE Orders ADD COLUMN actual_pouches INT(11) DEFAULT NULL;
+
+ALTER TABLE Orders
+  ADD COLUMN is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN deleted_at DATETIME NULL;
+

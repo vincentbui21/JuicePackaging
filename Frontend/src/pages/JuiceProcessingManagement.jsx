@@ -170,7 +170,7 @@ function JuiceProcessingManagement() {
         delete copy[orderId];
         return copy;
       });
-      setSnackbarMsg("Order deleted successfully");
+      setSnackbarMsg("Order moved to Delete Bin");
     } catch (err) {
       console.error("Failed to delete order", err);
       setSnackbarMsg("Failed to delete order");

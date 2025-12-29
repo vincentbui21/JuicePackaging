@@ -471,6 +471,7 @@ async function getOrdersByStatus(status) {
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
         WHERE o.status = ?
+          AND COALESCE(o.is_deleted, 0) = 0
         ORDER BY o.created_at ASC
     `, [status]);
 
@@ -483,7 +484,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
     const offset = (parsedPage - 1) * parsedLimit;
 
     const [[countRow]] = await pool.query(
-        `SELECT COUNT(*) AS total FROM Orders WHERE status = ?`,
+        `SELECT COUNT(*) AS total FROM Orders WHERE status = ? AND COALESCE(is_deleted, 0) = 0`,
         [status]
     );
 
@@ -501,6 +502,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
         WHERE o.status = ?
+          AND COALESCE(o.is_deleted, 0) = 0
         ORDER BY o.created_at ASC
         LIMIT ? OFFSET ?
     `, [status, parsedLimit, offset]);
@@ -736,7 +738,56 @@ async function updateOrderInfo(order_id, data = {}) {
 }
       
       async function deleteOrder(order_id) {
-        await pool.query("DELETE FROM Orders WHERE order_id = ?", [order_id]);
+        await pool.query(
+          "UPDATE Orders SET is_deleted = 1, deleted_at = NOW() WHERE order_id = ?",
+          [order_id]
+        );
+      }
+
+      async function get_deleted_orders() {
+        const [rows] = await pool.query(
+          `
+          SELECT
+            o.order_id,
+            o.status,
+            o.weight_kg,
+            o.boxes_count,
+            o.pouches_count,
+            o.actual_pouches,
+            o.created_at,
+            o.deleted_at,
+            c.name,
+            c.city
+          FROM Orders o
+          JOIN Customers c ON o.customer_id = c.customer_id
+          WHERE COALESCE(o.is_deleted, 0) = 1
+          ORDER BY o.deleted_at DESC
+          `
+        );
+        return rows;
+      }
+
+      async function restore_order(order_id) {
+        await pool.query(
+          "UPDATE Orders SET is_deleted = 0, deleted_at = NULL WHERE order_id = ?",
+          [order_id]
+        );
+      }
+
+      async function force_delete_order(order_id) {
+        const connection = await pool.getConnection();
+        try {
+          await connection.beginTransaction();
+          const pattern = `BOX_${order_id}%`;
+          await connection.query("DELETE FROM Boxes WHERE box_id LIKE ?", [pattern]);
+          await connection.query("DELETE FROM Orders WHERE order_id = ?", [order_id]);
+          await connection.commit();
+        } catch (error) {
+          await connection.rollback();
+          throw error;
+        } finally {
+          connection.release();
+        }
       }
       
       async function getPalletsByLocation(location) {
@@ -908,7 +959,8 @@ async function updatePalletHolding(pallet_id, connOrPool = pool) {
             ) AS box_count
           FROM Orders o
           JOIN Customers c ON o.customer_id = c.customer_id
-          WHERE c.name LIKE ? OR c.phone LIKE ?
+          WHERE (c.name LIKE ? OR c.phone LIKE ?)
+            AND COALESCE(o.is_deleted, 0) = 0
           ORDER BY o.created_at DESC
         `, [`%${query}%`, `%${query}%`]);
       
@@ -964,8 +1016,8 @@ async function searchOrdersWithShelfInfo(query) {
     LEFT JOIN Shelves sb
       ON sb.shelf_id = b.shelf_id
 
-    WHERE c.name  LIKE ?
-       OR c.phone LIKE ?
+    WHERE (c.name  LIKE ? OR c.phone LIKE ?)
+      AND COALESCE(o.is_deleted, 0) = 0
 
     GROUP BY
       o.order_id, o.status, o.customer_id, o.created_at,
@@ -2271,6 +2323,7 @@ async function getAdminReportRows({ startDate, endDate, cities = [] } = {}) {
     JOIN Orders o ON o.order_id = b.order_id
     JOIN Customers c ON c.customer_id = o.customer_id
     WHERE 1=1
+      AND COALESCE(o.is_deleted, 0) = 0
       ${whereSql}
     ORDER BY b.created_at DESC, o.order_id ASC
     `,
@@ -2462,6 +2515,9 @@ module.exports = {
     markOrderAsDone,
     updateOrderInfo,
     deleteOrder,
+    get_deleted_orders,
+    restore_order,
+    force_delete_order,
     getPalletsByLocation,
     createPallet,
     deleteShelf,

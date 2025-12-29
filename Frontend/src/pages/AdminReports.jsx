@@ -393,6 +393,8 @@ export default function AdminReports() {
       "Overhead / Expenses (€)",
       "Gross profit (€)",
       "Gross margin (%)",
+      "Net profit (€)",
+      "Net margin (%)",
     ];
 
     const escape = (val) => {
@@ -414,6 +416,8 @@ export default function AdminReports() {
       "",
       r.gross_profit,
       r.gross_margin_pct,
+      "",
+      "",
     ]));
 
     lines.push([
@@ -429,6 +433,8 @@ export default function AdminReports() {
       report.totals.overhead_cost,
       report.totals.gross_profit,
       report.totals.gross_margin_pct,
+      report.totals.net_profit,
+      report.totals.net_margin_pct,
     ]);
 
     const csv = [headers, ...lines].map((row) => row.map(escape).join(",")).join("\n");
@@ -499,6 +505,8 @@ export default function AdminReports() {
       <div><span>Total costs</span><strong>${escapeHtml(formatCurrency(report.totals.total_costs))}</strong></div>
       <div><span>Gross profit</span><strong>${escapeHtml(formatCurrency(report.totals.gross_profit))}</strong></div>
       <div><span>Gross margin</span><strong>${escapeHtml(formatPercent(report.totals.gross_margin_pct))}</strong></div>
+      <div><span>Net profit</span><strong>${escapeHtml(formatCurrency(report.totals.net_profit))}</strong></div>
+      <div><span>Net margin</span><strong>${escapeHtml(formatPercent(report.totals.net_margin_pct))}</strong></div>
       <div><span>Avg order value</span><strong>${escapeHtml(formatCurrency(report.totals.avg_order_value))}</strong></div>
       <div><span>Yield</span><strong>${escapeHtml(formatPercent(report.totals.yield_pct))}</strong></div>
       <div><span>Top city</span><strong>${escapeHtml(report.topCity || "—")}</strong></div>
@@ -754,6 +762,13 @@ export default function AdminReports() {
                 title="Gross Profit"
                 value={formatCurrency(report.totals.gross_profit)}
                 subtext={`Gross margin: ${report.totals.gross_margin_pct}%`}
+              />
+            </Grid>
+            <Grid item xs={12} md={6} lg={3}>
+              <KpiCard
+                title="Net Profit"
+                value={formatCurrency(report.totals.net_profit)}
+                subtext={`Net margin: ${report.totals.net_margin_pct}%`}
               />
             </Grid>
             <Grid item xs={12} md={6} lg={3}>
@@ -1104,6 +1119,9 @@ export default function AdminReports() {
                 </Typography>
                 <Typography variant="body2">
                   Total gross profit: <strong>{formatCurrency(report.totals.gross_profit)}</strong>
+                </Typography>
+                <Typography variant="body2">
+                  Total net profit: <strong>{formatCurrency(report.totals.net_profit)}</strong>
                 </Typography>
               </Stack>
             </CardContent>

@@ -90,6 +90,8 @@ CREATE TABLE `Orders` (
     `total_cost` decimal(10,2) DEFAULT NULL,
     `pouches_count` int(11) DEFAULT NULL,
     `actual_pouches` int(11) DEFAULT NULL,
+    `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
+    `deleted_at` datetime DEFAULT NULL,
     `notes` text DEFAULT NULL,
     `created_at` date DEFAULT NULL,
     `ready_at` datetime DEFAULT NULL,
@@ -151,4 +153,3 @@ CREATE TABLE IF NOT EXISTS `CostCenters` (
   PRIMARY KEY (`center_id`),
   UNIQUE KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-

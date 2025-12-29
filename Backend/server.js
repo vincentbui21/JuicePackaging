@@ -415,6 +415,16 @@ app.get('/deleted-customers', async (req, res) => {
     }
 });
 
+app.get('/deleted-orders', async (req, res) => {
+  try {
+    const result = await database.get_deleted_orders();
+    res.status(200).json(result || []);
+  } catch (error) {
+    console.error('Failed to get deleted orders:', error);
+    res.status(500).json({ message: 'Failed to get deleted orders.' });
+  }
+});
+
 app.post('/restore-customer', async (req, res) => {
     const { customer_id } = req.body;
     if (!customer_id) {
@@ -428,6 +438,20 @@ app.post('/restore-customer', async (req, res) => {
     }
 });
 
+app.post('/restore-order', async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) {
+    return res.status(400).json({ message: 'Missing order_id in request body.' });
+  }
+  try {
+    await database.restore_order(order_id);
+    res.status(200).json({ message: 'Order restored successfully.' });
+  } catch (error) {
+    console.error('Error restoring order:', error);
+    res.status(500).json({ message: 'Failed to restore order.' });
+  }
+});
+
 app.delete('/force-delete-customer', async (req, res) => {
     const { customer_id } = req.body;
     if (!customer_id) {
@@ -439,6 +463,20 @@ app.delete('/force-delete-customer', async (req, res) => {
     } else {
         res.status(500).json({ message: 'Failed to permanently delete customer.' });
     }
+});
+
+app.delete('/force-delete-order', async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) {
+    return res.status(400).json({ message: 'Missing order_id in request body.' });
+  }
+  try {
+    await database.force_delete_order(order_id);
+    res.status(200).json({ message: 'Order permanently deleted.' });
+  } catch (error) {
+    console.error('Error permanently deleting order:', error);
+    res.status(500).json({ message: 'Failed to permanently delete order.' });
+  }
 });
 
 
@@ -505,7 +543,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
 
   app.put('/orders/:order_id', async (req, res) => {
     const { order_id } = req.params;
-    const { weight_kg, estimated_pouches, estimated_boxes, actual_pouches, status, name } = req.body;
+    const { weight_kg, estimated_pouches, estimated_boxes, actual_pouches, actual_boxes, status, name } = req.body;
   
     try {
       await database.updateOrderInfo(order_id, {
@@ -515,6 +553,7 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
         estimated_pouches,
         estimated_boxes,
         actual_pouches,
+        actual_boxes,
       });
       // Notify all clients that orders have been updated
       emitActivity('processing', `Order ${order_id} info updated`, { order_id });
@@ -529,8 +568,8 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
   app.delete("/orders/:order_id", async (req, res) => {
     try {
       const { order_id } = req.params;
-      await database.deleteOrder(order_id); 
-      res.status(200).send({ message: "Order deleted" });
+      await database.deleteOrder(order_id);
+      res.status(200).send({ message: "Order moved to delete bin" });
     } catch (err) {
       console.error("Failed to delete order:", err);
       res.status(500).send("Server error");

@@ -87,8 +87,10 @@ export function buildAdminReport(rows = [], costTotals = {}) {
   totals.direct_cost = directCostTotal;
   totals.overhead_cost = overheadCostTotal;
   totals.total_costs = totalCosts;
-  totals.gross_profit = round(totals.revenue - totalCosts, 2);
+  totals.gross_profit = round(totals.revenue - directCostTotal, 2);
+  totals.net_profit = round(totals.revenue - totalCosts, 2);
   totals.gross_margin_pct = totals.revenue > 0 ? round((totals.gross_profit / totals.revenue) * 100, 2) : 0;
+  totals.net_margin_pct = totals.revenue > 0 ? round((totals.net_profit / totals.revenue) * 100, 2) : 0;
   totals.avg_weight_per_pouch_g = totals.pouches > 0 ? round((totals.kilos * 1000) / totals.pouches, 1) : 0;
   totals.avg_order_value = totals.orders > 0 ? round(totals.revenue / totals.orders, 2) : 0;
   totals.yield_pct = totals.expected_pouches > 0 ? round((totals.pouches / totals.expected_pouches) * 100, 2) : 0;
