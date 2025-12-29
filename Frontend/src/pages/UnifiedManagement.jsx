@@ -347,21 +347,31 @@ export default function UnifiedManagement() {
                 const ready = isReadyForPickup(params.row?.status);
                 return (
                 <Stack direction="row" spacing={isMobile ? 0.25 : 0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Tooltip title="Edit">
                     <IconButton color="primary" onClick={() => openEditDialog(params.row)} size={isMobile ? "small" : "small"}>
                     <Edit fontSize={isMobile ? "small" : "medium"} />
                     </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
                     <IconButton color="error" onClick={() => handleDeleteClick(params.row)} size={isMobile ? "small" : "small"}>
                     <Delete fontSize={isMobile ? "small" : "medium"} />
                     </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Print Crate QR">
                     <IconButton color="warning" onClick={() => handleCrateQRPrint(params.row)} size={isMobile ? "small" : "small"}>
                     <Trolley fontSize={isMobile ? "small" : "medium"} />
                     </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Print Box QR">
                     <IconButton color="secondary" onClick={() => handleShowQR(params.row)} size={isMobile ? "small" : "small"}>
                     <Inventory fontSize={isMobile ? "small" : "medium"} />
                     </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Print pouches label">
                     <IconButton color="success" onClick={() => printPouchLabels(params.row)} size={isMobile ? "small" : "small"}>
                     <Print fontSize={isMobile ? "small" : "medium"} />
                     </IconButton>
+                    </Tooltip>
                     <Tooltip title={ready ? 'Send SMS' : "Only available when status is 'Ready for pickup'."}>
                     <span>
                         <Button
