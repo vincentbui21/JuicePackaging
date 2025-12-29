@@ -40,6 +40,39 @@ const presets = [
   { key: "custom", label: "Custom" },
 ];
 
+const inventoryCategoryOptions = [
+  "Raw materials",
+  "Packaging",
+  "Work in progress",
+  "Finished goods",
+  "Supplies",
+  "Other",
+];
+
+const assetCategoryOptions = [
+  "Cash",
+  "Accounts receivable",
+  "Inventory",
+  "Prepaid expenses",
+  "Equipment",
+  "Vehicles",
+  "Buildings",
+  "Land",
+  "Intangible assets",
+  "Investments",
+  "Other assets",
+];
+
+const liabilityCategoryOptions = [
+  "Accounts payable",
+  "Accrued expenses",
+  "Short-term loans",
+  "Long-term debt",
+  "Taxes payable",
+  "Deferred revenue",
+  "Other liabilities",
+];
+
 const toDateStr = (d) => d.toISOString().slice(0, 10);
 
 const getPresetRange = (key) => {
@@ -113,11 +146,43 @@ export default function AdminReports() {
   const [saveNotice, setSaveNotice] = useState(false);
   const [costCenters, setCostCenters] = useState([]);
   const [costEntries, setCostEntries] = useState([]);
+  const [pricing, setPricing] = useState({ price: 8, shipping_fee: 0 });
   const [centerForm, setCenterForm] = useState({ name: "", category: "direct" });
   const [editingCenterId, setEditingCenterId] = useState(null);
   const [entryForm, setEntryForm] = useState({ center_id: "", amount: "", incurred_date: "", notes: "" });
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [inventoryTransactions, setInventoryTransactions] = useState([]);
+  const [inventorySummary, setInventorySummary] = useState([]);
+  const [itemForm, setItemForm] = useState({
+    name: "",
+    sku: "",
+    unit: "unit",
+    category: inventoryCategoryOptions[0],
+    cost_center_id: "",
+  });
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [txForm, setTxForm] = useState({ item_id: "", tx_type: "purchase", quantity: "", unit_cost: "", tx_date: "", notes: "" });
+  const [editingTxId, setEditingTxId] = useState(null);
+  const [assets, setAssets] = useState([]);
+  const [liabilities, setLiabilities] = useState([]);
+  const [assetForm, setAssetForm] = useState({
+    name: "",
+    category: assetCategoryOptions[0],
+    value: "",
+    acquired_date: "",
+    notes: "",
+  });
+  const [editingAssetId, setEditingAssetId] = useState(null);
+  const [liabilityForm, setLiabilityForm] = useState({
+    name: "",
+    category: liabilityCategoryOptions[0],
+    value: "",
+    as_of_date: "",
+    notes: "",
+  });
+  const [editingLiabilityId, setEditingLiabilityId] = useState(null);
 
   const costTotals = useMemo(() => {
     const totals = { direct: 0, overhead: 0, total: 0 };
@@ -133,7 +198,49 @@ export default function AdminReports() {
     return totals;
   }, [costEntries]);
 
-  const report = useMemo(() => buildAdminReport(rows, costTotals), [rows, costTotals]);
+  const costCenterMap = useMemo(() => {
+    const map = new Map();
+    costCenters.forEach((center) => {
+      map.set(center.center_id, center);
+    });
+    return map;
+  }, [costCenters]);
+
+  const report = useMemo(() => buildAdminReport(rows, costTotals, pricing), [rows, costTotals, pricing]);
+
+  const inventoryTotals = useMemo(() => {
+    const totals = { onHandCount: 0, inventoryValue: 0 };
+    inventorySummary.forEach((item) => {
+      totals.onHandCount += Number(item.on_hand || 0);
+      totals.inventoryValue += Number(item.inventory_value || 0);
+    });
+    totals.onHandCount = Number(totals.onHandCount.toFixed(2));
+    totals.inventoryValue = Number(totals.inventoryValue.toFixed(2));
+    return totals;
+  }, [inventorySummary]);
+
+  const incomeStatement = useMemo(() => ({
+    revenue: report.totals.revenue,
+    directCosts: report.totals.direct_cost,
+    grossProfit: report.totals.gross_profit,
+    overheadCosts: report.totals.overhead_cost,
+    netProfit: report.totals.net_profit,
+  }), [report]);
+
+  const balanceSheet = useMemo(() => {
+    const fixedAssetsTotal = assets.reduce((sum, asset) => sum + Number(asset.value || 0), 0);
+    const liabilitiesTotal = liabilities.reduce((sum, liability) => sum + Number(liability.value || 0), 0);
+    const totalAssets = Number((inventoryTotals.inventoryValue + fixedAssetsTotal).toFixed(2));
+    const totalLiabilities = Number(liabilitiesTotal.toFixed(2));
+    const equity = Number((totalAssets - totalLiabilities).toFixed(2));
+    return {
+      inventoryValue: inventoryTotals.inventoryValue,
+      fixedAssets: Number(fixedAssetsTotal.toFixed(2)),
+      totalAssets,
+      totalLiabilities,
+      equity,
+    };
+  }, [assets, liabilities, inventoryTotals.inventoryValue]);
 
   useEffect(() => {
     const saved = localStorage.getItem("adminReportsView");
@@ -181,6 +288,23 @@ export default function AdminReports() {
     loadCities();
   }, []);
 
+  useEffect(() => {
+    const loadPricing = async () => {
+      try {
+        const { data } = await api.get("/default-setting");
+        const price = Number(data?.price || 0);
+        const shippingFee = Number(data?.shipping_fee || 0);
+        setPricing({
+          price: Number.isFinite(price) && price > 0 ? price : 8,
+          shipping_fee: Number.isFinite(shippingFee) ? shippingFee : 0,
+        });
+      } catch (err) {
+        console.error("Failed to load pricing defaults", err);
+      }
+    };
+    loadPricing();
+  }, []);
+
   const showToast = (message, severity = "success") => {
     setToast({ open: true, message, severity });
   };
@@ -213,14 +337,108 @@ export default function AdminReports() {
     }
   };
 
+  const loadInventoryItems = async () => {
+    try {
+      const { data } = await api.get("/inventory-items");
+      const list = Array.isArray(data) ? data : [];
+      setInventoryItems(list);
+      setItemForm((prev) => {
+        if (prev.cost_center_id || !costCenters.length) return prev;
+        const firstDirect = costCenters.find((center) => center.category === "direct");
+        return { ...prev, cost_center_id: firstDirect?.center_id || "" };
+      });
+      setTxForm((prev) => {
+        if (prev.item_id || !list.length) return prev;
+        return { ...prev, item_id: list[0].item_id };
+      });
+    } catch (err) {
+      console.error("Failed to load inventory items", err);
+      showToast("Failed to load inventory items", "error");
+    }
+  };
+
+  const loadInventoryTransactions = async () => {
+    try {
+      const params = {};
+      if (startDate) params.start = startDate;
+      if (endDate) params.end = endDate;
+      const { data } = await api.get("/inventory-transactions", { params });
+      setInventoryTransactions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load inventory transactions", err);
+      showToast("Failed to load inventory transactions", "error");
+    }
+  };
+
+  const loadInventorySummary = async () => {
+    try {
+      const params = {};
+      if (endDate) params.as_of = endDate;
+      const { data } = await api.get("/inventory-summary", { params });
+      setInventorySummary(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load inventory summary", err);
+      showToast("Failed to load inventory summary", "error");
+    }
+  };
+
+  const loadAssets = async () => {
+    try {
+      const params = {};
+      if (endDate) params.as_of = endDate;
+      const { data } = await api.get("/assets", { params });
+      setAssets(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load assets", err);
+      showToast("Failed to load assets", "error");
+    }
+  };
+
+  const loadLiabilities = async () => {
+    try {
+      const params = {};
+      if (endDate) params.as_of = endDate;
+      const { data } = await api.get("/liabilities", { params });
+      setLiabilities(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load liabilities", err);
+      showToast("Failed to load liabilities", "error");
+    }
+  };
+
   useEffect(() => {
     loadCostCenters();
   }, []);
 
   useEffect(() => {
+    loadInventoryItems();
+  }, []);
+
+  useEffect(() => {
     if (!startDate || !endDate) return;
     loadCostEntries();
+    loadInventoryTransactions();
+    loadInventorySummary();
+    loadAssets();
+    loadLiabilities();
   }, [startDate, endDate]);
+
+  useEffect(() => {
+    if (!costCenters.length) return;
+    setItemForm((prev) => {
+      if (prev.cost_center_id) return prev;
+      const firstDirect = costCenters.find((center) => center.category === "direct");
+      return { ...prev, cost_center_id: firstDirect?.center_id || "" };
+    });
+  }, [costCenters]);
+
+  useEffect(() => {
+    if (!inventoryItems.length) return;
+    setTxForm((prev) => {
+      if (prev.item_id) return prev;
+      return { ...prev, item_id: inventoryItems[0].item_id };
+    });
+  }, [inventoryItems]);
 
   useEffect(() => {
     const loadReport = async () => {
@@ -250,6 +468,24 @@ export default function AdminReports() {
     }
   }, [endDate, entryForm.incurred_date]);
 
+  useEffect(() => {
+    if (!txForm.tx_date && endDate) {
+      setTxForm((prev) => ({ ...prev, tx_date: endDate }));
+    }
+  }, [endDate, txForm.tx_date]);
+
+  useEffect(() => {
+    if (!assetForm.acquired_date && endDate) {
+      setAssetForm((prev) => ({ ...prev, acquired_date: endDate }));
+    }
+  }, [endDate, assetForm.acquired_date]);
+
+  useEffect(() => {
+    if (!liabilityForm.as_of_date && endDate) {
+      setLiabilityForm((prev) => ({ ...prev, as_of_date: endDate }));
+    }
+  }, [endDate, liabilityForm.as_of_date]);
+
   const resetCenterForm = () => {
     setCenterForm({ name: "", category: "direct" });
     setEditingCenterId(null);
@@ -263,6 +499,52 @@ export default function AdminReports() {
       notes: "",
     }));
     setEditingEntryId(null);
+  };
+
+  const resetItemForm = () => {
+    const firstDirect = costCenters.find((center) => center.category === "direct");
+    setItemForm({
+      name: "",
+      sku: "",
+      unit: "unit",
+      category: inventoryCategoryOptions[0],
+      cost_center_id: firstDirect?.center_id || "",
+    });
+    setEditingItemId(null);
+  };
+
+  const resetTxForm = () => {
+    setTxForm({
+      item_id: inventoryItems[0]?.item_id || "",
+      tx_type: "purchase",
+      quantity: "",
+      unit_cost: "",
+      tx_date: endDate || "",
+      notes: "",
+    });
+    setEditingTxId(null);
+  };
+
+  const resetAssetForm = () => {
+    setAssetForm({
+      name: "",
+      category: assetCategoryOptions[0],
+      value: "",
+      acquired_date: endDate || "",
+      notes: "",
+    });
+    setEditingAssetId(null);
+  };
+
+  const resetLiabilityForm = () => {
+    setLiabilityForm({
+      name: "",
+      category: liabilityCategoryOptions[0],
+      value: "",
+      as_of_date: endDate || "",
+      notes: "",
+    });
+    setEditingLiabilityId(null);
   };
 
   const handleSaveCenter = async () => {
@@ -379,6 +661,268 @@ export default function AdminReports() {
     }
   };
 
+  const handleSaveItem = async () => {
+    const trimmedName = itemForm.name.trim();
+    if (!trimmedName) {
+      showToast("Inventory item name is required", "error");
+      return;
+    }
+    const payload = {
+      name: trimmedName,
+      sku: itemForm.sku || null,
+      unit: itemForm.unit || "unit",
+      category: itemForm.category || null,
+      cost_center_id: itemForm.cost_center_id || null,
+    };
+    try {
+      if (editingItemId) {
+        await api.put(`/inventory-items/${editingItemId}`, payload);
+        showToast("Inventory item updated");
+      } else {
+        await api.post("/inventory-items", payload);
+        showToast("Inventory item added");
+      }
+      resetItemForm();
+      await loadInventoryItems();
+      await loadInventorySummary();
+    } catch (err) {
+      console.error("Failed to save inventory item", err);
+      showToast("Failed to save inventory item", "error");
+    }
+  };
+
+  const handleEditItem = (item) => {
+    setEditingItemId(item.item_id);
+    setItemForm({
+      name: item.name || "",
+      sku: item.sku || "",
+      unit: item.unit || "unit",
+      category: item.category || inventoryCategoryOptions[0],
+      cost_center_id: item.cost_center_id || "",
+    });
+  };
+
+  const handleDeleteItem = async (itemId) => {
+    const confirmed = window.confirm("Delete this inventory item? It must have no transactions.");
+    if (!confirmed) return;
+    try {
+      await api.delete(`/inventory-items/${itemId}`);
+      showToast("Inventory item deleted");
+      if (editingItemId === itemId) resetItemForm();
+      await loadInventoryItems();
+      await loadInventorySummary();
+    } catch (err) {
+      console.error("Failed to delete inventory item", err);
+      showToast(err?.response?.data?.error || "Failed to delete inventory item", "error");
+    }
+  };
+
+  const handleSaveTx = async () => {
+    const itemId = Number(txForm.item_id);
+    const qty = Number(txForm.quantity);
+    const dateStr = String(txForm.tx_date || "").trim();
+    if (!Number.isFinite(itemId)) {
+      showToast("Select an inventory item", "error");
+      return;
+    }
+    if (!txForm.tx_type) {
+      showToast("Select a transaction type", "error");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty === 0) {
+      showToast("Quantity must be non-zero", "error");
+      return;
+    }
+    if (txForm.tx_type !== "adjustment" && qty < 0) {
+      showToast("Quantity must be positive for this type", "error");
+      return;
+    }
+    if (!dateStr) {
+      showToast("Transaction date is required", "error");
+      return;
+    }
+    const payload = {
+      item_id: itemId,
+      tx_type: txForm.tx_type,
+      quantity: qty,
+      unit_cost: txForm.unit_cost === "" ? null : Number(txForm.unit_cost),
+      tx_date: dateStr,
+      notes: txForm.notes,
+    };
+    try {
+      if (editingTxId) {
+        await api.put(`/inventory-transactions/${editingTxId}`, payload);
+        showToast("Inventory transaction updated");
+      } else {
+        await api.post("/inventory-transactions", payload);
+        showToast("Inventory transaction added");
+      }
+      resetTxForm();
+      await loadInventoryTransactions();
+      await loadInventorySummary();
+      await loadCostEntries();
+    } catch (err) {
+      console.error("Failed to save inventory transaction", err);
+      showToast("Failed to save inventory transaction", "error");
+    }
+  };
+
+  const handleEditTx = (tx) => {
+    setEditingTxId(tx.tx_id);
+    setTxForm({
+      item_id: tx.item_id,
+      tx_type: tx.tx_type,
+      quantity: tx.quantity ?? "",
+      unit_cost: tx.unit_cost ?? "",
+      tx_date: tx.tx_date || "",
+      notes: tx.notes || "",
+    });
+  };
+
+  const handleDeleteTx = async (txId) => {
+    const confirmed = window.confirm("Delete this inventory transaction?");
+    if (!confirmed) return;
+    try {
+      await api.delete(`/inventory-transactions/${txId}`);
+      showToast("Inventory transaction deleted");
+      if (editingTxId === txId) resetTxForm();
+      await loadInventoryTransactions();
+      await loadInventorySummary();
+      await loadCostEntries();
+    } catch (err) {
+      console.error("Failed to delete inventory transaction", err);
+      showToast("Failed to delete inventory transaction", "error");
+    }
+  };
+
+  const handleSaveAsset = async () => {
+    const trimmedName = assetForm.name.trim();
+    const valueNum = Number(assetForm.value);
+    const dateStr = String(assetForm.acquired_date || "").trim();
+    if (!trimmedName) {
+      showToast("Asset name is required", "error");
+      return;
+    }
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      showToast("Asset value must be greater than 0", "error");
+      return;
+    }
+    if (!dateStr) {
+      showToast("Acquired date is required", "error");
+      return;
+    }
+    const payload = {
+      name: trimmedName,
+      category: assetForm.category || null,
+      value: Number(valueNum.toFixed(2)),
+      acquired_date: dateStr,
+      notes: assetForm.notes,
+    };
+    try {
+      if (editingAssetId) {
+        await api.put(`/assets/${editingAssetId}`, payload);
+        showToast("Asset updated");
+      } else {
+        await api.post("/assets", payload);
+        showToast("Asset added");
+      }
+      resetAssetForm();
+      await loadAssets();
+    } catch (err) {
+      console.error("Failed to save asset", err);
+      showToast("Failed to save asset", "error");
+    }
+  };
+
+  const handleEditAsset = (asset) => {
+    setEditingAssetId(asset.asset_id);
+    setAssetForm({
+      name: asset.name || "",
+      category: asset.category || assetCategoryOptions[0],
+      value: asset.value ?? "",
+      acquired_date: asset.acquired_date || "",
+      notes: asset.notes || "",
+    });
+  };
+
+  const handleDeleteAsset = async (assetId) => {
+    const confirmed = window.confirm("Delete this asset?");
+    if (!confirmed) return;
+    try {
+      await api.delete(`/assets/${assetId}`);
+      showToast("Asset deleted");
+      if (editingAssetId === assetId) resetAssetForm();
+      await loadAssets();
+    } catch (err) {
+      console.error("Failed to delete asset", err);
+      showToast("Failed to delete asset", "error");
+    }
+  };
+
+  const handleSaveLiability = async () => {
+    const trimmedName = liabilityForm.name.trim();
+    const valueNum = Number(liabilityForm.value);
+    const dateStr = String(liabilityForm.as_of_date || "").trim();
+    if (!trimmedName) {
+      showToast("Liability name is required", "error");
+      return;
+    }
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      showToast("Liability value must be greater than 0", "error");
+      return;
+    }
+    if (!dateStr) {
+      showToast("As-of date is required", "error");
+      return;
+    }
+    const payload = {
+      name: trimmedName,
+      category: liabilityForm.category || null,
+      value: Number(valueNum.toFixed(2)),
+      as_of_date: dateStr,
+      notes: liabilityForm.notes,
+    };
+    try {
+      if (editingLiabilityId) {
+        await api.put(`/liabilities/${editingLiabilityId}`, payload);
+        showToast("Liability updated");
+      } else {
+        await api.post("/liabilities", payload);
+        showToast("Liability added");
+      }
+      resetLiabilityForm();
+      await loadLiabilities();
+    } catch (err) {
+      console.error("Failed to save liability", err);
+      showToast("Failed to save liability", "error");
+    }
+  };
+
+  const handleEditLiability = (liability) => {
+    setEditingLiabilityId(liability.liability_id);
+    setLiabilityForm({
+      name: liability.name || "",
+      category: liability.category || liabilityCategoryOptions[0],
+      value: liability.value ?? "",
+      as_of_date: liability.as_of_date || "",
+      notes: liability.notes || "",
+    });
+  };
+
+  const handleDeleteLiability = async (liabilityId) => {
+    const confirmed = window.confirm("Delete this liability?");
+    if (!confirmed) return;
+    try {
+      await api.delete(`/liabilities/${liabilityId}`);
+      showToast("Liability deleted");
+      if (editingLiabilityId === liabilityId) resetLiabilityForm();
+      await loadLiabilities();
+    } catch (err) {
+      console.error("Failed to delete liability", err);
+      showToast("Failed to delete liability", "error");
+    }
+  };
+
   const handleExportCsv = () => {
     const headers = [
       "Date",
@@ -389,12 +933,6 @@ export default function AdminReports() {
       "Kilos",
       "Unit price (€ / pouch)",
       "Revenue (€)",
-      "Direct cost (€)",
-      "Overhead / Expenses (€)",
-      "Gross profit (€)",
-      "Gross margin (%)",
-      "Net profit (€)",
-      "Net margin (%)",
     ];
 
     const escape = (val) => {
@@ -412,12 +950,6 @@ export default function AdminReports() {
       r.kilos,
       r.unit_price,
       r.revenue,
-      r.direct_cost,
-      "",
-      r.gross_profit,
-      r.gross_margin_pct,
-      "",
-      "",
     ]));
 
     lines.push([
@@ -429,12 +961,6 @@ export default function AdminReports() {
       report.totals.kilos,
       "",
       report.totals.revenue,
-      report.totals.direct_cost,
-      report.totals.overhead_cost,
-      report.totals.gross_profit,
-      report.totals.gross_margin_pct,
-      report.totals.net_profit,
-      report.totals.net_margin_pct,
     ]);
 
     const csv = [headers, ...lines].map((row) => row.map(escape).join(",")).join("\n");
@@ -462,13 +988,9 @@ export default function AdminReports() {
           <td class="num">${escapeHtml(formatNumber(r.kilos))}</td>
           <td class="num">${escapeHtml(formatCurrency(r.unit_price))}</td>
           <td class="num">${escapeHtml(formatCurrency(r.revenue))}</td>
-          <td class="num">${escapeHtml(formatCurrency(r.direct_cost))}</td>
-          <td class="num"></td>
-          <td class="num">${escapeHtml(formatCurrency(r.gross_profit))}</td>
-          <td class="num">${escapeHtml(formatPercent(r.gross_margin_pct))}</td>
         </tr>`
       )).join("")
-      : `<tr><td colspan="12" class="empty">No data for the selected range.</td></tr>`;
+      : `<tr><td colspan="8" class="empty">No data for the selected range.</td></tr>`;
 
     return `<!doctype html>
 <html>
@@ -524,10 +1046,6 @@ export default function AdminReports() {
           <th class="num">Kilos</th>
           <th class="num">Unit price</th>
           <th class="num">Revenue</th>
-          <th class="num">Direct cost</th>
-          <th class="num">Overhead</th>
-          <th class="num">Gross profit</th>
-          <th class="num">Gross margin</th>
         </tr>
       </thead>
       <tbody>
@@ -541,10 +1059,6 @@ export default function AdminReports() {
           <td class="num">${escapeHtml(formatNumber(report.totals.kilos))}</td>
           <td></td>
           <td class="num">${escapeHtml(formatCurrency(report.totals.revenue))}</td>
-          <td class="num">${escapeHtml(formatCurrency(report.totals.direct_cost))}</td>
-          <td class="num">${escapeHtml(formatCurrency(report.totals.overhead_cost))}</td>
-          <td class="num">${escapeHtml(formatCurrency(report.totals.gross_profit))}</td>
-          <td class="num">${escapeHtml(formatPercent(report.totals.gross_margin_pct))}</td>
         </tr>
       </tbody>
     </table>
@@ -558,15 +1072,137 @@ export default function AdminReports() {
 </html>`;
   };
 
-  const handleExportPdf = () => {
+  const buildIncomeStatementHtml = () => {
+    const title = "Income Statement";
+    const rangeText = `${startDate || "—"} → ${endDate || "—"}`;
+    const cityText = selectedCities.length ? selectedCities.join(", ") : "All cities";
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)} ${escapeHtml(startDate || "")} - ${escapeHtml(endDate || "")}</title>
+    <style>
+      @page { margin: 18mm; }
+      body { font-family: "Arial", sans-serif; color: #222; }
+      h1 { font-size: 20px; margin: 0 0 6px; }
+      .meta { font-size: 12px; color: #555; margin-bottom: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid #ddd; padding: 8px; }
+      th { background: #f4f6f8; text-align: left; }
+      td.num { text-align: right; }
+      .total { font-weight: bold; background: #fafafa; }
+    </style>
+  </head>
+  <body>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">Date range: ${escapeHtml(rangeText)} · Cities: ${escapeHtml(cityText)}</div>
+    <table>
+      <tbody>
+        <tr><th>Revenue</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.revenue))}</td></tr>
+        <tr><th>Direct costs</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.directCosts))}</td></tr>
+        <tr class="total"><th>Gross profit</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.grossProfit))}</td></tr>
+        <tr><th>Overhead / expenses</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.overheadCosts))}</td></tr>
+        <tr class="total"><th>Net profit</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.netProfit))}</td></tr>
+      </tbody>
+    </table>
+    <script>
+      window.onload = () => {
+        window.focus();
+        window.print();
+      };
+    </script>
+  </body>
+</html>`;
+  };
+
+  const buildBalanceSheetHtml = () => {
+    const title = "Statement of Financial Position";
+    const asOfText = endDate || startDate || "—";
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)} ${escapeHtml(asOfText)}</title>
+    <style>
+      @page { margin: 18mm; }
+      body { font-family: "Arial", sans-serif; color: #222; }
+      h1 { font-size: 20px; margin: 0 0 6px; }
+      h2 { font-size: 14px; margin: 18px 0 8px; }
+      .meta { font-size: 12px; color: #555; margin-bottom: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+      th, td { border: 1px solid #ddd; padding: 8px; }
+      th { background: #f4f6f8; text-align: left; }
+      td.num { text-align: right; }
+      .total { font-weight: bold; background: #fafafa; }
+    </style>
+  </head>
+  <body>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">As of: ${escapeHtml(asOfText)}</div>
+
+    <h2>Assets</h2>
+    <table>
+      <tbody>
+        <tr><th>Inventory</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.inventoryValue))}</td></tr>
+        ${assets.map((asset) => (
+          `<tr><th>${escapeHtml(asset.name || "Asset")}</th><td class="num">${escapeHtml(formatCurrency(asset.value))}</td></tr>`
+        )).join("")}
+        <tr class="total"><th>Total assets</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.totalAssets))}</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Liabilities</h2>
+    <table>
+      <tbody>
+        ${liabilities.length
+          ? liabilities.map((liability) => (
+            `<tr><th>${escapeHtml(liability.name || "Liability")}</th><td class="num">${escapeHtml(formatCurrency(liability.value))}</td></tr>`
+          )).join("")
+          : `<tr><th>Liabilities</th><td class="num">${escapeHtml(formatCurrency(0))}</td></tr>`
+        }
+        <tr class="total"><th>Total liabilities</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.totalLiabilities))}</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Equity</h2>
+    <table>
+      <tbody>
+        <tr class="total"><th>Equity</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.equity))}</td></tr>
+      </tbody>
+    </table>
+
+    <script>
+      window.onload = () => {
+        window.focus();
+        window.print();
+      };
+    </script>
+  </body>
+</html>`;
+  };
+
+  const openPrintWindow = (html) => {
     const popup = window.open("", "_blank", "width=1200,height=900");
     if (!popup) {
       alert("Please allow pop-ups to export the PDF.");
-      return;
+      return false;
     }
     popup.document.open();
-    popup.document.write(buildPdfHtml());
+    popup.document.write(html);
     popup.document.close();
+    return true;
+  };
+
+  const handleExportPdf = () => {
+    openPrintWindow(buildPdfHtml());
+  };
+
+  const handleExportIncomeStatement = () => {
+    openPrintWindow(buildIncomeStatementHtml());
+  };
+
+  const handleExportBalanceSheet = () => {
+    openPrintWindow(buildBalanceSheetHtml());
   };
 
   const handleSaveView = () => {
@@ -603,30 +1239,6 @@ export default function AdminReports() {
       minWidth: 110,
       flex: 0.8,
       valueFormatter: ({ value }) => formatCurrency(value),
-    },
-    {
-      field: "direct_cost",
-      headerName: "Direct cost (€)",
-      type: "number",
-      minWidth: 120,
-      flex: 0.85,
-      valueFormatter: ({ value }) => formatCurrency(value),
-    },
-    {
-      field: "gross_profit",
-      headerName: "Gross profit (€)",
-      type: "number",
-      minWidth: 120,
-      flex: 0.85,
-      valueFormatter: ({ value }) => formatCurrency(value),
-    },
-    {
-      field: "gross_margin_pct",
-      headerName: "Gross margin (%)",
-      type: "number",
-      minWidth: 120,
-      flex: 0.85,
-      valueFormatter: ({ value }) => formatPercent(value),
     },
   ]), []);
 
@@ -798,6 +1410,57 @@ export default function AdminReports() {
                 <Typography variant="body2">
                   Avg revenue per kg: <strong>{report.totals.kilos ? formatCurrency(report.totals.revenue / report.totals.kilos) : "€0.00"}</strong>
                 </Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+            <CardContent>
+              <Stack spacing={1.5}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Typography variant="subtitle1" fontWeight={800}>
+                    Income Statement
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<FileText size={16} />}
+                    onClick={handleExportIncomeStatement}
+                  >
+                    Export statement
+                  </Button>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  Updated for the selected date range and city filters.
+                </Typography>
+                <Table size="small">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Revenue</TableCell>
+                      <TableCell align="right">{formatCurrency(incomeStatement.revenue)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Direct costs</TableCell>
+                      <TableCell align="right">{formatCurrency(incomeStatement.directCosts)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700 }}>Gross profit</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>
+                        {formatCurrency(incomeStatement.grossProfit)}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Overhead / expenses</TableCell>
+                      <TableCell align="right">{formatCurrency(incomeStatement.overheadCosts)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700 }}>Net profit</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>
+                        {formatCurrency(incomeStatement.netProfit)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
               </Stack>
             </CardContent>
           </Card>
@@ -1022,6 +1685,323 @@ export default function AdminReports() {
 
           <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
             <CardContent>
+              <Stack spacing={2}>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  alignItems={{ xs: "flex-start", sm: "center" }}
+                  justifyContent="space-between"
+                  spacing={1}
+                >
+                  <Typography variant="subtitle1" fontWeight={800}>
+                    Inventory & Stock
+                  </Typography>
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Chip size="small" label={`On hand: ${formatNumber(inventoryTotals.onHandCount)}`} />
+                    <Chip size="small" label={`Inventory value: ${formatCurrency(inventoryTotals.inventoryValue)}`} />
+                  </Stack>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  Purchases and adjustments can sync to direct cost centers when an item is linked to a cost center.
+                </Typography>
+                <Table size="small" sx={{ tableLayout: "fixed" }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Item</TableCell>
+                      <TableCell align="right">On hand</TableCell>
+                      <TableCell>Unit</TableCell>
+                      <TableCell align="right">Last unit cost</TableCell>
+                      <TableCell align="right">Inventory value</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {inventorySummary.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center">
+                          <Typography variant="body2" color="text.secondary">
+                            No inventory data yet.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      inventorySummary.map((item) => (
+                        <TableRow key={item.item_id}>
+                          <TableCell>{item.name}</TableCell>
+                          <TableCell align="right">{formatNumber(item.on_hand)}</TableCell>
+                          <TableCell>{item.unit}</TableCell>
+                          <TableCell align="right">
+                            {item.last_unit_cost != null ? formatCurrency(item.last_unit_cost) : "—"}
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(item.inventory_value)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12} lg={5}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Inventory Items
+                      </Typography>
+                      <Stack spacing={1}>
+                        <TextField
+                          label="Item name"
+                          size="small"
+                          value={itemForm.name}
+                          onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))}
+                          fullWidth
+                        />
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                          <TextField
+                            label="SKU"
+                            size="small"
+                            value={itemForm.sku}
+                            onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))}
+                            fullWidth
+                          />
+                          <TextField
+                            label="Unit"
+                            size="small"
+                            value={itemForm.unit}
+                            onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
+                            sx={{ minWidth: 120 }}
+                          />
+                        </Stack>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                          <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                            <InputLabel id="item-category-label">Category</InputLabel>
+                            <Select
+                              labelId="item-category-label"
+                              label="Category"
+                              value={itemForm.category}
+                              onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
+                            >
+                              {inventoryCategoryOptions.map((option) => (
+                                <MenuItem key={option} value={option}>
+                                  {option}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl size="small" sx={{ minWidth: 180 }}>
+                            <InputLabel id="item-cost-center-label">Cost center</InputLabel>
+                            <Select
+                              labelId="item-cost-center-label"
+                              label="Cost center"
+                              value={itemForm.cost_center_id}
+                              onChange={(e) => setItemForm((prev) => ({ ...prev, cost_center_id: e.target.value }))}
+                            >
+                              <MenuItem value="">None</MenuItem>
+                              {costCenters.map((center) => (
+                                <MenuItem key={center.center_id} value={center.center_id}>
+                                  {center.name} ({center.category})
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Stack>
+                      </Stack>
+                      <Stack direction="row" spacing={1}>
+                        <Button variant="contained" onClick={handleSaveItem}>
+                          {editingItemId ? "Update item" : "Add item"}
+                        </Button>
+                        {editingItemId && (
+                          <Button variant="text" onClick={resetItemForm} startIcon={<CloseIcon />}>
+                            Cancel
+                          </Button>
+                        )}
+                      </Stack>
+                      <Divider />
+                      {inventoryItems.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No inventory items yet.
+                        </Typography>
+                      ) : (
+                        <Stack spacing={1}>
+                          {inventoryItems.map((item) => {
+                            const center = costCenterMap.get(item.cost_center_id);
+                            return (
+                              <Stack
+                                key={item.item_id}
+                                direction="row"
+                                alignItems="center"
+                                justifyContent="space-between"
+                                sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+                              >
+                                <Stack spacing={0.5}>
+                                  <Typography variant="body2" fontWeight={600}>
+                                    {item.name}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Unit: {item.unit || "unit"} · Category: {item.category || "—"} · Cost center: {center?.name || "—"}
+                                  </Typography>
+                                </Stack>
+                                <Stack direction="row" spacing={0.5}>
+                                  <Tooltip title="Edit">
+                                    <IconButton size="small" onClick={() => handleEditItem(item)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete">
+                                    <IconButton size="small" onClick={() => handleDeleteItem(item.item_id)}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Stack>
+                              </Stack>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                    </Stack>
+                  </Grid>
+                  <Grid item xs={12} lg={7}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Inventory Transactions
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Transactions are filtered to the selected date range.
+                      </Typography>
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
+                        <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
+                          <InputLabel id="tx-item-label">Item</InputLabel>
+                          <Select
+                            labelId="tx-item-label"
+                            label="Item"
+                            value={txForm.item_id}
+                            onChange={(e) => setTxForm((prev) => ({ ...prev, item_id: e.target.value }))}
+                          >
+                            {inventoryItems.map((item) => (
+                              <MenuItem key={item.item_id} value={item.item_id}>
+                                {item.name}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ minWidth: 150 }}>
+                          <InputLabel id="tx-type-label">Type</InputLabel>
+                          <Select
+                            labelId="tx-type-label"
+                            label="Type"
+                            value={txForm.tx_type}
+                            onChange={(e) => setTxForm((prev) => ({ ...prev, tx_type: e.target.value }))}
+                          >
+                            <MenuItem value="purchase">Purchase</MenuItem>
+                            <MenuItem value="usage">Usage</MenuItem>
+                            <MenuItem value="adjustment">Adjustment</MenuItem>
+                          </Select>
+                        </FormControl>
+                        <TextField
+                          label="Quantity"
+                          size="small"
+                          type="number"
+                          value={txForm.quantity}
+                          onChange={(e) => setTxForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                          inputProps={{ step: "0.01" }}
+                        />
+                        <TextField
+                          label="Unit cost (€)"
+                          size="small"
+                          type="number"
+                          value={txForm.unit_cost}
+                          onChange={(e) => setTxForm((prev) => ({ ...prev, unit_cost: e.target.value }))}
+                          inputProps={{ step: "0.01" }}
+                        />
+                        <TextField
+                          label="Date"
+                          size="small"
+                          type="date"
+                          value={txForm.tx_date}
+                          onChange={(e) => setTxForm((prev) => ({ ...prev, tx_date: e.target.value }))}
+                          InputLabelProps={{ shrink: true }}
+                        />
+                      </Stack>
+                      <TextField
+                        label="Notes"
+                        size="small"
+                        value={txForm.notes}
+                        onChange={(e) => setTxForm((prev) => ({ ...prev, notes: e.target.value }))}
+                        fullWidth
+                      />
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="contained"
+                          onClick={handleSaveTx}
+                          disabled={!inventoryItems.length}
+                        >
+                          {editingTxId ? "Update transaction" : "Add transaction"}
+                        </Button>
+                        {editingTxId && (
+                          <Button variant="text" onClick={resetTxForm} startIcon={<CloseIcon />}>
+                            Cancel
+                          </Button>
+                        )}
+                      </Stack>
+                      <Divider />
+                      <Table size="small" sx={{ tableLayout: "fixed" }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ width: 100 }}>Date</TableCell>
+                            <TableCell sx={{ width: 140 }}>Item</TableCell>
+                            <TableCell sx={{ width: 110 }}>Type</TableCell>
+                            <TableCell align="right" sx={{ width: 90 }}>Qty</TableCell>
+                            <TableCell align="right" sx={{ width: 110 }}>Unit cost</TableCell>
+                            <TableCell align="right" sx={{ width: 120 }}>Total</TableCell>
+                            <TableCell>Notes</TableCell>
+                            <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {inventoryTransactions.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={8} align="center">
+                                <Typography variant="body2" color="text.secondary">
+                                  No inventory transactions for this range.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            inventoryTransactions.map((tx) => (
+                              <TableRow key={tx.tx_id}>
+                                <TableCell>{tx.tx_date}</TableCell>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
+                                <TableCell>{tx.tx_type}</TableCell>
+                                <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
+                                <TableCell align="right">
+                                  {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
+                                </TableCell>
+                                <TableCell align="right">
+                                  {tx.total_cost != null ? formatCurrency(tx.total_cost) : "—"}
+                                </TableCell>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.notes || "—"}</TableCell>
+                                <TableCell align="right">
+                                  <Tooltip title="Edit">
+                                    <IconButton size="small" onClick={() => handleEditTx(tx)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete">
+                                    <IconButton size="small" onClick={() => handleDeleteTx(tx.tx_id)}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </Stack>
+                  </Grid>
+                </Grid>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+            <CardContent>
               <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
                 Production vs Sales Over Time
               </Typography>
@@ -1077,6 +2057,264 @@ export default function AdminReports() {
                   <Line type="monotone" dataKey="variance_pct" stroke="#d32f2f" name="Variance (%)" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+            <CardContent>
+              <Stack spacing={2}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Typography variant="subtitle1" fontWeight={800}>
+                    Statement of Financial Position
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<FileText size={16} />}
+                    onClick={handleExportBalanceSheet}
+                  >
+                    Export statement
+                  </Button>
+                </Stack>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap">
+                  <Chip size="small" label={`Total assets: ${formatCurrency(balanceSheet.totalAssets)}`} />
+                  <Chip size="small" label={`Total liabilities: ${formatCurrency(balanceSheet.totalLiabilities)}`} />
+                  <Chip size="small" variant="outlined" label={`Equity: ${formatCurrency(balanceSheet.equity)}`} />
+                </Stack>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} lg={6}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Assets
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Inventory value is computed from on-hand stock as of the selected end date.
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip size="small" label={`Inventory: ${formatCurrency(balanceSheet.inventoryValue)}`} />
+                        <Chip size="small" label={`Fixed assets: ${formatCurrency(balanceSheet.fixedAssets)}`} />
+                      </Stack>
+                      <Stack spacing={1}>
+                        <TextField
+                          label="Asset name"
+                          size="small"
+                          value={assetForm.name}
+                          onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
+                          fullWidth
+                        />
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                          <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                            <InputLabel id="asset-category-label">Category</InputLabel>
+                            <Select
+                              labelId="asset-category-label"
+                              label="Category"
+                              value={assetForm.category}
+                              onChange={(e) => setAssetForm((prev) => ({ ...prev, category: e.target.value }))}
+                            >
+                              {assetCategoryOptions.map((option) => (
+                                <MenuItem key={option} value={option}>
+                                  {option}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            label="Value (€)"
+                            size="small"
+                            type="number"
+                            value={assetForm.value}
+                            onChange={(e) => setAssetForm((prev) => ({ ...prev, value: e.target.value }))}
+                            inputProps={{ step: "0.01" }}
+                          />
+                          <TextField
+                            label="Acquired date"
+                            size="small"
+                            type="date"
+                            value={assetForm.acquired_date}
+                            onChange={(e) => setAssetForm((prev) => ({ ...prev, acquired_date: e.target.value }))}
+                            InputLabelProps={{ shrink: true }}
+                          />
+                        </Stack>
+                        <TextField
+                          label="Notes"
+                          size="small"
+                          value={assetForm.notes}
+                          onChange={(e) => setAssetForm((prev) => ({ ...prev, notes: e.target.value }))}
+                          fullWidth
+                        />
+                      </Stack>
+                      <Stack direction="row" spacing={1}>
+                        <Button variant="contained" onClick={handleSaveAsset}>
+                          {editingAssetId ? "Update asset" : "Add asset"}
+                        </Button>
+                        {editingAssetId && (
+                          <Button variant="text" onClick={resetAssetForm} startIcon={<CloseIcon />}>
+                            Cancel
+                          </Button>
+                        )}
+                      </Stack>
+                      <Divider />
+                      <Table size="small" sx={{ tableLayout: "fixed" }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Asset</TableCell>
+                            <TableCell>Category</TableCell>
+                            <TableCell align="right">Value</TableCell>
+                            <TableCell>Date</TableCell>
+                            <TableCell>Notes</TableCell>
+                            <TableCell align="right">Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {assets.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} align="center">
+                                <Typography variant="body2" color="text.secondary">
+                                  No assets yet.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            assets.map((asset) => (
+                              <TableRow key={asset.asset_id}>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.name}</TableCell>
+                                <TableCell>{asset.category || "—"}</TableCell>
+                                <TableCell align="right">{formatCurrency(asset.value)}</TableCell>
+                                <TableCell>{asset.acquired_date}</TableCell>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.notes || "—"}</TableCell>
+                                <TableCell align="right">
+                                  <Tooltip title="Edit">
+                                    <IconButton size="small" onClick={() => handleEditAsset(asset)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete">
+                                    <IconButton size="small" onClick={() => handleDeleteAsset(asset.asset_id)}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </Stack>
+                  </Grid>
+                  <Grid item xs={12} lg={6}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Liabilities
+                      </Typography>
+                      <Stack spacing={1}>
+                        <TextField
+                          label="Liability name"
+                          size="small"
+                          value={liabilityForm.name}
+                          onChange={(e) => setLiabilityForm((prev) => ({ ...prev, name: e.target.value }))}
+                          fullWidth
+                        />
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                          <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                            <InputLabel id="liability-category-label">Category</InputLabel>
+                            <Select
+                              labelId="liability-category-label"
+                              label="Category"
+                              value={liabilityForm.category}
+                              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, category: e.target.value }))}
+                            >
+                              {liabilityCategoryOptions.map((option) => (
+                                <MenuItem key={option} value={option}>
+                                  {option}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            label="Value (€)"
+                            size="small"
+                            type="number"
+                            value={liabilityForm.value}
+                            onChange={(e) => setLiabilityForm((prev) => ({ ...prev, value: e.target.value }))}
+                            inputProps={{ step: "0.01" }}
+                          />
+                          <TextField
+                            label="As of date"
+                            size="small"
+                            type="date"
+                            value={liabilityForm.as_of_date}
+                            onChange={(e) => setLiabilityForm((prev) => ({ ...prev, as_of_date: e.target.value }))}
+                            InputLabelProps={{ shrink: true }}
+                          />
+                        </Stack>
+                        <TextField
+                          label="Notes"
+                          size="small"
+                          value={liabilityForm.notes}
+                          onChange={(e) => setLiabilityForm((prev) => ({ ...prev, notes: e.target.value }))}
+                          fullWidth
+                        />
+                      </Stack>
+                      <Stack direction="row" spacing={1}>
+                        <Button variant="contained" onClick={handleSaveLiability}>
+                          {editingLiabilityId ? "Update liability" : "Add liability"}
+                        </Button>
+                        {editingLiabilityId && (
+                          <Button variant="text" onClick={resetLiabilityForm} startIcon={<CloseIcon />}>
+                            Cancel
+                          </Button>
+                        )}
+                      </Stack>
+                      <Divider />
+                      <Table size="small" sx={{ tableLayout: "fixed" }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Liability</TableCell>
+                            <TableCell>Category</TableCell>
+                            <TableCell align="right">Value</TableCell>
+                            <TableCell>Date</TableCell>
+                            <TableCell>Notes</TableCell>
+                            <TableCell align="right">Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {liabilities.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} align="center">
+                                <Typography variant="body2" color="text.secondary">
+                                  No liabilities yet.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            liabilities.map((liability) => (
+                              <TableRow key={liability.liability_id}>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.name}</TableCell>
+                                <TableCell>{liability.category || "—"}</TableCell>
+                                <TableCell align="right">{formatCurrency(liability.value)}</TableCell>
+                                <TableCell>{liability.as_of_date}</TableCell>
+                                <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.notes || "—"}</TableCell>
+                                <TableCell align="right">
+                                  <Tooltip title="Edit">
+                                    <IconButton size="small" onClick={() => handleEditLiability(liability)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete">
+                                    <IconButton size="small" onClick={() => handleDeleteLiability(liability.liability_id)}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </Stack>
+                  </Grid>
+                </Grid>
+              </Stack>
             </CardContent>
           </Card>
 

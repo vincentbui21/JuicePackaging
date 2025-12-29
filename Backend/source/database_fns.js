@@ -2494,6 +2494,494 @@ async function deleteCostEntry(entryId) {
   await pool.query("DELETE FROM CostEntries WHERE entry_id = ?", [entryId]);
 }
 
+async function getInventoryItems() {
+  const [rows] = await pool.query(
+    `
+    SELECT item_id, name, sku, unit, category, cost_center_id, created_at, updated_at
+    FROM InventoryItems
+    ORDER BY name ASC
+    `
+  );
+  return rows;
+}
+
+async function createInventoryItem({ name, sku, unit, category, costCenterId }) {
+  const [result] = await pool.query(
+    `
+    INSERT INTO InventoryItems (name, sku, unit, category, cost_center_id)
+    VALUES (?, ?, ?, ?, ?)
+    `,
+    [name, sku || null, unit || "unit", category || null, costCenterId || null]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT item_id, name, sku, unit, category, cost_center_id, created_at, updated_at
+    FROM InventoryItems
+    WHERE item_id = ?
+    `,
+    [result.insertId]
+  );
+  return rows[0] || null;
+}
+
+async function updateInventoryItem(itemId, { name, sku, unit, category, costCenterId }) {
+  const fields = [];
+  const values = [];
+  if (name != null) {
+    fields.push("name = ?");
+    values.push(name);
+  }
+  if (sku !== undefined) {
+    fields.push("sku = ?");
+    values.push(sku || null);
+  }
+  if (unit != null) {
+    fields.push("unit = ?");
+    values.push(unit);
+  }
+  if (category !== undefined) {
+    fields.push("category = ?");
+    values.push(category || null);
+  }
+  if (costCenterId !== undefined) {
+    fields.push("cost_center_id = ?");
+    values.push(costCenterId || null);
+  }
+  if (!fields.length) return null;
+
+  values.push(itemId);
+  await pool.query(
+    `UPDATE InventoryItems SET ${fields.join(", ")} WHERE item_id = ?`,
+    values
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT item_id, name, sku, unit, category, cost_center_id, created_at, updated_at
+    FROM InventoryItems
+    WHERE item_id = ?
+    `,
+    [itemId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteInventoryItem(itemId) {
+  const [[{ cnt }]] = await pool.query(
+    "SELECT COUNT(*) AS cnt FROM InventoryTransactions WHERE item_id = ?",
+    [itemId]
+  );
+  if (Number(cnt || 0) > 0) {
+    return false;
+  }
+  await pool.query("DELETE FROM InventoryItems WHERE item_id = ?", [itemId]);
+  return true;
+}
+
+async function getInventoryTransactions({ startDate, endDate, itemId } = {}) {
+  const params = [];
+  const filters = [];
+  if (startDate) {
+    filters.push("t.tx_date >= ?");
+    params.push(startDate);
+  }
+  if (endDate) {
+    filters.push("t.tx_date <= ?");
+    params.push(endDate);
+  }
+  if (itemId) {
+    filters.push("t.item_id = ?");
+    params.push(itemId);
+  }
+  const whereSql = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+  const [rows] = await pool.query(
+    `
+    SELECT
+      t.tx_id,
+      t.item_id,
+      i.name AS item_name,
+      i.unit,
+      i.category,
+      i.cost_center_id,
+      t.tx_type,
+      t.quantity,
+      t.unit_cost,
+      t.total_cost,
+      t.cost_entry_id,
+      t.tx_date,
+      t.notes,
+      t.created_at,
+      t.updated_at
+    FROM InventoryTransactions t
+    JOIN InventoryItems i ON i.item_id = t.item_id
+    ${whereSql}
+    ORDER BY t.tx_date DESC, t.tx_id DESC
+    `,
+    params
+  );
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || ""));
+  return rows.map((row) => ({
+    ...row,
+    quantity: Number(row.quantity || 0),
+    unit_cost: row.unit_cost != null ? Number(row.unit_cost) : null,
+    total_cost: row.total_cost != null ? Number(row.total_cost) : null,
+    tx_date: toDateStr(row.tx_date),
+  }));
+}
+
+async function createInventoryTransaction({ itemId, txType, quantity, unitCost, txDate, notes, syncCost = true }) {
+  const [[item]] = await pool.query(
+    "SELECT item_id, name, cost_center_id FROM InventoryItems WHERE item_id = ?",
+    [itemId]
+  );
+  if (!item) throw new Error("Inventory item not found");
+
+  const qty = Number(quantity);
+  const unitCostNum = unitCost != null && unitCost !== "" ? Number(unitCost) : null;
+  const totalCost = unitCostNum != null ? Number((qty * unitCostNum).toFixed(2)) : null;
+
+  const [result] = await pool.query(
+    `
+    INSERT INTO InventoryTransactions (item_id, tx_type, quantity, unit_cost, total_cost, tx_date, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    [itemId, txType, qty, unitCostNum, totalCost, txDate, notes || null]
+  );
+
+  let costEntryId = null;
+  const shouldSync = syncCost && totalCost != null && totalCost > 0 && item.cost_center_id && (txType === "purchase" || txType === "adjustment");
+  if (shouldSync) {
+    const [costEntryResult] = await pool.query(
+      "INSERT INTO CostEntries (center_id, amount, incurred_date, notes) VALUES (?, ?, ?, ?)",
+      [
+        item.cost_center_id,
+        totalCost,
+        txDate,
+        notes ? `Inventory: ${item.name} (${txType}) - ${notes}` : `Inventory: ${item.name} (${txType})`,
+      ]
+    );
+    costEntryId = costEntryResult.insertId;
+    await pool.query(
+      "UPDATE InventoryTransactions SET cost_entry_id = ? WHERE tx_id = ?",
+      [costEntryId, result.insertId]
+    );
+  }
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      t.tx_id,
+      t.item_id,
+      i.name AS item_name,
+      i.unit,
+      i.category,
+      i.cost_center_id,
+      t.tx_type,
+      t.quantity,
+      t.unit_cost,
+      t.total_cost,
+      t.cost_entry_id,
+      t.tx_date,
+      t.notes,
+      t.created_at,
+      t.updated_at
+    FROM InventoryTransactions t
+    JOIN InventoryItems i ON i.item_id = t.item_id
+    WHERE t.tx_id = ?
+    `,
+    [result.insertId]
+  );
+  return rows[0] || null;
+}
+
+async function updateInventoryTransaction(txId, { itemId, txType, quantity, unitCost, txDate, notes, syncCost = true }) {
+  const [[existing]] = await pool.query(
+    "SELECT cost_entry_id FROM InventoryTransactions WHERE tx_id = ?",
+    [txId]
+  );
+  if (!existing) throw new Error("Inventory transaction not found");
+
+  const [[item]] = await pool.query(
+    "SELECT item_id, name, cost_center_id FROM InventoryItems WHERE item_id = ?",
+    [itemId]
+  );
+  if (!item) throw new Error("Inventory item not found");
+
+  const qty = Number(quantity);
+  const unitCostNum = unitCost != null && unitCost !== "" ? Number(unitCost) : null;
+  const totalCost = unitCostNum != null ? Number((qty * unitCostNum).toFixed(2)) : null;
+
+  await pool.query(
+    `
+    UPDATE InventoryTransactions
+    SET item_id = ?, tx_type = ?, quantity = ?, unit_cost = ?, total_cost = ?, tx_date = ?, notes = ?
+    WHERE tx_id = ?
+    `,
+    [itemId, txType, qty, unitCostNum, totalCost, txDate, notes || null, txId]
+  );
+
+  const shouldSync = syncCost && totalCost != null && totalCost > 0 && item.cost_center_id && (txType === "purchase" || txType === "adjustment");
+  if (existing.cost_entry_id && !shouldSync) {
+    await pool.query("DELETE FROM CostEntries WHERE entry_id = ?", [existing.cost_entry_id]);
+    await pool.query("UPDATE InventoryTransactions SET cost_entry_id = NULL WHERE tx_id = ?", [txId]);
+  } else if (existing.cost_entry_id && shouldSync) {
+    await pool.query(
+      "UPDATE CostEntries SET center_id = ?, amount = ?, incurred_date = ?, notes = ? WHERE entry_id = ?",
+      [
+        item.cost_center_id,
+        totalCost,
+        txDate,
+        notes ? `Inventory: ${item.name} (${txType}) - ${notes}` : `Inventory: ${item.name} (${txType})`,
+        existing.cost_entry_id,
+      ]
+    );
+  } else if (!existing.cost_entry_id && shouldSync) {
+    const [costEntryResult] = await pool.query(
+      "INSERT INTO CostEntries (center_id, amount, incurred_date, notes) VALUES (?, ?, ?, ?)",
+      [
+        item.cost_center_id,
+        totalCost,
+        txDate,
+        notes ? `Inventory: ${item.name} (${txType}) - ${notes}` : `Inventory: ${item.name} (${txType})`,
+      ]
+    );
+    await pool.query(
+      "UPDATE InventoryTransactions SET cost_entry_id = ? WHERE tx_id = ?",
+      [costEntryResult.insertId, txId]
+    );
+  }
+
+  const [rows] = await pool.query(
+    `
+    SELECT
+      t.tx_id,
+      t.item_id,
+      i.name AS item_name,
+      i.unit,
+      i.category,
+      i.cost_center_id,
+      t.tx_type,
+      t.quantity,
+      t.unit_cost,
+      t.total_cost,
+      t.cost_entry_id,
+      t.tx_date,
+      t.notes,
+      t.created_at,
+      t.updated_at
+    FROM InventoryTransactions t
+    JOIN InventoryItems i ON i.item_id = t.item_id
+    WHERE t.tx_id = ?
+    `,
+    [txId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteInventoryTransaction(txId) {
+  const [[existing]] = await pool.query(
+    "SELECT cost_entry_id FROM InventoryTransactions WHERE tx_id = ?",
+    [txId]
+  );
+  if (!existing) return;
+  if (existing.cost_entry_id) {
+    await pool.query("DELETE FROM CostEntries WHERE entry_id = ?", [existing.cost_entry_id]);
+  }
+  await pool.query("DELETE FROM InventoryTransactions WHERE tx_id = ?", [txId]);
+}
+
+async function getInventorySummary({ asOfDate } = {}) {
+  const [items] = await pool.query(
+    `
+    SELECT item_id, name, unit, category
+    FROM InventoryItems
+    ORDER BY name ASC
+    `
+  );
+
+  const params = [];
+  let whereSql = "";
+  if (asOfDate) {
+    whereSql = "WHERE tx_date <= ?";
+    params.push(asOfDate);
+  }
+
+  const [txs] = await pool.query(
+    `
+    SELECT tx_id, item_id, tx_type, quantity, unit_cost, tx_date
+    FROM InventoryTransactions
+    ${whereSql}
+    ORDER BY tx_date ASC, tx_id ASC
+    `,
+    params
+  );
+
+  const map = new Map();
+  items.forEach((item) => {
+    map.set(item.item_id, {
+      ...item,
+      on_hand: 0,
+      last_unit_cost: null,
+      inventory_value: 0,
+    });
+  });
+
+  txs.forEach((tx) => {
+    const entry = map.get(tx.item_id);
+    if (!entry) return;
+    const qty = Number(tx.quantity || 0);
+    if (tx.tx_type === "usage") {
+      entry.on_hand -= qty;
+    } else {
+      entry.on_hand += qty;
+    }
+    if (tx.unit_cost != null) {
+      entry.last_unit_cost = Number(tx.unit_cost);
+    }
+  });
+
+  map.forEach((entry) => {
+    const cost = Number(entry.last_unit_cost || 0);
+    entry.inventory_value = Number((entry.on_hand * cost).toFixed(2));
+    entry.on_hand = Number(Number(entry.on_hand || 0).toFixed(2));
+  });
+
+  return Array.from(map.values());
+}
+
+async function getAssets({ asOfDate } = {}) {
+  const params = [];
+  let whereSql = "";
+  if (asOfDate) {
+    whereSql = "WHERE acquired_date <= ?";
+    params.push(asOfDate);
+  }
+  const [rows] = await pool.query(
+    `
+    SELECT asset_id, name, category, value, acquired_date, notes, created_at, updated_at
+    FROM FixedAssets
+    ${whereSql}
+    ORDER BY acquired_date DESC, asset_id DESC
+    `,
+    params
+  );
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || ""));
+  return rows.map((row) => ({
+    ...row,
+    value: Number(row.value || 0),
+    acquired_date: toDateStr(row.acquired_date),
+  }));
+}
+
+async function createAsset({ name, category, value, acquiredDate, notes }) {
+  const [result] = await pool.query(
+    `
+    INSERT INTO FixedAssets (name, category, value, acquired_date, notes)
+    VALUES (?, ?, ?, ?, ?)
+    `,
+    [name, category || null, value, acquiredDate, notes || null]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT asset_id, name, category, value, acquired_date, notes, created_at, updated_at
+    FROM FixedAssets
+    WHERE asset_id = ?
+    `,
+    [result.insertId]
+  );
+  return rows[0] || null;
+}
+
+async function updateAsset(assetId, { name, category, value, acquiredDate, notes }) {
+  await pool.query(
+    `
+    UPDATE FixedAssets
+    SET name = ?, category = ?, value = ?, acquired_date = ?, notes = ?
+    WHERE asset_id = ?
+    `,
+    [name, category || null, value, acquiredDate, notes || null, assetId]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT asset_id, name, category, value, acquired_date, notes, created_at, updated_at
+    FROM FixedAssets
+    WHERE asset_id = ?
+    `,
+    [assetId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteAsset(assetId) {
+  await pool.query("DELETE FROM FixedAssets WHERE asset_id = ?", [assetId]);
+}
+
+async function getLiabilities({ asOfDate } = {}) {
+  const params = [];
+  let whereSql = "";
+  if (asOfDate) {
+    whereSql = "WHERE as_of_date <= ?";
+    params.push(asOfDate);
+  }
+  const [rows] = await pool.query(
+    `
+    SELECT liability_id, name, category, value, as_of_date, notes, created_at, updated_at
+    FROM Liabilities
+    ${whereSql}
+    ORDER BY as_of_date DESC, liability_id DESC
+    `,
+    params
+  );
+  const toDateStr = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || ""));
+  return rows.map((row) => ({
+    ...row,
+    value: Number(row.value || 0),
+    as_of_date: toDateStr(row.as_of_date),
+  }));
+}
+
+async function createLiability({ name, category, value, asOfDate, notes }) {
+  const [result] = await pool.query(
+    `
+    INSERT INTO Liabilities (name, category, value, as_of_date, notes)
+    VALUES (?, ?, ?, ?, ?)
+    `,
+    [name, category || null, value, asOfDate, notes || null]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT liability_id, name, category, value, as_of_date, notes, created_at, updated_at
+    FROM Liabilities
+    WHERE liability_id = ?
+    `,
+    [result.insertId]
+  );
+  return rows[0] || null;
+}
+
+async function updateLiability(liabilityId, { name, category, value, asOfDate, notes }) {
+  await pool.query(
+    `
+    UPDATE Liabilities
+    SET name = ?, category = ?, value = ?, as_of_date = ?, notes = ?
+    WHERE liability_id = ?
+    `,
+    [name, category || null, value, asOfDate, notes || null, liabilityId]
+  );
+  const [rows] = await pool.query(
+    `
+    SELECT liability_id, name, category, value, as_of_date, notes, created_at, updated_at
+    FROM Liabilities
+    WHERE liability_id = ?
+    `,
+    [liabilityId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteLiability(liabilityId) {
+  await pool.query("DELETE FROM Liabilities WHERE liability_id = ?", [liabilityId]);
+}
+
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -2581,6 +3069,23 @@ assignBoxesToPallet,
     createCostEntry,
     updateCostEntry,
     deleteCostEntry,
+    getInventoryItems,
+    createInventoryItem,
+    updateInventoryItem,
+    deleteInventoryItem,
+    getInventoryTransactions,
+    createInventoryTransaction,
+    updateInventoryTransaction,
+    deleteInventoryTransaction,
+    getInventorySummary,
+    getAssets,
+    createAsset,
+    updateAsset,
+    deleteAsset,
+    getLiabilities,
+    createLiability,
+    updateLiability,
+    deleteLiability,
 }
 
 module.exports.pool = pool;

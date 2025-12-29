@@ -24,12 +24,17 @@ const monthKey = (raw) => {
   return d ? d.slice(0, 7) : "Unknown";
 };
 
-export function buildAdminReport(rows = [], costTotals = {}) {
+export function buildAdminReport(rows = [], costTotals = {}, pricing = {}) {
+  const rawPrice = toNumber(pricing?.price);
+  const basePrice = rawPrice > 0 ? rawPrice : 8;
+  const shippingFee = toNumber(pricing?.shipping_fee);
+
   const enriched = rows.map((row) => {
     const kilos = round(row.kilos, 2);
     const pouches = toNumber(row.pouches_produced);
-    const revenue = round(row.total_cost, 2);
-    const unitPrice = pouches > 0 ? round(revenue / pouches, 2) : 0;
+    const city = String(row.city || "").trim().toLowerCase();
+    const unitPrice = basePrice + (city === "kuopio" ? 0 : shippingFee);
+    const revenue = pouches > 0 ? round(pouches * unitPrice, 2) : 0;
 
     // TODO: replace with real COGS once available in the data model.
     const directCost = round(row.direct_cost, 2);

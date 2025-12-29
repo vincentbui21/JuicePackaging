@@ -1404,6 +1404,402 @@ app.delete('/cost-entries/:entryId', async (req, res) => {
   }
 });
 
+// Inventory items
+app.get('/inventory-items', async (req, res) => {
+  try {
+    const items = await database.getInventoryItems();
+    res.json(items || []);
+  } catch (err) {
+    console.error('inventory items error:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory items' });
+  }
+});
+
+app.post('/inventory-items', async (req, res) => {
+  try {
+    const { name, sku, unit, category, cost_center_id } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Item name is required' });
+    }
+    const costCenterId = cost_center_id != null && cost_center_id !== ""
+      ? Number(cost_center_id)
+      : null;
+    if (cost_center_id != null && cost_center_id !== "" && !Number.isFinite(costCenterId)) {
+      return res.status(400).json({ error: 'Invalid cost center id' });
+    }
+    const item = await database.createInventoryItem({
+      name: trimmedName,
+      sku,
+      unit: unit || "unit",
+      category,
+      costCenterId,
+    });
+    res.status(201).json(item);
+  } catch (err) {
+    console.error('create inventory item error:', err);
+    res.status(500).json({ error: 'Failed to create inventory item' });
+  }
+});
+
+app.put('/inventory-items/:itemId', async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
+    const { name, sku, unit, category, cost_center_id } = req.body || {};
+    const payload = {};
+    if (name != null) {
+      const trimmedName = String(name || "").trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: 'Item name is required' });
+      }
+      payload.name = trimmedName;
+    }
+    if (sku !== undefined) payload.sku = sku;
+    if (unit != null) payload.unit = unit;
+    if (category !== undefined) payload.category = category;
+    if (cost_center_id !== undefined) {
+      if (cost_center_id === null || cost_center_id === "") {
+        payload.costCenterId = null;
+      } else {
+        const costCenterId = Number(cost_center_id);
+        if (!Number.isFinite(costCenterId)) {
+          return res.status(400).json({ error: 'Invalid cost center id' });
+        }
+        payload.costCenterId = costCenterId;
+      }
+    }
+    if (!Object.keys(payload).length) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    const item = await database.updateInventoryItem(itemId, payload);
+    res.json(item);
+  } catch (err) {
+    console.error('update inventory item error:', err);
+    res.status(500).json({ error: 'Failed to update inventory item' });
+  }
+});
+
+app.delete('/inventory-items/:itemId', async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
+    const deleted = await database.deleteInventoryItem(itemId);
+    if (!deleted) {
+      return res.status(409).json({ error: 'Cannot delete item with transactions' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete inventory item error:', err);
+    res.status(500).json({ error: 'Failed to delete inventory item' });
+  }
+});
+
+// Inventory transactions
+app.get('/inventory-transactions', async (req, res) => {
+  try {
+    const { start, end, item_id } = req.query;
+    const itemId = item_id != null && item_id !== "" ? Number(item_id) : undefined;
+    if (item_id != null && item_id !== "" && !Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
+    const txs = await database.getInventoryTransactions({
+      startDate: start,
+      endDate: end,
+      itemId,
+    });
+    res.json(txs || []);
+  } catch (err) {
+    console.error('inventory transactions error:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory transactions' });
+  }
+});
+
+app.post('/inventory-transactions', async (req, res) => {
+  try {
+    const { item_id, tx_type, quantity, unit_cost, tx_date, notes, sync_cost } = req.body || {};
+    const itemId = Number(item_id);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Item is required' });
+    }
+    const txType = String(tx_type || "").trim();
+    if (!["purchase", "usage", "adjustment"].includes(txType)) {
+      return res.status(400).json({ error: 'Invalid transaction type' });
+    }
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty === 0) {
+      return res.status(400).json({ error: 'Quantity must be non-zero' });
+    }
+    if (txType !== "adjustment" && qty < 0) {
+      return res.status(400).json({ error: 'Quantity must be positive' });
+    }
+    const dateStr = String(tx_date || "").trim();
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Transaction date is required' });
+    }
+    const tx = await database.createInventoryTransaction({
+      itemId,
+      txType,
+      quantity: qty,
+      unitCost: unit_cost,
+      txDate: dateStr,
+      notes,
+      syncCost: sync_cost !== false,
+    });
+    res.status(201).json(tx);
+  } catch (err) {
+    console.error('create inventory transaction error:', err);
+    res.status(500).json({ error: 'Failed to create inventory transaction' });
+  }
+});
+
+app.put('/inventory-transactions/:txId', async (req, res) => {
+  try {
+    const txId = Number(req.params.txId);
+    if (!Number.isFinite(txId)) {
+      return res.status(400).json({ error: 'Invalid transaction id' });
+    }
+    const { item_id, tx_type, quantity, unit_cost, tx_date, notes, sync_cost } = req.body || {};
+    const itemId = Number(item_id);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Item is required' });
+    }
+    const txType = String(tx_type || "").trim();
+    if (!["purchase", "usage", "adjustment"].includes(txType)) {
+      return res.status(400).json({ error: 'Invalid transaction type' });
+    }
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty === 0) {
+      return res.status(400).json({ error: 'Quantity must be non-zero' });
+    }
+    if (txType !== "adjustment" && qty < 0) {
+      return res.status(400).json({ error: 'Quantity must be positive' });
+    }
+    const dateStr = String(tx_date || "").trim();
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Transaction date is required' });
+    }
+    const tx = await database.updateInventoryTransaction(txId, {
+      itemId,
+      txType,
+      quantity: qty,
+      unitCost: unit_cost,
+      txDate: dateStr,
+      notes,
+      syncCost: sync_cost !== false,
+    });
+    res.json(tx);
+  } catch (err) {
+    console.error('update inventory transaction error:', err);
+    res.status(500).json({ error: 'Failed to update inventory transaction' });
+  }
+});
+
+app.delete('/inventory-transactions/:txId', async (req, res) => {
+  try {
+    const txId = Number(req.params.txId);
+    if (!Number.isFinite(txId)) {
+      return res.status(400).json({ error: 'Invalid transaction id' });
+    }
+    await database.deleteInventoryTransaction(txId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete inventory transaction error:', err);
+    res.status(500).json({ error: 'Failed to delete inventory transaction' });
+  }
+});
+
+app.get('/inventory-summary', async (req, res) => {
+  try {
+    const asOfDate = req.query.as_of || req.query.asOf || req.query.asOfDate;
+    const summary = await database.getInventorySummary({ asOfDate });
+    res.json(summary || []);
+  } catch (err) {
+    console.error('inventory summary error:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory summary' });
+  }
+});
+
+// Fixed assets
+app.get('/assets', async (req, res) => {
+  try {
+    const asOfDate = req.query.as_of || req.query.asOf || req.query.asOfDate;
+    const assets = await database.getAssets({ asOfDate });
+    res.json(assets || []);
+  } catch (err) {
+    console.error('assets error:', err);
+    res.status(500).json({ error: 'Failed to fetch assets' });
+  }
+});
+
+app.post('/assets', async (req, res) => {
+  try {
+    const { name, category, value, acquired_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Asset name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Asset value must be greater than 0' });
+    }
+    const acquiredDate = String(acquired_date || "").trim();
+    if (!acquiredDate) {
+      return res.status(400).json({ error: 'Acquired date is required' });
+    }
+    const asset = await database.createAsset({
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      acquiredDate,
+      notes,
+    });
+    res.status(201).json(asset);
+  } catch (err) {
+    console.error('create asset error:', err);
+    res.status(500).json({ error: 'Failed to create asset' });
+  }
+});
+
+app.put('/assets/:assetId', async (req, res) => {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isFinite(assetId)) {
+      return res.status(400).json({ error: 'Invalid asset id' });
+    }
+    const { name, category, value, acquired_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Asset name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Asset value must be greater than 0' });
+    }
+    const acquiredDate = String(acquired_date || "").trim();
+    if (!acquiredDate) {
+      return res.status(400).json({ error: 'Acquired date is required' });
+    }
+    const asset = await database.updateAsset(assetId, {
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      acquiredDate,
+      notes,
+    });
+    res.json(asset);
+  } catch (err) {
+    console.error('update asset error:', err);
+    res.status(500).json({ error: 'Failed to update asset' });
+  }
+});
+
+app.delete('/assets/:assetId', async (req, res) => {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isFinite(assetId)) {
+      return res.status(400).json({ error: 'Invalid asset id' });
+    }
+    await database.deleteAsset(assetId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete asset error:', err);
+    res.status(500).json({ error: 'Failed to delete asset' });
+  }
+});
+
+// Liabilities
+app.get('/liabilities', async (req, res) => {
+  try {
+    const asOfDate = req.query.as_of || req.query.asOf || req.query.asOfDate;
+    const liabilities = await database.getLiabilities({ asOfDate });
+    res.json(liabilities || []);
+  } catch (err) {
+    console.error('liabilities error:', err);
+    res.status(500).json({ error: 'Failed to fetch liabilities' });
+  }
+});
+
+app.post('/liabilities', async (req, res) => {
+  try {
+    const { name, category, value, as_of_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Liability name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Liability value must be greater than 0' });
+    }
+    const asOfDate = String(as_of_date || "").trim();
+    if (!asOfDate) {
+      return res.status(400).json({ error: 'As-of date is required' });
+    }
+    const liability = await database.createLiability({
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      asOfDate,
+      notes,
+    });
+    res.status(201).json(liability);
+  } catch (err) {
+    console.error('create liability error:', err);
+    res.status(500).json({ error: 'Failed to create liability' });
+  }
+});
+
+app.put('/liabilities/:liabilityId', async (req, res) => {
+  try {
+    const liabilityId = Number(req.params.liabilityId);
+    if (!Number.isFinite(liabilityId)) {
+      return res.status(400).json({ error: 'Invalid liability id' });
+    }
+    const { name, category, value, as_of_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Liability name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Liability value must be greater than 0' });
+    }
+    const asOfDate = String(as_of_date || "").trim();
+    if (!asOfDate) {
+      return res.status(400).json({ error: 'As-of date is required' });
+    }
+    const liability = await database.updateLiability(liabilityId, {
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      asOfDate,
+      notes,
+    });
+    res.json(liability);
+  } catch (err) {
+    console.error('update liability error:', err);
+    res.status(500).json({ error: 'Failed to update liability' });
+  }
+});
+
+app.delete('/liabilities/:liabilityId', async (req, res) => {
+  try {
+    const liabilityId = Number(req.params.liabilityId);
+    if (!Number.isFinite(liabilityId)) {
+      return res.status(400).json({ error: 'Invalid liability id' });
+    }
+    await database.deleteLiability(liabilityId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete liability error:', err);
+    res.status(500).json({ error: 'Failed to delete liability' });
+  }
+});
+
 // Manual SMS from Customer Management (uses location-specific templates by default)
 app.post('/customers/:customerId/notify', async (req, res) => {
   const { customerId } = req.params;
