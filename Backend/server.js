@@ -361,6 +361,14 @@ app.get('/ping', (req, res) => {
 function buildPickupSMSText(locationRaw) {
   const l = String(locationRaw || "").trim().toLowerCase();
   const source = SMS_TEMPLATES_CACHE || DEFAULT_SMS_TEMPLATES;
+  
+  // Debug logging to diagnose template matching issues
+  if (l && !source[l]) {
+    console.log(`[SMS Template Warning] No template found for city: "${l}" (original: "${locationRaw}")`);
+    console.log(`[SMS Template] Available templates:`, Object.keys(source));
+    console.log(`[SMS Template] Using default template instead`);
+  }
+  
   return source[l] || source.default;
 }
 

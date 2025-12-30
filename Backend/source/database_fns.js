@@ -1938,7 +1938,7 @@ async function getCustomersByBoxIds(boxIds) {
 
   const [rows] = await pool.query(
     `
-    SELECT DISTINCT c.customer_id, c.name, c.phone
+    SELECT DISTINCT c.customer_id, c.name, c.phone, c.city
       FROM Boxes b
       JOIN Customers c ON c.customer_id = b.customer_id
      WHERE b.box_id IN (${placeholders})
