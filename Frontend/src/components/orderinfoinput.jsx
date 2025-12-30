@@ -116,7 +116,7 @@ function OrderInfoInput({data, setdata, city}) {
                         </Grid>
 
                         <Grid item size={8} display="flex" alignItems="center" >
-                            <TextField name="No_of_Crates" type="number" variant='filled' label="Enter crate count" 
+                            <TextField name="No_of_Crates" type="number" variant='filled' label="Enter crate count" required
                             onChange={handleCustomerInfoUpdate} value={data.No_of_Crates}
                             sx={
                                 {

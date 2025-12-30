@@ -45,7 +45,8 @@ function CustomerInfoEntry() {
       customerdata.city === "" ||
       customerdata.phone_number === "" ||
       customerdata.entryDate === "" ||
-      orderdata.total_apple_weight === ""
+      orderdata.total_apple_weight === "" ||
+      orderdata.No_of_Crates === ""
     ) {
       set_Openreminder(true);
       return;
