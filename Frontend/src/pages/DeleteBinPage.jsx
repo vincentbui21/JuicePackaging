@@ -322,7 +322,7 @@ export default function DeleteBinPage() {
                     fullWidth
                 >
                     <DialogTitle>
-                        Customer Details (Deleted)
+                        Customer Details
                     </DialogTitle>
                     <DialogContent>
                         <Alert severity="info" sx={{ mb: 2 }}>
@@ -384,9 +384,6 @@ export default function DeleteBinPage() {
                                     <Typography color="text.secondary">No orders found for this customer.</Typography>
                                 )}
 
-                                <Alert severity="info" sx={{ mt: 2 }}>
-                                    Detailed box information is not available for deleted customers. Restore the customer to view full details.
-                                </Alert>
                             </Box>
                         ) : (
                             <Typography color="error">Failed to load customer details.</Typography>

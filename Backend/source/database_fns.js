@@ -271,6 +271,7 @@ async function get_deleted_customers() {
                 c.city, 
                 c.deleted_at,
                 o.order_id,
+                o.actual_pouches,
                 o.pouches_count,
                 o.weight_kg,
                 o.boxes_count,
@@ -302,7 +303,7 @@ async function get_deleted_customers() {
             if (row.order_id) {
                 customersMap.get(row.customer_id).orders.push({
                     order_id: row.order_id,
-                    pouches_count: row.pouches_count,
+                    pouches_count: row.actual_pouches || row.pouches_count || 0,
                     weight_kg: row.weight_kg,
                     boxes_count: row.boxes_count,
                     status: row.order_status,
