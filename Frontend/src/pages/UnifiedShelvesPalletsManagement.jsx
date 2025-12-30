@@ -58,17 +58,19 @@ function UnifiedShelvesPalletsManagement() {
 
   const fetchLocations = useCallback(async () => {
     try {
-      const res = await api.get("/locations");
+      const res = await api.get("/cities");
       const list = Array.isArray(res.data)
         ? res.data.map((v) => (typeof v === "string" ? v : v.location)).filter(Boolean)
         : [];
       setLocations(list);
-      if (list.length) setSelectedLocation(list[0]);
+      if (list.length && !selectedLocation) {
+        setSelectedLocation(list[0]);
+      }
     } catch (err) {
       console.error("Failed to fetch shelf locations", err);
       setSnackbarMsg("Failed to load locations");
     }
-  }, []);
+  }, [selectedLocation]);
 
   const fetchShelves = useCallback(async () => {
     try {
@@ -257,18 +259,18 @@ function UnifiedShelvesPalletsManagement() {
   }, [pallets, searchText]);
 
   // Create Shelf functions
-  const handleCreateShelf = async () => {
-    const loc = selectedLocation.trim();
+  const handleCreateShelf = async (locationToUse, shelfNameFromInput = null) => {
+    const loc = locationToUse.trim();
     if (!loc) {
       setError(true);
-      setSnackbarMsg("Please enter a shelf location");
+      setSnackbarMsg("Please choose a location first.");
       return;
     }
 
     try {
       const res = await api.post("/api/shelves", {
         location: loc,
-        shelf_name: shelfName?.trim() || null,
+        shelf_name: shelfNameFromInput?.trim() || null,
       });
 
       const shelf_id = res?.data?.shelf_id ?? res?.data?.result?.shelf_id;
@@ -279,7 +281,7 @@ function UnifiedShelvesPalletsManagement() {
       const img = await generateSmallPngQRCode(qrData);
 
       setQrImage(img);
-      setCreatedShelfName(returned_name || shelfName || "");
+      setCreatedShelfName(returned_name || shelfNameFromInput || "");
       setQrDialogOpen(true);
       setSnackbarMsg("Shelf created successfully!");
       setShelfName("");
@@ -455,7 +457,7 @@ function UnifiedShelvesPalletsManagement() {
                   </Grid>
 
                   <Grid item xs={12} sm={4} md={3}>
-                    <Button fullWidth variant="contained" onClick={handleCreateShelf}>
+                    <Button fullWidth variant="contained" onClick={() => handleCreateShelf(selectedLocation)}>
                       Quick Create Shelf
                     </Button>
                   </Grid>
@@ -574,7 +576,7 @@ function UnifiedShelvesPalletsManagement() {
                 sx={{ mb: 3 }}
               />
 
-              <Button fullWidth variant="contained" onClick={handleCreateShelf}>
+              <Button fullWidth variant="contained" onClick={() => handleCreateShelf(shelfLocation, shelfName)}>
                 Generate Shelf
               </Button>
             </Box>

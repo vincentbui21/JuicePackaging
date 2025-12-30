@@ -25,6 +25,7 @@ import { io } from "socket.io-client";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
 import printImage from "../services/send_to_printer";
+import PasswordModal from "../components/PasswordModal";
 
 // Build socket URL from same base as axios
 const WS_URL = (import.meta.env.VITE_API_BASE_URL || "https://api.mehustaja.fi/").replace(/\/+$/, "");
@@ -38,6 +39,8 @@ function JuiceHandlePage() {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [search, setSearch] = useState("");
   const [inlineEdits, setInlineEdits] = useState({});
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState(null);
 
   // QR dialog
   const [qrCodes, setQrCodes] = useState({}); // { [orderId]: [{index, url}] }
@@ -135,11 +138,23 @@ function JuiceHandlePage() {
             status: order?.status || "In Progress",
             weight_kg: order?.weight_kg ?? "",
             actual_pouches: order?.actual_pouches ?? "",
-            actual_boxes: order?.boxes_count ?? "",
+            actual_boxes: (order?.boxes_count > 0) ? order.boxes_count : estimatedBoxes,
           };
         }
       });
       return next;
+    });
+  }, [orders]);
+
+  useEffect(() => {
+    setComments(prevComments => {
+        const newComments = { ...prevComments };
+        orders.forEach(order => {
+            if (newComments[order.order_id] === undefined && order.notes) {
+                newComments[order.order_id] = order.notes;
+            }
+        });
+        return newComments;
     });
   }, [orders]);
 
@@ -279,20 +294,39 @@ function JuiceHandlePage() {
     }
   };
 
-  const handleDeleteOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to delete this order?")) return;
+  const handleDeleteClick = (row) => {
+    setRowToDelete(row);
+    setPasswordModalOpen(true);
+  };
+
+  const handlePasswordCancel = () => {
+    setRowToDelete(null);
+    setPasswordModalOpen(false);
+  };
+
+  const handlePasswordConfirm = async ({ id, password }) => {
+    if (!rowToDelete) return;
+
     try {
-      await api.delete(`/orders/${orderId}`);
-      setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
-      setInlineEdits((prev) => {
-        const next = { ...prev };
-        delete next[orderId];
-        return next;
-      });
-      setSnackbarMsg("Order moved to Delete Bin");
+      await api.post('/auth/login', { id, password });
+
+      const customer_id = rowToDelete.customer_id;
+      if (!customer_id) {
+        setSnackbarMsg("Delete failed: Customer ID not found on the selected order.");
+        setPasswordModalOpen(false);
+        return;
+      }
+
+      await api.delete("/customer", { data: { customer_id: customer_id } });
+      
+      fetchProcessingOrders({ page: 1, append: false });
+      setSnackbarMsg("Customer moved to Delete Bin");
     } catch (err) {
-      console.error("Failed to delete order:", err);
-      setSnackbarMsg("Failed to delete order");
+      console.error("Delete failed:", err);
+      setSnackbarMsg(err.response?.data?.error || "Delete failed. Check credentials or server error.");
+    } finally {
+      setRowToDelete(null);
+      setPasswordModalOpen(false);
     }
   };
 
@@ -398,7 +432,7 @@ function JuiceHandlePage() {
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete order">
-                          <IconButton size="small" color="error" onClick={() => handleDeleteOrder(order.order_id)}>
+                          <IconButton size="small" color="error" onClick={() => handleDeleteClick(order)}>
                             <Delete fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -458,7 +492,7 @@ function JuiceHandlePage() {
                           fullWidth
                         />
                       </Grid>
-                      <Grid item xs={12} sm={6} md={3}>
+                      {/* <Grid item xs={12} sm={6} md={3}>
                         <TextField
                           select
                           label="Status"
@@ -473,7 +507,7 @@ function JuiceHandlePage() {
                             </MenuItem>
                           ))}
                         </TextField>
-                      </Grid>
+                      </Grid> */}
                       <Grid item xs={12} sm={6} md={3}>
                         <Button
                           variant="outlined"
@@ -567,6 +601,12 @@ function JuiceHandlePage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <PasswordModal
+        open={passwordModalOpen}
+        onClose={handlePasswordCancel}
+        onConfirm={handlePasswordConfirm}
+      />
     </>
   );
 }

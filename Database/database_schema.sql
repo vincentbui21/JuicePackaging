@@ -67,7 +67,7 @@ CREATE TABLE `Boxes` (
 -- Crates table
 DROP TABLE IF EXISTS `Crates`;
 CREATE TABLE `Crates` (
-    `crate_id` varchar(36) NOT NULL,
+    `crate_id` varchar(64) NOT NULL,
     `customer_id` varchar(36) DEFAULT NULL,
     `status` varchar(50) DEFAULT NULL,
     `created_at` datetime NOT NULL DEFAULT current_timestamp(),

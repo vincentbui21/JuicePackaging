@@ -163,7 +163,7 @@ export default function AppSidebar({
       <Box sx={{ overflowY: "auto", overflowX: "hidden", pb: 1, flexGrow: 1 }}>
         <Section title="Operations" items={operations} />
         <Section title="Management" items={management} />
-        <Section title="Create New" items={createNew} />
+        {/* <Section title="Create New" items={createNew} /> */}
         <Section title="Admin" items={adminItems} />
       </Box>
 

@@ -1,9 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import {
-Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Snackbar, Paper, Typography, IconButton, Card, CardContent, useMediaQuery, useTheme, Checkbox, FormControlLabel, Popover,
+  Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress, Dialog,
+  DialogTitle, DialogContent, DialogActions, MenuItem, Snackbar, Paper,
+  Typography, IconButton, Card, CardContent, useMediaQuery, useTheme,
+  Checkbox, FormControlLabel, Popover, CssBaseline, Menu,
 } from '@mui/material';
-import { Edit, Delete, QrCode, Send, Print, Trolley, Inventory, Settings } from '@mui/icons-material';
+import {
+  Edit, Delete, QrCode, Send, Print, Trolley, Inventory, Settings,
+  MoreVert as MoreVertIcon,
+} from '@mui/icons-material';
 import api from '../services/axios';
 import generateQRCode from '../services/qrcodGenerator';
 import printImage from '../services/send_to_printer';
@@ -34,6 +40,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
     useEffect(() => {
         load();
     }, [load, refreshKey]);
+
     const sent = String(status?.last_status || '').toLowerCase() === 'sent';
     const count = Number(status?.sent_count || 0);
 
@@ -45,12 +52,12 @@ function SmsStatusChip({ customerId, refreshKey }) {
         label={sent ? `Sent (${count})` : 'Not sent'}
         />
     );
-}
+    }
 
-export default function UnifiedManagement() {
+    export default function UnifiedManagement() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-    
+
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
@@ -97,7 +104,7 @@ export default function UnifiedManagement() {
 
     // Column visibility
     const [columnVisibility, setColumnVisibility] = useState({
-        order_id: true,
+        order_id: false,
         name: true,
         phone: true,
         weight_kg: true,
@@ -106,39 +113,79 @@ export default function UnifiedManagement() {
         estimated_boxes: true,
         total_cost: true,
         city: true,
-        created_at: true,
+        created_at: false,
         status: true,
         sms_status: true,
         notes: true,
     });
 
+    const [cities, setCities] = useState([]);
+
     // Popover for column settings
     const [anchorEl, setAnchorEl] = useState(null);
     const open = Boolean(anchorEl);
 
+    // Menu for row actions
+    const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+    const [activeRow, setActiveRow] = useState(null);
+
     const reload = () => setSmsRefreshTick((n) => n + 1);
+
+    const computeFromWeight = (weight_kg) => {
+        const w = Number(weight_kg) || 0;
+        const estimatedPouches = Math.floor((w * 0.65) / 3);
+        const estimatedBoxes = Math.ceil(estimatedPouches / 8);
+        return { estimatedPouches, estimatedBoxes };
+    };
+
+    useEffect(() => {
+        const fetchCities = async () => {
+        try {
+            const response = await api.get('/cities');
+            if (Array.isArray(response.data)) {
+            setCities(response.data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch cities', err);
+            setSnackbarMsg('Failed to load city list');
+        }
+        };
+        fetchCities();
+    }, []);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await api.get('/customer', { params: { page: 1, limit: 1000 } });
-            const data = response.data.rows || [];            
-            // Enrich data with computed fields like the original JuiceProcessingManagement
-            const enriched = data.map((row) => {
-                const { estimatedPouches, estimatedBoxes } = computeFromWeight(row.weight_kg);
-                return {
-                    ...row,
-                    estimated_pouches: row?.pouches_count ?? estimatedPouches,
-                    estimated_boxes: row?.boxes_count ?? estimatedBoxes,
-                };
-            });
-            
-            setRows(enriched);
+        const response = await api.get('/customer', {
+            params: {
+            page: 1,
+            limit: 1000,
+            t: new Date().getTime(),
+            },
+            headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0',
+            },
+        });
+        const data = response.data.rows || [];
+        console.log('--- DEBUG: Data received from API in fetchData ---');
+        console.log(JSON.stringify(data, null, 2));
+        const enriched = data.map((row) => {
+            const { estimatedPouches, estimatedBoxes } = computeFromWeight(row.weight_kg);
+            return {
+            ...row,
+            estimated_pouches: row?.actual_pouches ?? row?.pouches_count ?? estimatedPouches,
+            estimated_boxes: row?.boxes_count ?? estimatedBoxes,
+            };
+        });
+
+        setRows(enriched);
         } catch (err) {
-            console.error('Failed to fetch data', err);
-            setSnackbarMsg('Failed to fetch data');
+        console.error('Failed to fetch data', err);
+        setSnackbarMsg('Failed to fetch data');
         } finally {
-            setLoading(false);
+        setLoading(false);
         }
     }, []);
 
@@ -149,16 +196,9 @@ export default function UnifiedManagement() {
         window.addEventListener('customers-updated', handleCustomersUpdate);
 
         return () => {
-            window.removeEventListener('customers-updated', handleCustomersUpdate);
+        window.removeEventListener('customers-updated', handleCustomersUpdate);
         };
     }, [fetchData]);
-
-    const computeFromWeight = (weight_kg) => {
-        const w = Number(weight_kg) || 0;
-        const estimatedPouches = Math.floor((w * 0.65) / 3);
-        const estimatedBoxes = Math.ceil(estimatedPouches / 8);
-        return { estimatedPouches, estimatedBoxes };
-    };
 
     // Edit handlers
     const openEditDialog = (row) => {
@@ -183,29 +223,36 @@ export default function UnifiedManagement() {
         if (!selectedRow) return;
 
         try {
-        // Update customer
-        await api.put(`/customer/${selectedRow.customer_id}`, {
-            name: editedFields.name,
+        const customerInfoChange = {
+            Name: editedFields.name,
             email: editedFields.email,
             phone: editedFields.phone,
             city: editedFields.city,
-            weight_kg: Number(editedFields.weight_kg),
-            crate_count: Number(editedFields.crate_count),
-            total_cost: Number(editedFields.total_cost),
-            status: editedFields.status,
-            notes: editedFields.notes,
+        };
+
+        const orderInfoChange = {
+            weight: editedFields.weight_kg,
+            crate: editedFields.crate_count,
+            cost: editedFields.total_cost,
+            Status: editedFields.status,
+            Notes: editedFields.notes,
+        };
+
+        await api.put('/customer', {
+            customer_id: selectedRow.customer_id,
+            customerInfoChange,
+            orderInfoChange,
         });
 
-        // Update order if exists
         if (selectedRow.order_id) {
             await api.put(`/orders/${selectedRow.order_id}`, {
-            estimated_pouches: Number(editedFields.estimated_pouches),
-            estimated_boxes: Number(editedFields.estimated_boxes),
+            actual_pouches: Number(editedFields.estimated_pouches),
+            actual_boxes: Number(editedFields.estimated_boxes),
             });
         }
 
         setSnackbarMsg('Updated successfully');
-        fetchData(); // Refresh data
+        fetchData();
         } catch (err) {
         console.error('Failed to update', err);
         setSnackbarMsg('Failed to update');
@@ -259,7 +306,7 @@ export default function UnifiedManagement() {
 
     // QR for boxes
     const handleShowQR = async (row) => {
-    if (!row.order_id) {
+        if (!row.order_id) {
         setSnackbarMsg('No order found for this customer');
         return;
         }
@@ -271,7 +318,7 @@ export default function UnifiedManagement() {
         try {
         const codes = [];
         for (let i = 0; i < boxesToUse; i++) {
-            const url = await generateQRCode(`Order: ${row.order_id}, Box: ${i + 1}`);
+            const url = await generateQRCode(`BOX_${row.order_id}_${i + 1}`);
             if (url) codes.push({ index: i + 1, url });
         }
         if (codes.length === 0) {
@@ -319,7 +366,7 @@ export default function UnifiedManagement() {
         }
     };
 
-  // Send SMS
+    // Send SMS
     const handleNotifySMS = async (row) => {
         if (!isReadyForPickup(row.status)) {
         alert("Can only send SMS when status is 'Ready for pickup'.");
@@ -335,60 +382,65 @@ export default function UnifiedManagement() {
         }
     };
 
+    // Menu handlers for row actions
+    const handleMenuOpen = (event, row) => {
+        setMenuAnchorEl(event.currentTarget);
+        setActiveRow(row);
+    };
+
+    const handleMenuClose = () => {
+        setMenuAnchorEl(null);
+        setActiveRow(null);
+    };
+
+    // Wrapped action handlers
+    const handleEditAction = () => {
+        if (activeRow) openEditDialog(activeRow);
+        handleMenuClose();
+    };
+
+    const handleDeleteAction = () => {
+        if (activeRow) handleDeleteClick(activeRow);
+        handleMenuClose();
+    };
+
+    const handleCrateQRPrintAction = () => {
+        if (activeRow) handleCrateQRPrint(activeRow);
+        handleMenuClose();
+    };
+
+    const handleShowQRAction = () => {
+        if (activeRow) handleShowQR(activeRow);
+        handleMenuClose();
+    };
+
+    const printPouchLabelsAction = () => {
+        if (activeRow) printPouchLabels(activeRow);
+        handleMenuClose();
+    };
+
+    const handleNotifySMSAction = () => {
+        if (activeRow) handleNotifySMS(activeRow);
+        handleMenuClose();
+    };
+
     const columns = [
         {
-            field: 'actions',
-            headerName: 'Actions',
-            minWidth: isMobile ? 180 : 300,
-            flex: isMobile ? 2 : 3,
-            sortable: false,
-            filterable: false,
-            renderCell: (params) => {
-                const ready = isReadyForPickup(params.row?.status);
-                return (
-                <Stack direction="row" spacing={isMobile ? 0.25 : 0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Tooltip title="Edit">
-                    <IconButton color="primary" onClick={() => openEditDialog(params.row)} size={isMobile ? "small" : "small"}>
-                    <Edit fontSize={isMobile ? "small" : "medium"} />
-                    </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete">
-                    <IconButton color="error" onClick={() => handleDeleteClick(params.row)} size={isMobile ? "small" : "small"}>
-                    <Delete fontSize={isMobile ? "small" : "medium"} />
-                    </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Print Crate QR">
-                    <IconButton color="warning" onClick={() => handleCrateQRPrint(params.row)} size={isMobile ? "small" : "small"}>
-                    <Trolley fontSize={isMobile ? "small" : "medium"} />
-                    </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Print Box QR">
-                    <IconButton color="secondary" onClick={() => handleShowQR(params.row)} size={isMobile ? "small" : "small"}>
-                    <Inventory fontSize={isMobile ? "small" : "medium"} />
-                    </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Print pouches label">
-                    <IconButton color="success" onClick={() => printPouchLabels(params.row)} size={isMobile ? "small" : "small"}>
-                    <Print fontSize={isMobile ? "small" : "medium"} />
-                    </IconButton>
-                    </Tooltip>
-                    <Tooltip title={ready ? 'Send SMS' : "Only available when status is 'Ready for pickup'."}>
-                    <span>
-                        <Button
-                        variant="outlined"
-                        size={isMobile ? "small" : "small"}
-                        color="info"
-                        disabled={!ready}
-                        onClick={() => handleNotifySMS(params.row)}
-                        sx={{ minWidth: 'auto', px: isMobile ? 0.5 : 1, fontSize: isMobile ? '0.7rem' : '0.875rem' }}
-                        >
-                        <Send fontSize={isMobile ? "small" : "medium"} />
-                        </Button>
-                    </span>
-                    </Tooltip>
-                </Stack>
-                );
-            },
+        field: 'actions',
+        headerName: 'Actions',
+        minWidth: 100,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+            <IconButton
+            aria-label="more"
+            aria-controls="long-menu"
+            aria-haspopup="true"
+            onClick={(event) => handleMenuOpen(event, params.row)}
+            >
+            <MoreVertIcon />
+            </IconButton>
+        ),
         },
         { field: 'order_id', headerName: 'Order ID', minWidth: 180, flex: 0.5 },
         { field: 'name', headerName: 'Name', minWidth: 120, flex: 1 },
@@ -403,28 +455,27 @@ export default function UnifiedManagement() {
         { field: 'created_at', headerName: 'Date', minWidth: 120, flex: 1, hide: isMobile },
         { field: 'status', headerName: 'Status', minWidth: 110, flex: 0.8 },
         {
-            field: 'sms_status',
-            headerName: 'SMS',
-            minWidth: 100,
-            flex: 0.7,
-            sortable: false,
-            filterable: false,
-            renderCell: (params) => (
-                <SmsStatusChip customerId={params.row.customer_id} refreshKey={smsRefreshTick} />
-            ),
+        field: 'sms_status',
+        headerName: 'SMS',
+        minWidth: 100,
+        flex: 0.7,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+            <SmsStatusChip customerId={params.row.customer_id} refreshKey={smsRefreshTick} />
+        ),
         },
         { field: 'notes', headerName: 'Notes', minWidth: 150, flex: 1.2, hide: isMobile },
     ];
 
     const filteredRows = rows.filter((r) =>
-        (r.name || '').toLowerCase().includes(search.toLowerCase())
+        (r.name || '').toLowerCase().includes(search.toLowerCase()),
     );
 
     const currentQrData = qrDialogOrderId ? qrCodes[qrDialogOrderId] : null;
 
-    // Print single QR
     const printSingleQRCode = async (orderId, url, index) => {
-        const order = rows.find(o => o.order_id === orderId);
+        const order = rows.find((o) => o.order_id === orderId);
         try {
         await printImage(url, order?.name || 'Customer', `b${index}/1`);
         setSnackbarMsg(`Box ${index} sent to printer`);
@@ -434,9 +485,8 @@ export default function UnifiedManagement() {
         }
     };
 
-    // Print all QRs
     const printAllQRCodes = async (orderId) => {
-        const order = rows.find(o => o.order_id === orderId);
+        const order = rows.find((o) => o.order_id === orderId);
         const data = qrCodes[orderId];
         if (!data || !data.codes?.length) return;
 
@@ -453,129 +503,252 @@ export default function UnifiedManagement() {
     };
 
     return (
-        <>
-        <DrawerComponent />
-        <Box
-            sx={{
-            backgroundColor: '#fffff',
-            pt: isMobile ? 2 : 4,
-            pb: isMobile ? 2 : 4,
-            px: isMobile ? 1 : 2,
-            display: 'flex',
-            justifyContent: 'center',
-            }}
+        <Box 
+        sx={{ display: 'flex' }}
         >
-            <Paper
-            elevation={3}
-            sx={{
-                width: '100%',
-                maxWidth: '1400px',
-                p: isMobile ? 2 : 3,
-                backgroundColor: '#ffffff',
-                borderRadius: 2,
-            }}
+            
+        <CssBaseline />
+        <DrawerComponent />
+            <Box
+                component="main"
+                display="flex" justifyContent="center" sx={{ flexDirection: 'column', alignItems: 'center' }}
             >
-            <Typography variant={isMobile ? "h5" : "h4"} sx={{ textAlign: 'center', mb: isMobile ? 2 : 3, fontWeight: 'bold' }}>
-                Unified Management
-            </Typography>
-
-            <TextField
-                label="Search by Name"
-                variant="outlined"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                fullWidth
-                sx={{ mb: isMobile ? 1 : 2, backgroundColor: 'white', borderRadius: 1 }}
-                size={isMobile ? "small" : "medium"}
-            />
-
-            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <IconButton onClick={(e) => setAnchorEl(e.currentTarget)}>
-                    <Settings />
-                </IconButton>
-            </Box>
-
-            <DataGrid
-                rows={filteredRows}
-                columns={columns}
-                getRowId={(row) => row.customer_id}
-                pageSize={isMobile ? 5 : 10}
-                rowsPerPageOptions={isMobile ? [5, 10] : [10, 20, 50]}
-                loading={loading}
-                columnVisibilityModel={columnVisibility}
-                onColumnVisibilityModelChange={setColumnVisibility}
-                sx={{
-                height: isMobile ? 400 : 600,
-                backgroundColor: 'white',
-                borderRadius: 2,
-                boxShadow: 3,
-                '& .MuiDataGrid-cell[data-field="actions"]': { overflow: 'visible' },
-                '& .MuiDataGrid-root': {
-                    overflowX: 'auto',
-                },
-                }}
-            />
-
-            <Popover
-                open={open}
-                anchorEl={anchorEl}
-                onClose={() => setAnchorEl(null)}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-                <Box sx={{ p: 2, minWidth: 200 }}>
-                    <Typography variant="h6" sx={{ mb: 1 }}>Show/Hide Columns</Typography>
-                    <Stack direction="column" spacing={1}>
-                        {Object.keys(columnVisibility).map(field => {
-                            const col = columns.find(c => c.field === field);
-                            return col ? (
-                                <FormControlLabel
-                                    key={field}
-                                    control={
-                                        <Checkbox
-                                            checked={columnVisibility[field]}
-                                            onChange={(e) => setColumnVisibility(prev => ({ ...prev, [field]: e.target.checked }))}
-                                            size="small"
+                <Paper
+                    elevation={3}
+                    sx={{
+                        width: '100%',
+                        maxWidth: '1400px', // Constrain max width of the content
+                        mx: 'auto', // Center the paper horizontally
+                        p: isMobile ? 2 : 3, // Padding inside the paper
+                    }}
+                >
+                    <Typography variant={isMobile ? "h5" : "h4"} sx={{ textAlign: 'center', mb: isMobile ? 2 : 3, fontWeight: 'bold' }}>
+                        Unified Management
+                    </Typography>
+    
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <TextField
+                            label="Search by Name"
+                            variant="outlined"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            fullWidth
+                            sx={{ mr: 2, flexGrow: 1 }}
+                        />
+                        <IconButton onClick={(e) => setAnchorEl(e.currentTarget)}>
+                            <Settings />
+                        </IconButton>
+                    </Box>
+                    
+    
+                    <Popover
+                        open={open}
+                        anchorEl={anchorEl}
+                        onClose={() => setAnchorEl(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    >
+                        <Box sx={{ p: 2, minWidth: 200 }}>
+                            <Typography variant="h6" sx={{ mb: 1 }}>Show/Hide Columns</Typography>
+                            <Stack direction="column" spacing={1}>
+                                {Object.keys(columnVisibility).map(field => {
+                                    const col = columns.find(c => c.field === field);
+                                    return col ? (
+                                        <FormControlLabel
+                                            key={field}
+                                            control={
+                                                <Checkbox
+                                                    checked={columnVisibility[field]}
+                                                    onChange={(e) => setColumnVisibility(prev => ({ ...prev, [field]: e.target.checked }))}
+                                                    size="small"
+                                                />
+                                            }
+                                            label={col.headerName}
                                         />
-                                    }
-                                    label={col.headerName}
-                                />
-                            ) : null;
-                        })}
-                    </Stack>
-                </Box>
-            </Popover>
-            </Paper>
+                                    ) : null;
+                                })}
+                            </Stack>
+                        </Box>
+                    </Popover>
+                </Paper>
+
+            
+                <DataGrid
+                            autoHeight
+                            rows={filteredRows}
+                            columns={columns}
+                            getRowId={(row) => row.customer_id}
+                            pageSizeOptions={isMobile ? [5, 10] : [10, 20, 50]}
+                            initialState={{
+                                pagination: {
+                                paginationModel: { pageSize: isMobile ? 5 : 10 },
+                                },
+                            }}
+                            loading={loading}
+                            columnVisibilityModel={columnVisibility}
+                            onColumnVisibilityModelChange={setColumnVisibility}
+                            sx={{ minWidth: 0 }}
+                        />
         </Box>
 
-        {/* Edit Dialog */}
-        <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} fullWidth maxWidth="md" fullScreen={isMobile}>
+        {/* Menu for row actions */}
+        <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={handleMenuClose}>
+            <MenuItem onClick={handleEditAction}>
+            <Edit fontSize="small" sx={{ mr: 1 }} /> Edit
+            </MenuItem>
+            <MenuItem onClick={handleDeleteAction}>
+            <Delete fontSize="small" sx={{ mr: 1 }} /> Delete
+            </MenuItem>
+            <MenuItem onClick={handleCrateQRPrintAction}>
+            <Trolley fontSize="small" sx={{ mr: 1 }} /> Print Crate QR
+            </MenuItem>
+            <MenuItem onClick={handleShowQRAction}>
+            <Inventory fontSize="small" sx={{ mr: 1 }} /> Print Box QR
+            </MenuItem>
+            <MenuItem onClick={printPouchLabelsAction}>
+            <Print fontSize="small" sx={{ mr: 1 }} /> Print Pouch Label
+            </MenuItem>
+            {activeRow && isReadyForPickup(activeRow.status) && (
+            <MenuItem onClick={handleNotifySMSAction}>
+                <Send fontSize="small" sx={{ mr: 1 }} /> Send SMS
+            </MenuItem>
+            )}
+        </Menu>
+
+        {/* Edit dialog */}
+        <Dialog
+            open={editDialogOpen}
+            onClose={() => setEditDialogOpen(false)}
+            fullWidth
+            maxWidth="md"
+            fullScreen={isMobile}
+        >
             <DialogTitle>Edit Customer & Order</DialogTitle>
             <DialogContent>
             <Stack spacing={isMobile ? 1 : 2} mt={1}>
-                <TextField label="Name" value={editedFields.name} onChange={(e) => setEditedFields(p => ({ ...p, name: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="Email" value={editedFields.email} onChange={(e) => setEditedFields(p => ({ ...p, email: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="Phone" value={editedFields.phone} onChange={(e) => setEditedFields(p => ({ ...p, phone: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="City" value={editedFields.city} onChange={(e) => setEditedFields(p => ({ ...p, city: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="Weight (kg)" type="number" value={editedFields.weight_kg} onChange={(e) => setEditedFields(p => ({ ...p, weight_kg: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="Crates" type="number" value={editedFields.crate_count} onChange={(e) => setEditedFields(p => ({ ...p, crate_count: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="Cost (€)" type="number" value={editedFields.total_cost} onChange={(e) => setEditedFields(p => ({ ...p, total_cost: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField select label="Status" value={editedFields.status} onChange={(e) => setEditedFields(p => ({ ...p, status: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"}>
-                {['Created', 'Picked up', 'Ready for pickup', 'Processing complete', 'In Progress'].map(option => (
-                    <MenuItem key={option} value={option}>{option}</MenuItem>
+                <TextField
+                label="Name"
+                value={editedFields.name}
+                onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                label="Email"
+                value={editedFields.email}
+                onChange={(e) => setEditedFields((p) => ({ ...p, email: e.target.value }))}
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                label="Phone"
+                value={editedFields.phone}
+                onChange={(e) => setEditedFields((p) => ({ ...p, phone: e.target.value }))}
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                select
+                label="City"
+                value={editedFields.city}
+                onChange={(e) => setEditedFields((p) => ({ ...p, city: e.target.value }))}
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                >
+                {cities.map((city) => (
+                    <MenuItem key={city} value={city}>
+                    {city}
+                    </MenuItem>
                 ))}
                 </TextField>
-                <TextField label="Notes" value={editedFields.notes} onChange={(e) => setEditedFields(p => ({ ...p, notes: e.target.value }))} fullWidth multiline size={isMobile ? "small" : "medium"} />
-                <TextField label="Estimated Pouches" type="number" value={editedFields.estimated_pouches} onChange={(e) => setEditedFields(p => ({ ...p, estimated_pouches: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
-                <TextField label="Estimated Boxes" type="number" value={editedFields.estimated_boxes} onChange={(e) => setEditedFields(p => ({ ...p, estimated_boxes: e.target.value }))} fullWidth size={isMobile ? "small" : "medium"} />
+                <TextField
+                label="Weight (kg)"
+                type="number"
+                value={editedFields.weight_kg}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, weight_kg: e.target.value }))
+                }
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                label="Crates"
+                type="number"
+                value={editedFields.crate_count}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, crate_count: e.target.value }))
+                }
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                label="Cost (€)"
+                type="number"
+                value={editedFields.total_cost}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, total_cost: e.target.value }))
+                }
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                select
+                label="Status"
+                value={editedFields.status}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, status: e.target.value }))
+                }
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                >
+                {['Created', 'Picked up', 'Ready for pickup', 'Processing complete', 'In Progress'].map(
+                    (option) => (
+                    <MenuItem key={option} value={option}>
+                        {option}
+                    </MenuItem>
+                    ),
+                )}
+                </TextField>
+                <TextField
+                label="Notes"
+                value={editedFields.notes}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, notes: e.target.value }))
+                }
+                fullWidth
+                multiline
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                label="Estimated Pouches"
+                type="number"
+                value={editedFields.estimated_pouches}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, estimated_pouches: e.target.value }))
+                }
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
+                <TextField
+                label="Estimated Boxes"
+                type="number"
+                value={editedFields.estimated_boxes}
+                onChange={(e) =>
+                    setEditedFields((p) => ({ ...p, estimated_boxes: e.target.value }))
+                }
+                fullWidth
+                size={isMobile ? 'small' : 'medium'}
+                />
             </Stack>
             </DialogContent>
             <DialogActions>
             <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleEditSave}>Save</Button>
+            <Button variant="contained" onClick={handleEditSave}>
+                Save
+            </Button>
             </DialogActions>
         </Dialog>
 
-        {/* QR Dialog for Crates */}
+        {/* Crate QR dialog */}
         <QRCodeDialog
             open={qrDialogOpen}
             onClose={() => setQrDialogOpen(false)}
@@ -584,22 +757,52 @@ export default function UnifiedManagement() {
             max={maxCrates}
         />
 
-        {/* QR Dialog for Boxes */}
-        <Dialog open={qrDialogOpenBoxes} onClose={() => setQrDialogOpenBoxes(false)} fullWidth maxWidth="md" fullScreen={isMobile}>
-            <DialogTitle>QR Codes — Order {qrDialogOrderId}</DialogTitle>
-            <DialogContent dividers>
+        {/* Box QR dialog */}
+        <Dialog
+            open={qrDialogOpenBoxes}
+            onClose={() => setQrDialogOpenBoxes(false)}
+            fullWidth
+            maxWidth="md"
+            fullScreen={isMobile}
+        >
+        <DialogTitle>QR Codes — Order {qrDialogOrderId}</DialogTitle>
+        <DialogContent dividers>
             {currentQrData ? (
                 <>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                    Pouches: {currentQrData.pouches} &nbsp; • &nbsp; Boxes: {currentQrData.boxes}
+                    Pouches: {currentQrData.pouches} &nbsp; • &nbsp; Boxes:{' '}
+                    {currentQrData.boxes}
                 </Typography>
                 <Stack direction="row" spacing={isMobile ? 1 : 2} flexWrap="wrap">
                     {currentQrData.codes.map(({ index, url }) => (
-                    <Card key={index} sx={{ p: isMobile ? 0.5 : 1, backgroundColor: '#fff', minWidth: isMobile ? 140 : 160 }}>
-                        <CardContent sx={{ textAlign: 'center', p: isMobile ? 1 : 2 }}>
+                    <Card
+                        key={index}
+                        sx={{
+                        p: isMobile ? 0.5 : 1,
+                        backgroundColor: '#fff',
+                        minWidth: isMobile ? 140 : 160,
+                        }}
+                    >
+                        <CardContent
+                        sx={{ textAlign: 'center', p: isMobile ? 1 : 2 }}
+                        >
                         <Typography variant="body2">Box {index}</Typography>
-                        <img src={url} alt={`QR ${index}`} style={{ width: isMobile ? 100 : 120, height: isMobile ? 100 : 120 }} />
-                        <Button size="small" sx={{ mt: 1 }} variant="outlined" onClick={() => printSingleQRCode(qrDialogOrderId, url, index)}>
+                        <img
+                            src={url}
+                            alt={`QR ${index}`}
+                            style={{
+                            width: isMobile ? 100 : 120,
+                            height: isMobile ? 100 : 120,
+                            }}
+                        />
+                        <Button
+                            size="small"
+                            sx={{ mt: 1 }}
+                            variant="outlined"
+                            onClick={() =>
+                            printSingleQRCode(qrDialogOrderId, url, index)
+                            }
+                        >
                             Print this
                         </Button>
                         </CardContent>
@@ -613,19 +816,31 @@ export default function UnifiedManagement() {
             </DialogContent>
             <DialogActions>
             <Button onClick={() => setQrDialogOpenBoxes(false)}>Close</Button>
-            <Button variant="contained" onClick={() => qrDialogOrderId && printAllQRCodes(qrDialogOrderId)}>
+            <Button
+                variant="contained"
+                onClick={() =>
+                qrDialogOrderId && printAllQRCodes(qrDialogOrderId)
+                }
+            >
                 Print All
             </Button>
             </DialogActions>
         </Dialog>
 
+        {/* Password modal */}
         <PasswordModal
             open={passwordModalOpen}
             onClose={handlePasswordCancel}
             onConfirm={handlePasswordConfirm}
         />
 
-        <Snackbar open={!!snackbarMsg} autoHideDuration={3000} onClose={() => setSnackbarMsg('')} message={snackbarMsg} />
-        </>
+        {/* Snackbar */}
+        <Snackbar
+            open={!!snackbarMsg}
+            autoHideDuration={3000}
+            onClose={() => setSnackbarMsg('')}
+            message={snackbarMsg}
+        />
+        </Box>
     );
 }

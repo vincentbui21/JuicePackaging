@@ -7,16 +7,18 @@ import SearchBar from '../components/SearchBar'; // Import the SearchBar compone
 
 export default function PickupPage() {
     const [orders, setOrders] = useState([]);
+    const [filteredOrders, setFilteredOrders] = useState([]);
     const [loading, setLoading] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
-    const [searchTerm, setSearchTerm] = useState(''); // New state for search term
+    const [searchTerm, setSearchTerm] = useState('');
 
-    const fetchReadyOrders = useCallback((query = '') => { // Modified to accept a query parameter
+    const fetchReadyOrders = useCallback(() => {
         setLoading(true);
-        api.get(`/orders/pickup?query=${query}`) // Use the query parameter in the API call
+        api.get('/orders?status=Ready for pickup')
             .then((res) => {
-                const validOrders = Array.isArray(res.data) ? res.data.filter(order => order && order.status === 'Ready for pickup') : [];
+                const validOrders = Array.isArray(res.data) ? res.data : [];
                 setOrders(validOrders);
+                setFilteredOrders(validOrders);
             })
             .catch((err) => {
                 console.error('Failed to fetch ready orders:', err);
@@ -25,11 +27,25 @@ export default function PickupPage() {
             .finally(() => {
                 setLoading(false);
             });
-    }, []); // Empty dependency array for useCallback
+    }, []);
 
     useEffect(() => {
-        fetchReadyOrders(searchTerm); // Pass searchTerm to fetchReadyOrders
-    }, [fetchReadyOrders, searchTerm]); // Re-fetch when searchTerm changes
+        fetchReadyOrders();
+    }, [fetchReadyOrders]);
+
+    useEffect(() => {
+        if (!searchTerm.trim()) {
+            setFilteredOrders(orders);
+        } else {
+            const term = searchTerm.toLowerCase();
+            const filtered = orders.filter(order => 
+                order.name?.toLowerCase().includes(term) ||
+                order.phone?.toLowerCase().includes(term) ||
+                order.city?.toLowerCase().includes(term)
+            );
+            setFilteredOrders(filtered);
+        }
+    }, [searchTerm, orders]);
 
     useEffect(() => {
         console.log('orders from API:', orders);
@@ -40,7 +56,7 @@ export default function PickupPage() {
         api.post(`/orders/${orderId}/pickup`)
             .then(() => {
                 setSnackbar({ open: true, message: `Order for ${customerName} marked as picked up.`, severity: 'success' });
-                fetchReadyOrders(searchTerm); // Re-fetch with current search term
+                fetchReadyOrders();
             })
             .catch((err) => {
                 console.error('Failed to confirm pickup:', err);
@@ -102,7 +118,7 @@ export default function PickupPage() {
                     )}
                     <Box sx={{ height: 600, width: '100%' }}>
                         <DataGrid
-                            rows={orders}
+                            rows={filteredOrders}
                             columns={columns}
                             loading={loading}
                             getRowId={(row) => row ? row.order_id : Math.random().toString()}
