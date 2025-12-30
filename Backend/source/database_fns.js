@@ -1965,6 +1965,14 @@ async function addCities(cities) {
     }
 }
 
+async function deleteCity(cityName) {
+    try {
+        await pool.query('DELETE FROM Cities WHERE name = ?', [cityName]);
+    } catch (err) {
+        throw err;
+    }
+}
+
 
 // --- Shelves: details + contents -------------------------------------------
 async function getShelfDetails(shelfId) {
@@ -3132,6 +3140,7 @@ module.exports = {
     updateAdminPassword,
     addCities,
     getAllCities,
+    deleteCity,
     checkPassword,
     update_new_customer_data, 
     get_crate_data, 

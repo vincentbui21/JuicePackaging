@@ -1012,6 +1012,62 @@ app.get('/cities', async (req, res) => {
     }
 });
 
+app.post('/cities', async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: 'City name is required' });
+        }
+        await database.addCities([name.trim()]);
+        res.status(201).json({ ok: true, message: 'City added successfully' });
+    } catch (err) {
+        console.error('Error adding city:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.delete('/cities', async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'City name is required' });
+        }
+        
+        // Check if any customers are using this city
+        const [customers] = await pool.query(
+            'SELECT COUNT(*) as count FROM Customers WHERE city = ? AND customer_id NOT IN (SELECT customer_id FROM Orders WHERE is_deleted = 1)',
+            [name]
+        );
+        
+        // Check if any boxes are using this city (both directly and through customer relationship)
+        const [boxes] = await pool.query(
+            `SELECT COUNT(DISTINCT b.box_id) as count 
+             FROM Boxes b 
+             LEFT JOIN Customers c ON b.customer_id = c.customer_id 
+             WHERE b.city = ? OR c.city = ?`,
+            [name, name]
+        );
+        
+        const customerCount = customers[0].count;
+        const boxCount = boxes[0].count;
+        
+        if (customerCount > 0 || boxCount > 0) {
+            return res.status(400).json({ 
+                error: `Cannot delete city "${name}". It is currently used by ${customerCount} customer(s) and ${boxCount} box(es).`,
+                inUse: true,
+                customerCount,
+                boxCount
+            });
+        }
+        
+        await database.deleteCity(name);
+        res.status(200).json({ ok: true, message: 'City deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting city:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 app.get('/shelves/:shelf_id/contents', async (req, res) => {
     const { shelf_id } = req.params;
     try {

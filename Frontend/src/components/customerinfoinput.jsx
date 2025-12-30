@@ -4,10 +4,25 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
+import { useState, useEffect } from 'react';
+import api from '../services/axios';
 dayjs.extend(customParseFormat);
 
 
 function CustomerInfo({data, setdata}) {
+    const [cities, setCities] = useState([]);
+
+    useEffect(() => {
+        const fetchCities = async () => {
+            try {
+                const response = await api.get('/cities');
+                setCities(response.data);
+            } catch (error) {
+                console.error('Error fetching cities:', error);
+            }
+        };
+        fetchCities();
+    }, []);
 
     const handleCustomerInfoUpdate = (e)=>{
         setdata({... data, [e.target.name]:e.target.value})
@@ -101,12 +116,11 @@ function CustomerInfo({data, setdata}) {
                                 }
                             }
                             >
-                                <MenuItem value={"Kuopio"}>Kuopio</MenuItem>
-                                <MenuItem value={"Mikkeli"}>Mikkeli</MenuItem>
-                                <MenuItem value={"Varkaus"}>Varkaus</MenuItem>
-                                <MenuItem value={"Lapinlahti"}>Lapinlahti</MenuItem>
-                                <MenuItem value={"Joensuu"}>Joensuu</MenuItem>
-                                <MenuItem value={"Lahti"}>Lahti</MenuItem>
+                                {cities.map((city) => (
+                                    <MenuItem key={city} value={city}>
+                                        {city}
+                                    </MenuItem>
+                                ))}
                             </TextField>
                         </Grid>
 
