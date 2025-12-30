@@ -65,10 +65,10 @@ async function update_new_customer_data(customer_data, order_data) {
 
         for(let i = 1; i<=order_data.No_of_Crates; i++){
 
-            const newCrate = generateUUID();
-            crateID.push(newCrate)
+            const newCrateId = `CRATE_${orderID}_${i}`;
+            crateID.push(newCrateId);
             await connection.query(insertCrateData, [
-                newCrate,
+                newCrateId,
                 customerID,
                 "Created",
                 logic.formatDateToSQL(customer_data.entryDate),
@@ -209,18 +209,21 @@ async function getCustomers(customerName, page, limit) {
         const [[{ total }]] = await connection.query(countQuery, params);
 
         // Get paginated rows, starting from customers
-        const dataQuery = `
-            SELECT 
-                c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
-                o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id
-            FROM Customers AS c
-            LEFT JOIN Orders AS o ON c.customer_id = o.customer_id
-            ${where}
-            ORDER BY c.created_at DESC
-            LIMIT ? OFFSET ?
-        `;
-
-        const [rows] = await connection.query(
+                const dataQuery = `
+                    SELECT 
+                        c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
+                        o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id, o.boxes_count, o.pouches_count, o.actual_pouches
+                    FROM Customers AS c
+                    LEFT JOIN (
+                        SELECT 
+                            *,
+                            ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY created_at DESC, order_id DESC) as rn
+                        FROM Orders
+                    ) AS o ON c.customer_id = o.customer_id AND o.rn = 1
+                    ${where}
+                    ORDER BY c.created_at DESC
+                    LIMIT ? OFFSET ?
+                `;        const [rows] = await connection.query(
             dataQuery,
             [...params, parsedLimit, offset]
         );
@@ -346,82 +349,124 @@ async function updateCustomerData(customer_id, customerInfoChange, orderInfoChan
         const customerValues = [];
 
         if (customerInfoChange.Name) {
-        customerFields.push('name = ?');
-        customerValues.push(customerInfoChange.Name);
+            customerFields.push('name = ?');
+            customerValues.push(customerInfoChange.Name);
         }
         if (customerInfoChange.email) {
-        customerFields.push('email = ?');
-        customerValues.push(customerInfoChange.email);
+            customerFields.push('email = ?');
+            customerValues.push(customerInfoChange.email);
         }
         if (customerInfoChange.phone) {
-        customerFields.push('phone = ?');
-        customerValues.push(customerInfoChange.phone);
+            customerFields.push('phone = ?');
+            customerValues.push(customerInfoChange.phone);
         }
         if (customerInfoChange.city) {
-        customerFields.push('city = ?');
-        customerValues.push(customerInfoChange.city);
+            customerFields.push('city = ?');
+            customerValues.push(customerInfoChange.city);
         }
 
         if (customerFields.length > 0) {
-        customerValues.push(customer_id);
-        const customerQuery = `UPDATE Customers SET ${customerFields.join(', ')} WHERE customer_id = ?`;
-        await connection.query(customerQuery, customerValues);
+            customerValues.push(customer_id);
+            const customerQuery = `UPDATE Customers SET ${customerFields.join(', ')} WHERE customer_id = ?`;
+            await connection.query(customerQuery, customerValues);
         }
 
-        // --- Prepare Orders update ---
+        // --- Prepare Orders update (only affects the latest order) ---
         const orderFields = [];
         const orderValues = [];
 
         if (orderInfoChange.Date) {
-        orderFields.push('created_at = ?');
-        orderValues.push(logic.formatDateToSQL(orderInfoChange.Date));
+            orderFields.push('created_at = ?');
+            orderValues.push(logic.formatDateToSQL(orderInfoChange.Date));
         }
         if (orderInfoChange.weight) {
-        orderFields.push('weight_kg = ?');
-        orderValues.push(Number(parseFloat(orderInfoChange.weight).toFixed(2)));
-
-        // Also update total_cost based on weight if cost is not explicitly set
-        if (!orderInfoChange.cost) {
-            orderFields.push('total_cost = ?');
-            orderValues.push(logic.caculated_price(orderInfoChange.weight));
-        }
+            orderFields.push('weight_kg = ?');
+            orderValues.push(Number(parseFloat(orderInfoChange.weight).toFixed(2)));
+            if (!orderInfoChange.cost) {
+                orderFields.push('total_cost = ?');
+                orderValues.push(logic.caculated_price(orderInfoChange.weight));
+            }
         }
         if (orderInfoChange.crate) {
-        orderFields.push('crate_count = ?');
-        orderValues.push(parseInt(orderInfoChange.crate));
+            orderFields.push('crate_count = ?');
+            orderValues.push(parseInt(orderInfoChange.crate));
         }
         if (orderInfoChange.cost) {
-        orderFields.push('total_cost = ?');
-        orderValues.push(Number(parseFloat(orderInfoChange.cost).toFixed(2)));
+            orderFields.push('total_cost = ?');
+            orderValues.push(Number(parseFloat(orderInfoChange.cost).toFixed(2)));
         }
         if (orderInfoChange.Status) {
-        orderFields.push('status = ?');
-        orderValues.push(orderInfoChange.Status);
+            orderFields.push('status = ?');
+            orderValues.push(orderInfoChange.Status);
         }
         if (orderInfoChange.Notes !== undefined) {
-        orderFields.push('notes = ?');
-        orderValues.push(orderInfoChange.Notes);
+            orderFields.push('notes = ?');
+            orderValues.push(orderInfoChange.Notes);
         }
+
+        const [[latestOrder]] = await connection.query(
+            'SELECT order_id FROM Orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 1',
+            [customer_id]
+        );
 
         if (orderFields.length > 0) {
-        orderValues.push(customer_id);
-        const orderQuery = `UPDATE Orders SET ${orderFields.join(', ')} WHERE customer_id = ?`;
-        await connection.query(orderQuery, orderValues);
+            if (!latestOrder) throw new Error("Customer has no orders to update.");
+            orderValues.push(latestOrder.order_id);
+            const orderQuery = `UPDATE Orders SET ${orderFields.join(', ')} WHERE order_id = ?`;
+            await connection.query(orderQuery, orderValues);
         }
 
-        // --- Handle crate updates ---
+        // --- Handle crate updates intelligently ---
         if (orderInfoChange.crate) {
-        // Delete all existing crates for this customer
-        const deleteCratesQuery = `DELETE FROM Crates WHERE customer_id = ?`;
-        await connection.query(deleteCratesQuery, [customer_id]);
+            if (!latestOrder) throw new Error("Cannot update crates for a customer with no orders.");
+            const order_id = latestOrder.order_id;
+            const newCrateCount = parseInt(orderInfoChange.crate, 10);
 
-        // Insert new crates matching the new crate count
-        // Use updated date or today's date for updated_at
-        const updatedAt = orderInfoChange.Date
-            ? logic.formatDateToSQL(orderInfoChange.Date)
-            : new Date().toISOString().slice(0, 10); // format 'YYYY-MM-DD'
+            const [existingCrates] = await connection.query("SELECT crate_id, status FROM Crates WHERE crate_id LIKE ?", [`CRATE_${order_id}_%`]);
+            const existingCrateNumbers = existingCrates.map(c => ({
+                num: parseInt(c.crate_id.split('_').pop(), 10),
+                status: c.status
+            })).sort((a, b) => a.num - b.num);
 
-        await insertCratesForCustomer(connection, customer_id, parseInt(orderInfoChange.crate), updatedAt);
+            const existingCount = existingCrates.length;
+
+            if (newCrateCount > existingCount) {
+                // INCREASE: Add missing crates
+                const newCratesToInsert = [];
+                const updatedAt = orderInfoChange.Date ? logic.formatDateToSQL(orderInfoChange.Date) : new Date();
+                const existingNums = new Set(existingCrateNumbers.map(c => c.num));
+                
+                for (let i = 1; i <= newCrateCount; i++) {
+                    if (!existingNums.has(i)) {
+                        const newCrateId = `CRATE_${order_id}_${i}`;
+                        newCratesToInsert.push([newCrateId, customer_id, 'Created', updatedAt, `${i}/${newCrateCount}`]);
+                    }
+                }
+                if (newCratesToInsert.length > 0) {
+                    await connection.query('INSERT INTO Crates (crate_id, customer_id, status, created_at, crate_order) VALUES ?', [newCratesToInsert]);
+                }
+            } else if (newCrateCount < existingCount) {
+                // DECREASE: Remove extra crates after safety check
+                const cratesToDelete = existingCrateNumbers.slice(newCrateCount);
+                
+                for (const crate of cratesToDelete) {
+                    if (crate.status !== 'Created') {
+                        throw new Error(`Cannot reduce crate count: Crate number ${crate.num} is already in use (status: ${crate.status}).`);
+                    }
+                }
+                
+                const idsToDelete = cratesToDelete.map(c => `CRATE_${order_id}_${c.num}`);
+                if (idsToDelete.length > 0) {
+                    const deletePlaceholders = idsToDelete.map(() => '?').join(',');
+                    await connection.query(`DELETE FROM Crates WHERE crate_id IN (${deletePlaceholders})`, idsToDelete);
+                }
+            }
+             // If newCrateCount equals existingCount, do nothing.
+             // Also, update crate_order for all crates for this order.
+             for(let i=1; i<=newCrateCount; i++){
+                const crateId = `CRATE_${order_id}_${i}`;
+                await connection.query(`UPDATE Crates SET crate_order = ? WHERE crate_id = ?`, [`${i}/${newCrateCount}`, crateId]);
+             }
         }
 
         await connection.commit();
@@ -460,18 +505,39 @@ async function getOrdersByStatus(status) {
     const [rows] = await pool.query(`
         SELECT 
             o.order_id,
+            o.customer_id,
             o.weight_kg,
             o.status,
-            o.boxes_count,
-            o.pouches_count,
-            o.actual_pouches,
+            o.notes,
+            o.boxes_count AS box_count,
+            COALESCE(o.actual_pouches, o.pouches_count) AS pouches_count,
             o.created_at,
             c.name,
-            c.city
+            c.phone,
+            c.city,
+            COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name)) AS shelf_name
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
+        
+        /* Link boxes that belong to this order */
+        LEFT JOIN Boxes b
+          ON SUBSTRING(b.box_id, 5, 36) = o.order_id
+        
+        /* Normal flow: boxes -> pallet -> shelf */
+        LEFT JOIN Pallets p
+          ON p.pallet_id = b.pallet_id
+        LEFT JOIN Shelves sp
+          ON sp.shelf_id = p.shelf_id
+        
+        /* Kuopio flow: boxes -> shelf directly */
+        LEFT JOIN Shelves sb
+          ON sb.shelf_id = b.shelf_id
+        
         WHERE o.status = ?
-          AND COALESCE(o.is_deleted, 0) = 0
+          AND COALESCE(c.is_deleted, 0) = 0
+        GROUP BY o.order_id, o.customer_id, o.weight_kg, o.status, o.notes, 
+                 o.boxes_count, o.pouches_count, o.actual_pouches, o.created_at,
+                 c.name, c.phone, c.city
         ORDER BY o.created_at ASC
     `, [status]);
 
@@ -491,18 +557,39 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
     const [rows] = await pool.query(`
         SELECT 
             o.order_id,
+            o.customer_id,
             o.weight_kg,
             o.status,
-            o.boxes_count,
-            o.pouches_count,
-            o.actual_pouches,
+            o.notes,
+            o.boxes_count AS box_count,
+            COALESCE(o.actual_pouches, o.pouches_count) AS pouches_count,
             o.created_at,
             c.name,
-            c.city
+            c.phone,
+            c.city,
+            COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name)) AS shelf_name
         FROM Orders o
         JOIN Customers c ON o.customer_id = c.customer_id
+        
+        /* Link boxes that belong to this order */
+        LEFT JOIN Boxes b
+          ON SUBSTRING(b.box_id, 5, 36) = o.order_id
+        
+        /* Normal flow: boxes -> pallet -> shelf */
+        LEFT JOIN Pallets p
+          ON p.pallet_id = b.pallet_id
+        LEFT JOIN Shelves sp
+          ON sp.shelf_id = p.shelf_id
+        
+        /* Kuopio flow: boxes -> shelf directly */
+        LEFT JOIN Shelves sb
+          ON sb.shelf_id = b.shelf_id
+        
         WHERE o.status = ?
-          AND COALESCE(o.is_deleted, 0) = 0
+          AND COALESCE(c.is_deleted, 0) = 0
+        GROUP BY o.order_id, o.customer_id, o.weight_kg, o.status, o.notes, 
+                 o.boxes_count, o.pouches_count, o.actual_pouches, o.created_at,
+                 c.name, c.phone, c.city
         ORDER BY o.created_at ASC
         LIMIT ? OFFSET ?
     `, [status, parsedLimit, offset]);
@@ -644,97 +731,143 @@ async function markOrderAsReady(order_id) {
 }
 
   async function markOrderAsDone(order_id, comment = "") {
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-  
-      // Lock order row
-      const [[o]] = await conn.query(
-        `SELECT order_id, customer_id, weight_kg
-           FROM Orders
-          WHERE order_id = ?
-          FOR UPDATE`,
-        [order_id]
-      );
-      if (!o) throw new Error("Order not found");
-  
-      // Compute how many boxes to make (same logic you use in the UI)
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Lock order row and get boxes_count
+    const [[o]] = await conn.query(
+      `SELECT order_id, customer_id, weight_kg, boxes_count
+         FROM Orders
+        WHERE order_id = ?
+        FOR UPDATE`,
+      [order_id]
+    );
+    if (!o) throw new Error("Order not found");
+
+    // Prioritize the stored boxes_count if it is a positive number.
+    // Otherwise, fall back to calculating from weight.
+    let boxCount = (o.boxes_count > 0) ? Number(o.boxes_count) : 0;
+    if (boxCount === 0) {
       const weight = Number(o.weight_kg) || 0;
       const estimatedPouches = Math.floor((weight * 0.65) / 3);
-      const boxCount = Math.max(1, Math.ceil(estimatedPouches / 8));
-  
-      // Build suffixed ids
-      const now = new Date();
-      const rows = [];
-      for (let i = 1; i <= boxCount; i++) {
-        rows.push([`BOX_${order_id}_${i}`, o.customer_id, now]);
-      }
-  
-      // Insert idempotently
-      if (rows.length) {
-        await conn.query(
-          `INSERT IGNORE INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
-          [rows]
-        );
-      }
-  
-      // Authoritative count saved on Orders
-      const actualCount = await updateBoxesCountForOrder(order_id, conn);
-  
-      // Status update
-      await conn.query(
-        `UPDATE Orders SET status = ? WHERE order_id = ?`,
-        ["processing complete", order_id]
-      );
-  
-      await conn.commit();
-  
-      // DEBUG (remove later): see what happened
-      console.log(`[markOrderAsDone] order=${order_id} intended=${boxCount} saved=${actualCount}`);
-  
-      return {
-        created: rows.length,       // attempted inserts
-        boxes_count: actualCount,   // persisted total
-        estimatedPouches,
-        boxCount
-      };
-    } catch (e) {
-      await conn.rollback();
-      console.error("markOrderAsDone error:", e);
-      throw e;
-    } finally {
-      conn.release();
+      boxCount = Math.max(1, Math.ceil(estimatedPouches / 8));
     }
-  }   
+
+    // Build suffixed ids
+    const now = new Date();
+    const rows = [];
+    for (let i = 1; i <= boxCount; i++) {
+      rows.push([`BOX_${order_id}_${i}`, o.customer_id, now]);
+    }
+
+    // Insert idempotently
+    if (rows.length) {
+      await conn.query(
+        `INSERT IGNORE INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
+        [rows]
+      );
+    }
+
+    // Authoritative count saved on Orders
+    const actualCount = await updateBoxesCountForOrder(order_id, conn);
+
+    // Status update
+    await conn.query(
+      `UPDATE Orders SET status = ? WHERE order_id = ?`,
+      ["processing complete", order_id]
+    );
+
+    await conn.commit();
+
+    console.log(`[markOrderAsDone] order=${order_id} intended=${boxCount} saved=${actualCount}`);
+
+    return {
+      created: rows.length,
+      boxes_count: actualCount,
+      estimatedPouches: null, // This value is not calculated here anymore unless as fallback
+      boxCount: actualCount
+    };
+  } catch (e) {
+    await conn.rollback();
+    console.error("markOrderAsDone error:", e);
+    throw e;
+  } finally {
+    conn.release();
+  }
+}   
     
    
 async function updateOrderInfo(order_id, data = {}) {
-  // Map UI fields -> DB columns
-  const sets = [];
-  const vals = [];
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
 
-  if (data.name != null)            { sets.push('name = ?');          vals.push(String(data.name)); }
-  if (data.status != null)          { sets.push('status = ?');        vals.push(String(data.status)); }
-  if (data.weight_kg != null)       { sets.push('weight_kg = ?');     vals.push(Number(data.weight_kg) || 0); }
+    const sets = [];
+    const vals = [];
 
-  // UI sends these:
-  if (data.actual_boxes != null)      { sets.push('boxes_count = ?');   vals.push(Number(data.actual_boxes) || 0); }
-  else if (data.estimated_boxes != null) { sets.push('boxes_count = ?'); vals.push(Number(data.estimated_boxes) || 0); }
-  if (data.estimated_pouches != null) { sets.push('pouches_count = ?'); vals.push(Number(data.estimated_pouches) || 0); }
-  if (data.actual_pouches != null)    { sets.push('actual_pouches = ?'); vals.push(Number(data.actual_pouches) || 0); }
+    if (data.name != null)            { sets.push('name = ?');          vals.push(String(data.name)); }
+    if (data.status != null)          { sets.push('status = ?');        vals.push(String(data.status)); }
+    if (data.weight_kg != null)       { sets.push('weight_kg = ?');     vals.push(Number(data.weight_kg) || 0); }
 
-  // If you also allow editing notes, etc., add them here similarly.
+    if (data.actual_boxes != null)      { sets.push('boxes_count = ?');   vals.push(Number(data.actual_boxes) || 0); }
+    else if (data.estimated_boxes != null) { sets.push('boxes_count = ?'); vals.push(Number(data.estimated_boxes) || 0); }
+    
+    if (data.estimated_pouches != null) { sets.push('pouches_count = ?'); vals.push(Number(data.estimated_pouches) || 0); }
+    if (data.actual_pouches != null)    { sets.push('actual_pouches = ?'); vals.push(Number(data.actual_pouches) || 0); }
 
-  if (sets.length === 0) {
-    return { affectedRows: 0 }; // nothing to update
+    if (sets.length > 0) {
+      vals.push(order_id);
+      await conn.query(
+        `UPDATE Orders SET ${sets.join(', ')} WHERE order_id = ?`,
+        vals
+      );
+    }
+
+    const newBoxCount = data.actual_boxes != null ? Number(data.actual_boxes) : (data.estimated_boxes != null ? Number(data.estimated_boxes) : null);
+
+    if (newBoxCount !== null && newBoxCount >= 0) {
+        const [[order]] = await conn.query('SELECT customer_id FROM Orders WHERE order_id = ?', [order_id]);
+        if (!order || !order.customer_id) {
+            throw new Error('Order not found or customer_id is missing.');
+        }
+        const customer_id = order.customer_id;
+
+        const [existingBoxes] = await conn.query("SELECT box_id FROM Boxes WHERE box_id LIKE ?", [`BOX_${order_id}_%`]);
+        if (newBoxCount < existingBoxes.length) {
+            const [placedBoxes] = await conn.query("SELECT COUNT(*) as count FROM Boxes WHERE box_id LIKE ? AND (pallet_id IS NOT NULL OR shelf_id IS NOT NULL)", [`BOX_${order_id}_%`]);
+            if (placedBoxes[0].count > 0) {
+                 throw new Error('Cannot reduce box count because one or more boxes for this order are already placed on a pallet or shelf.');
+            }
+        }
+        
+        await conn.query("DELETE FROM Boxes WHERE box_id LIKE ?", [`BOX_${order_id}_%`]);
+
+        if (newBoxCount > 0) {
+            const boxRows = [];
+            const now = new Date();
+            for (let i = 1; i <= newBoxCount; i++) {
+                boxRows.push([`BOX_${order_id}_${i}`, customer_id, now]);
+            }
+            if (boxRows.length > 0) {
+                await conn.query(
+                    `INSERT INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
+                    [boxRows]
+                );
+            }
+        }
+    }
+
+    await conn.commit();
+    return { affectedRows: sets.length > 0 ? 1 : 0 };
+
+  } catch (err) {
+    await conn.rollback();
+    console.error("Error in updateOrderInfo:", err);
+    throw err;
+  } finally {
+    conn.release();
   }
-
-  vals.push(order_id);
-  const [res] = await pool.query(
-    `UPDATE Orders SET ${sets.join(', ')} WHERE order_id = ?`,
-    vals
-  );
-  return res;
 }
       
       async function deleteOrder(order_id) {

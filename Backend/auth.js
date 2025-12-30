@@ -30,14 +30,14 @@ router.post("/login", async (req, res) => {
     }
 
     if (!rows.length) {
-      return res.json({ success: false, error: "Invalid credentials" });
+      return res.status(401).json({ success: false, error: "Invalid credentials" });
     }
 
     const user = rows[0];
 
     // Simple password check (plain-text)
     if (user.password !== password) {
-      return res.json({ success: false, error: "Invalid credentials" });
+      return res.status(401).json({ success: false, error: "Invalid credentials" });
     }
 
     let token;

@@ -32,7 +32,7 @@ app.set('io', io);
 app.use(cors({
   origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires'],
   credentials: true
 }));
 
