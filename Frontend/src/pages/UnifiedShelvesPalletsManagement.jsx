@@ -38,6 +38,7 @@ function UnifiedShelvesPalletsManagement() {
   const [boxDialogOpen, setBoxDialogOpen] = useState(false);
   const [boxList, setBoxList] = useState([]);
   const [selectedPalletId, setSelectedPalletId] = useState(null);
+  const [palletDetails, setPalletDetails] = useState(null);
 
   const [searchText, setSearchText] = useState("");
 
@@ -236,6 +237,10 @@ function UnifiedShelvesPalletsManagement() {
 
   const handleViewBoxes = async (pallet_id) => {
     try {
+      // Get the pallet details from the current pallets list
+      const pallet = pallets.find(p => p.pallet_id === pallet_id);
+      setPalletDetails(pallet || null);
+      
       const res = await api.get(`/pallets/${pallet_id}/boxes`);
       setBoxList(Array.isArray(res.data) ? res.data : []);
       setSelectedPalletId(pallet_id);
@@ -341,7 +346,7 @@ function UnifiedShelvesPalletsManagement() {
     { field: "shelf_id", headerName: "Shelf ID", flex: 1.5 },
     { field: "shelf_name", headerName: "Shelf Name", flex: 1 },
     { field: "location", headerName: "Location", flex: 1 },
-    { field: "status", headerName: "Status", flex: 1 },
+    // { field: "status", headerName: "Status", flex: 1 },
     { field: "holding", headerName: "Holding", flex: 0.8 },
     {
       field: "actions",
@@ -680,10 +685,7 @@ function UnifiedShelvesPalletsManagement() {
                     <strong>Location:</strong> {shelfDetails.location}
                   </Typography>
                   <Typography variant="subtitle1">
-                    <strong>Status:</strong> {shelfDetails.status}
-                  </Typography>
-                  <Typography variant="subtitle1">
-                    <strong>Holding:</strong> {shelfDetails.holding} / {shelfDetails.capacity}
+                    <strong>Holding:</strong> {boxesOnShelf.length}
                   </Typography>
                 </>
               ) : null}
@@ -693,27 +695,50 @@ function UnifiedShelvesPalletsManagement() {
                 <Typography>No boxes on this shelf.</Typography>
               ) : (
                 <List dense>
-                  {boxesOnShelf.map((box, i) => {
-                    const customerLabel =
-                      (box.customer || box.customer_name)
-                        ? `Customer: ${box.customer || box.customer_name}`
-                        : (box.customer_id ? `Customer ID: ${box.customer_id}` : null);
+                  {(() => {
+                    // Group boxes by customer
+                    const grouped = boxesOnShelf.reduce((acc, box) => {
+                      const key = box.customer_id || 'unknown';
+                      if (!acc[key]) {
+                        acc[key] = {
+                          customer_name: box.customer_name || box.customer,
+                          customer_id: box.customer_id,
+                          order_id: box.order_id,
+                          boxes_count: box.boxes_count,
+                          actual_pouches: box.actual_pouches || box.pouches_count || box.pouch_count,
+                          city: box.city,
+                          created_at: box.created_at,
+                          boxIds: []
+                        };
+                      }
+                      acc[key].boxIds.push(box.box_id);
+                      return acc;
+                    }, {});
 
-                    const cityLabel = box.city ? `City: ${box.city}` : null;
-                    const pouches = box.pouch_count ? `Pouches: ${box.pouch_count}` : null;
-                    const created = box.created_at ? `Created: ${new Date(box.created_at).toLocaleDateString()}` : null;
+                    return Object.values(grouped).map((group, i) => {
+                      const customerLabel = group.customer_name
+                        ? `Customer: ${group.customer_name}`
+                        : (group.customer_id ? `Customer ID: ${group.customer_id}` : 'Unknown Customer');
 
-                    const secondary = [customerLabel, cityLabel, pouches, created].filter(Boolean).join("  •  ");
+                      const orderLabel = group.order_id ? `Order: ${group.order_id}` : null;
+                      const boxCountLabel = `${group.boxIds.length} box${group.boxIds.length !== 1 ? 'es' : ''}`;
+                      const totalBoxesLabel = group.boxes_count ? `Total: ${group.boxes_count}` : null;
+                      const pouchesLabel = group.actual_pouches ? `Pouches: ${group.actual_pouches}` : null;
+                      const cityLabel = group.city ? `City: ${group.city}` : null;
+                      const created = group.created_at ? `Created: ${new Date(group.created_at).toLocaleDateString()}` : null;
 
-                    return (
-                      <ListItem key={i} disableGutters>
-                        <ListItemText
-                          primary={box.box_id || `BOX_${i + 1}`}
-                          secondary={secondary}
-                        />
-                      </ListItem>
-                    );
-                  })}
+                      const secondary = [orderLabel, boxCountLabel, totalBoxesLabel, pouchesLabel, cityLabel, created].filter(Boolean).join("  •  ");
+
+                      return (
+                        <ListItem key={i} disableGutters>
+                          <ListItemText
+                            primary={customerLabel}
+                            secondary={secondary}
+                          />
+                        </ListItem>
+                      );
+                    });
+                  })()}
                 </List>
               )}
             </>
@@ -728,41 +753,66 @@ function UnifiedShelvesPalletsManagement() {
 
       {/* Boxes on pallet */}
       <Dialog open={boxDialogOpen} onClose={() => setBoxDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Boxes on Pallet {selectedPalletId}</DialogTitle>
+        <DialogTitle>Contents on Pallet</DialogTitle>
         <DialogContent dividers>
+          {palletDetails && (
+            <>
+              <Typography variant="subtitle1">
+                <strong>Pallet:</strong> {palletDetails.pallet_name || palletDetails.pallet_id}
+              </Typography>
+              <Typography variant="subtitle1">
+                <strong>Location:</strong> {palletDetails.location || 'N/A'}
+              </Typography>
+              <Typography variant="subtitle1">
+                <strong>Holding:</strong> {boxList.length}
+              </Typography>
+            </>
+          )}
+
+          <Typography variant="h6" sx={{ mt: 2 }}>Boxes:</Typography>
           {boxList.length === 0 ? (
             <Typography>No boxes on this pallet.</Typography>
           ) : (
             <>
-              <Box sx={{ mb: 1.5 }}>
-                {Object.entries(
-                  boxList.reduce((acc, b) => {
-                    const key = b.customer_name || b.customer_id || "Unknown";
-                    acc[key] = (acc[key] || 0) + 1;
-                    return acc;
-                  }, {})
-                ).map(([label, count]) => (
-                  <Chip key={label} label={`${label}: ${count}`} sx={{ mr: 1, mb: 1 }} />
-                ))}
-              </Box>
-
               <List dense>
-                {boxList.map((b, idx) => (
-                  <ListItem key={idx} disableGutters>
-                    <ListItemText
-                      primary={b.box_id || b.id || `BOX_${idx + 1}`}
-                      secondary={
-                        [
-                          b.customer_name ? `Customer: ${b.customer_name}` : null,
-                          b.order_id ? `Order: ${b.order_id}` : null,
-                          b.created_at ? `Created: ${new Date(b.created_at).toLocaleString()}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join("  •  ")
-                      }
-                    />
-                  </ListItem>
-                ))}
+                {(() => {
+                  // Group boxes by customer
+                  const grouped = boxList.reduce((acc, box) => {
+                    const key = box.customer_id || box.customer_name || 'unknown';
+                    if (!acc[key]) {
+                      acc[key] = {
+                        customer_name: box.customer_name,
+                        customer_id: box.customer_id,
+                        order_id: box.order_id,
+                        created_at: box.created_at,
+                        boxIds: []
+                      };
+                    }
+                    acc[key].boxIds.push(box.box_id || box.id);
+                    return acc;
+                  }, {});
+
+                  return Object.values(grouped).map((group, i) => {
+                    const customerLabel = group.customer_name
+                      ? `Customer: ${group.customer_name}`
+                      : (group.customer_id ? `Customer ID: ${group.customer_id}` : 'Unknown Customer');
+
+                    const orderLabel = group.order_id ? `Order: ${group.order_id}` : null;
+                    const boxCountLabel = `${group.boxIds.length} box${group.boxIds.length !== 1 ? 'es' : ''}`;
+                    const created = group.created_at ? `Created: ${new Date(group.created_at).toLocaleDateString()}` : null;
+
+                    const secondary = [orderLabel, boxCountLabel, created].filter(Boolean).join("  •  ");
+
+                    return (
+                      <ListItem key={i} disableGutters>
+                        <ListItemText
+                          primary={customerLabel}
+                          secondary={secondary}
+                        />
+                      </ListItem>
+                    );
+                  });
+                })()}
               </List>
             </>
           )}

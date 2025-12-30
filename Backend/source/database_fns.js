@@ -510,6 +510,7 @@ async function getOrdersByStatus(status) {
             o.status,
             o.notes,
             o.boxes_count AS box_count,
+            o.boxes_count,
             COALESCE(o.actual_pouches, o.pouches_count) AS pouches_count,
             o.created_at,
             c.name,
@@ -562,6 +563,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
             o.status,
             o.notes,
             o.boxes_count AS box_count,
+            o.boxes_count,
             COALESCE(o.actual_pouches, o.pouches_count) AS pouches_count,
             o.created_at,
             c.name,
@@ -1213,7 +1215,18 @@ async function searchOrdersWithShelfInfo(query) {
 
   // Get all unique shelf locations
 async function getShelvesByLocation(location) {
-  const [rows] = await pool.query("SELECT * FROM Shelves WHERE location = ?", [location]);
+  const [rows] = await pool.query(
+    `SELECT 
+      s.*,
+      COUNT(DISTINCT b.box_id) AS holding
+    FROM Shelves s
+    LEFT JOIN Boxes b ON (b.shelf_id = s.shelf_id OR b.pallet_id IN (
+      SELECT pallet_id FROM Pallets WHERE shelf_id = s.shelf_id
+    ))
+    WHERE s.location = ?
+    GROUP BY s.shelf_id`,
+    [location]
+  );
   return rows;
 }
 

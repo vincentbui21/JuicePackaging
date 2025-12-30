@@ -137,7 +137,7 @@ function JuiceHandlePage() {
           next[order.order_id] = {
             status: order?.status || "In Progress",
             weight_kg: order?.weight_kg ?? "",
-            actual_pouches: order?.actual_pouches ?? "",
+            actual_pouches: order?.actual_pouches || order?.pouches_count || estimatedPouches,
             actual_boxes: (order?.boxes_count > 0) ? order.boxes_count : estimatedBoxes,
           };
         }
@@ -213,11 +213,15 @@ function JuiceHandlePage() {
       const total = list.length;
       for (const { url, index } of list) {
         await printImage(url, order.name, `b${index}/${total}`);
+        // Add delay between prints to avoid popup blocker
+        if (index < total) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       }
       setSnackbarMsg("All QR codes sent to printer");
     } catch (err) {
       console.error("Print all failed", err);
-      setSnackbarMsg("Failed to print all QRs (see console)");
+      setSnackbarMsg(err.message || "Failed to print all QRs (see console)");
     }
   };
 

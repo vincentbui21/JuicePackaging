@@ -326,17 +326,27 @@ export default function BoxToPalletLoadingPage() {
 
   // Normal (non-Kuopio) submit
   const submitToPallet = async () => {
-    await api.post(`/pallets/${palletId}/load-boxes`, { boxes: scannedBoxes });
+    // ✅ Assign ALL boxes from the order to the pallet
+    // Extract box IDs from fetchedBoxList (canonical list from backend)
+    const allBoxIds = fetchedBoxList.map(b => b.box_id);
+    
+    await api.post(`/pallets/${palletId}/load-boxes`, { 
+      boxes: allBoxIds.length > 0 ? allBoxIds : scannedBoxes // Use all boxes if available, fallback to scanned
+    });
     resetAll();
     setSnackbarMsg("Submitted successfully.");
   };
 
   // Kuopio submit + optional SMS (controlled by confirm dialog)
   const submitKuopio = async (sendNow) => {
+    // ✅ For Kuopio flow: assign ALL boxes from the order to the shelf
+    // Extract box IDs from fetchedBoxList (canonical list from backend)
+    const allBoxIds = fetchedBoxList.map(b => b.box_id);
+    
     // ✅ Send the decision in the BODY; backend reads `sendSms`
     await api.post(`/shelves/load-boxes`, {
       shelfId,
-      boxes: scannedBoxes,
+      boxes: allBoxIds.length > 0 ? allBoxIds : scannedBoxes, // Use all boxes if available, fallback to scanned
       sendSms: !!sendNow,
     });
 
@@ -386,6 +396,26 @@ export default function BoxToPalletLoadingPage() {
             {isKuopio ? "Box → Shelf Handling (Kuopio)" : "Box → Pallet Handling"}
           </Typography>
 
+          {isKuopio && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: "center", mb: 2, fontStyle: "italic" }}
+            >
+              Scan any box to identify the order, then scan the shelf QR to assign all boxes
+            </Typography>
+          )}
+
+          {!isKuopio && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: "center", mb: 2, fontStyle: "italic" }}
+            >
+              Scan any box to identify the order, then scan the pallet QR to assign all boxes
+            </Typography>
+          )}
+
           <Stack spacing={3} alignItems="center">
             {/* One scanner – the effect decides what was scanned */}
             <QRScanner onResult={setScanResult} />
@@ -414,9 +444,17 @@ export default function BoxToPalletLoadingPage() {
 
             {(orderInfo.order_id || expectedCount > 0) && (
               <Typography variant="body2" color="text.secondary">
-                Scanned <strong>{scannedCount}</strong> of{" "}
-                <strong>{expectedCount || 0}</strong> boxes&nbsp;·&nbsp;
-                {Math.max((expectedCount || 0) - scannedCount, 0)} to go
+                {isKuopio ? (
+                  <>
+                    Order has <strong>{expectedCount || 0}</strong> box{expectedCount !== 1 ? 'es' : ''}
+                    {shelfId && " · Ready to assign all boxes to shelf"}
+                  </>
+                ) : (
+                  <>
+                    Order has <strong>{expectedCount || 0}</strong> box{expectedCount !== 1 ? 'es' : ''}
+                    {palletId && " · Ready to assign all boxes to pallet"}
+                  </>
+                )}
               </Typography>
             )}
 
@@ -448,7 +486,7 @@ export default function BoxToPalletLoadingPage() {
                     "&:hover": { backgroundColor: "#c5bfa3" },
                   }}
                 >
-                  Submit
+                  {isKuopio ? `Assign All ${expectedCount || 0} Boxes to Shelf` : `Assign All ${expectedCount || 0} Boxes to Pallet`}
                 </Button>
               )}
             </Stack>

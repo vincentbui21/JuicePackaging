@@ -1,5 +1,11 @@
 function printImage(url, label = '', index) {
     const win = window.open('', '_blank', 'width=400,height=400');
+    
+    // Check if window was blocked by popup blocker
+    if (!win) {
+        throw new Error('Failed to open print window. Please allow popups for this site.');
+    }
+    
     const doc = win.document;
 
     const container = doc.createElement('div');

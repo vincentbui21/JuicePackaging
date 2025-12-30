@@ -1015,20 +1015,42 @@ app.get('/cities', async (req, res) => {
 app.get('/shelves/:shelf_id/contents', async (req, res) => {
     const { shelf_id } = req.params;
     try {
+      // Get shelf details
+      const [shelfRows] = await database.pool.query(
+        'SELECT * FROM Shelves WHERE shelf_id = ? LIMIT 1',
+        [shelf_id]
+      );
+      const shelf = shelfRows.length > 0 ? shelfRows[0] : null;
+
+      // Check for pallets on this shelf
       const [pallet] = await database.pool.query(
         'SELECT * FROM Pallets WHERE shelf_id = ? LIMIT 1',
         [shelf_id]
       );
   
-      if (!pallet.length) return res.status(404).json({ error: "No pallet on this shelf" });
-  
+      // Get boxes either from pallet or directly on shelf
       const [boxes] = await database.pool.query(
-        'SELECT * FROM Boxes WHERE pallet_id = ?',
-        [pallet[0].pallet_id]
+        `SELECT 
+          b.box_id,
+          b.customer_id,
+          c.name AS customer_name,
+          o.order_id,
+          o.boxes_count,
+          o.actual_pouches,
+          o.pouches_count,
+          b.created_at
+        FROM Boxes b
+        LEFT JOIN Customers c ON c.customer_id = b.customer_id
+        LEFT JOIN Orders o ON o.customer_id = b.customer_id AND o.status IN ('Ready for pickup', 'processing complete')
+        WHERE b.shelf_id = ? OR b.pallet_id = ?
+        ORDER BY b.created_at DESC`,
+        [shelf_id, pallet.length > 0 ? pallet[0].pallet_id : null]
       );
   
       res.status(200).json({
-        pallet: pallet[0],
+        ok: true,
+        shelf: shelf,
+        pallet: pallet.length > 0 ? pallet[0] : null,
         boxes
       });
     } catch (err) {
