@@ -1,5 +1,5 @@
-import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
-import { Add, Delete } from "@mui/icons-material";
+import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment } from "@mui/material";
+import { Add, Delete, Edit, Lock, Visibility, VisibilityOff } from "@mui/icons-material";
 import DrawerComponent from "../components/drawer";
 import { useState, useEffect } from "react";
 import api from '../services/axios';
@@ -70,6 +70,12 @@ function SettingPage() {
   };
 
   const handleDeleteCity = async (cityName) => {
+    // Prevent deletion of Kuopio (main city)
+    if (cityName.toLowerCase() === 'kuopio') {
+      setSnackbarMsg('Cannot delete Kuopio - it is the main city');
+      setOpenSnackbar(true);
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete "${cityName}"?`)) return;
     try {
       await api.delete("/cities", { data: { name: cityName } });
@@ -136,6 +142,114 @@ function SettingPage() {
   };
   /* ──────────────────────────────────────────────────────── */
 
+  /* ───────────────── Accounts Management ───────────────── */
+  const [accounts, setAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountDialog, setAccountDialog] = useState({ open: false, mode: 'create', account: null });
+  const [newAccount, setNewAccount] = useState({
+    id: '', password: '', full_name: '', email: '', role: 'employee',
+    can_edit_customers: false, can_force_delete: false, can_view_reports: false,
+    allowed_cities: []
+  });
+  const [changePasswordDialog, setChangePasswordDialog] = useState({ open: false, accountId: '', accountName: '', newPassword: '' });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+
+  const fetchAccounts = async () => {
+    setAccountsLoading(true);
+    try {
+      const res = await api.get('/accounts');
+      setAccounts(res.data.accounts || []);
+    } catch (err) {
+      console.error('Failed to fetch accounts', err);
+      setSnackbarMsg('Failed to load accounts');
+      setOpenSnackbar(true);
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    if (!newAccount.id || !newAccount.password) {
+      setSnackbarMsg('Username and password are required');
+      setOpenSnackbar(true);
+      return;
+    }
+    try {
+      await api.post('/accounts', newAccount);
+      setSnackbarMsg('Account created successfully');
+      setOpenSnackbar(true);
+      setAccountDialog({ open: false, mode: 'create', account: null });
+      setNewAccount({
+        id: '', password: '', full_name: '', email: '', role: 'employee',
+        can_edit_customers: false, can_force_delete: false, can_view_reports: false,
+        allowed_cities: []
+      });
+      fetchAccounts();
+    } catch (err) {
+      console.error('Failed to create account', err);
+      setSnackbarMsg(`Failed to create account: ${err.response?.data?.error || err.message}`);
+      setOpenSnackbar(true);
+    }
+  };
+
+  const handleUpdateAccount = async () => {
+    if (!accountDialog.account) return;
+    try {
+      const { id, password, created_at, updated_at, ...updateData } = accountDialog.account;
+      await api.put(`/accounts/${id}`, updateData);
+      setSnackbarMsg('Account updated successfully');
+      setOpenSnackbar(true);
+      setAccountDialog({ open: false, mode: 'create', account: null });
+      fetchAccounts();
+    } catch (err) {
+      console.error('Failed to update account', err);
+      setSnackbarMsg(`Failed to update account: ${err.response?.data?.error || err.message}`);
+      setOpenSnackbar(true);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!changePasswordDialog.newPassword) {
+      setSnackbarMsg('New password is required');
+      setOpenSnackbar(true);
+      return;
+    }
+    try {
+      await api.put(`/accounts/${changePasswordDialog.accountId}/password`, { newPassword: changePasswordDialog.newPassword });
+      setSnackbarMsg('Password changed successfully');
+      setOpenSnackbar(true);
+      setChangePasswordDialog({ open: false, accountId: '', accountName: '', newPassword: '' });
+    } catch (err) {
+      console.error('Failed to change password', err);
+      setSnackbarMsg(`Failed to change password: ${err.response?.data?.error || err.message}`);
+      setOpenSnackbar(true);
+    }
+  };
+
+  const handleDeleteAccount = async (accountId, accountName) => {
+    if (!window.confirm(`Are you sure you want to delete account "${accountName || accountId}"?`)) return;
+    try {
+      await api.delete(`/accounts/${accountId}`);
+      setSnackbarMsg('Account deleted successfully');
+      setOpenSnackbar(true);
+      fetchAccounts();
+    } catch (err) {
+      console.error('Failed to delete account', err);
+      setSnackbarMsg(`Failed to delete account: ${err.response?.data?.error || err.message}`);
+      setOpenSnackbar(true);
+    }
+  };
+
+  const openEditDialog = (account) => {
+    setAccountDialog({ open: true, mode: 'edit', account: { ...account } });
+  };
+
+  const openCreateDialog = () => {
+    setAccountDialog({ open: true, mode: 'create', account: null });
+  };
+  /* ──────────────────────────────────────────────────────── */
+
   useEffect(() => {
     api.get('/default-setting')
       .then((res) => {
@@ -154,6 +268,10 @@ function SettingPage() {
 
   useEffect(() => {
     if (tabValue === 1) fetchCities();
+    if (tabValue === 2) {
+      fetchCities(); // Need cities for allowed_cities dropdown
+      fetchAccounts();
+    }
     if (tabValue === 3) loadSmsTemplates();
   }, [tabValue]);
 
@@ -348,13 +466,22 @@ function SettingPage() {
                         <ListItem
                           key={city}
                           secondaryAction={
-                            <IconButton edge="end" color="error" onClick={() => handleDeleteCity(city)}>
+                            <IconButton 
+                              edge="end" 
+                              color="error" 
+                              onClick={() => handleDeleteCity(city)}
+                              disabled={city.toLowerCase() === 'kuopio'}
+                              title={city.toLowerCase() === 'kuopio' ? 'Cannot delete main city' : 'Delete city'}
+                            >
                               <Delete />
                             </IconButton>
                           }
                           sx={{ border: '1px solid #e0e0e0', borderRadius: 1, mb: 1 }}
                         >
-                          <ListItemText primary={city} />
+                          <ListItemText 
+                            primary={city} 
+                            secondary={city.toLowerCase() === 'kuopio' ? 'Main City' : null}
+                          />
                         </ListItem>
                       ))}
                     </List>
@@ -364,26 +491,105 @@ function SettingPage() {
             </Box>
           )}
 
-          {/* Tab 2: Accounts Management (Placeholder) */}
+          {/* Tab 2: Accounts Management */}
           {tabValue === 2 && (
             <Box>
-              <Typography variant="h6" sx={{ mb: 2 }}>
-                Accounts Management
-              </Typography>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                This section is under development. Account management features will be available soon.
-              </Alert>
-              <Stack spacing={2}>
-                <Typography variant="body2" color="text.secondary">
-                  Upcoming features:
-                </Typography>
-                <ul style={{ marginTop: 0, paddingLeft: 20 }}>
-                  <li><Typography variant="body2">Create and manage admin accounts</Typography></li>
-                  <li><Typography variant="body2">Create and manage employee accounts</Typography></li>
-                  <li><Typography variant="body2">Set role-based permissions</Typography></li>
-                  <li><Typography variant="body2">Reset passwords</Typography></li>
-                </ul>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+                <Typography variant="h6">Accounts Management</Typography>
+                <Button variant="contained" startIcon={<Add />} onClick={openCreateDialog}>
+                  Create New Account
+                </Button>
               </Stack>
+
+              {accountsLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : (
+                <List>
+                  {accounts.map((acc) => (
+                    <ListItem
+                      key={acc.id}
+                      sx={{
+                        border: '1px solid #e0e0e0',
+                        borderRadius: 1,
+                        mb: 2,
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        backgroundColor: acc.is_active ? 'transparent' : '#f5f5f5'
+                      }}
+                    >
+                      <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Box>
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {acc.full_name || acc.id}
+                            {acc.role === 'admin' && (
+                              <Chip label="Admin" size="small" color="error" sx={{ ml: 1 }} />
+                            )}
+                            {!acc.is_active && (
+                              <Chip label="Inactive" size="small" color="default" sx={{ ml: 1 }} />
+                            )}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Username: {acc.id} {acc.email && `• Email: ${acc.email}`}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1}>
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => setChangePasswordDialog({ open: true, accountId: acc.id, accountName: acc.full_name || acc.id, newPassword: '' })}
+                            title="Change Password"
+                          >
+                            <Lock />
+                          </IconButton>
+                          <IconButton size="small" color="primary" onClick={() => openEditDialog(acc)} title="Edit Account">
+                            <Edit />
+                          </IconButton>
+                          {acc.id !== 'admin' && (
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDeleteAccount(acc.id, acc.full_name)}
+                              title="Delete Account"
+                            >
+                              <Delete />
+                            </IconButton>
+                          )}
+                        </Stack>
+                      </Box>
+                      <Divider sx={{ width: '100%', my: 1 }} />
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <Typography variant="caption" fontWeight="bold">Permissions:</Typography>
+                          <Box sx={{ pl: 1 }}>
+                            <Typography variant="body2">✓ Edit Customers: {acc.can_edit_customers ? 'Yes' : 'No'}</Typography>
+                            <Typography variant="body2">✓ Force Delete: {acc.can_force_delete ? 'Yes' : 'No'}</Typography>
+                            <Typography variant="body2">✓ View Reports: {acc.can_view_reports ? 'Yes' : 'No'}</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <Typography variant="caption" fontWeight="bold">Allowed Cities:</Typography>
+                          <Box sx={{ pl: 1 }}>
+                            {acc.allowed_cities && acc.allowed_cities.length > 0 ? (
+                              <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                                {acc.allowed_cities.map((city) => (
+                                  <Chip key={city} label={city} size="small" />
+                                ))}
+                              </Stack>
+                            ) : (
+                              <Typography variant="body2" color="text.secondary">All cities</Typography>
+                            )}
+                          </Box>
+                        </Grid>
+                      </Grid>
+                    </ListItem>
+                  ))}
+                  {accounts.length === 0 && (
+                    <Alert severity="info">No accounts found. Create your first account to get started.</Alert>
+                  )}
+                </List>
+              )}
             </Box>
           )}
 
@@ -474,6 +680,284 @@ function SettingPage() {
             color="primary"
           >
             Understood
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create/Edit Account Dialog */}
+      <Dialog
+        open={accountDialog.open}
+        onClose={() => setAccountDialog({ open: false, mode: 'create', account: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          {accountDialog.mode === 'create' ? 'Create New Account' : 'Edit Account'}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} sx={{ mt: 1 }}>
+            {accountDialog.mode === 'create' ? (
+              <>
+                <TextField
+                  label="Username/ID"
+                  value={newAccount.id}
+                  onChange={(e) => setNewAccount({ ...newAccount, id: e.target.value })}
+                  required
+                  fullWidth
+                />
+                <TextField
+                  label="Password"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newAccount.password}
+                  onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })}
+                  required
+                  fullWidth
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle password visibility"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          edge="end"
+                        >
+                          {showNewPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <TextField
+                  label="Full Name"
+                  value={newAccount.full_name}
+                  onChange={(e) => setNewAccount({ ...newAccount, full_name: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  label="Email"
+                  type="email"
+                  value={newAccount.email}
+                  onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })}
+                  fullWidth
+                />
+                <FormControl fullWidth>
+                  <InputLabel>Role</InputLabel>
+                  <Select
+                    value={newAccount.role}
+                    onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}
+                    label="Role"
+                  >
+                    <MenuItem value="employee">Employee</MenuItem>
+                    <MenuItem value="admin">Admin</MenuItem>
+                  </Select>
+                </FormControl>
+                <Divider />
+                <Typography variant="subtitle2" fontWeight="bold">Permissions</Typography>
+                <FormGroup>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={newAccount.can_edit_customers}
+                        onChange={(e) => setNewAccount({ ...newAccount, can_edit_customers: e.target.checked })}
+                      />
+                    }
+                    label="Can edit customer information in Unified Management"
+                  />
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={newAccount.can_force_delete}
+                        onChange={(e) => setNewAccount({ ...newAccount, can_force_delete: e.target.checked })}
+                      />
+                    }
+                    label="Can permanently delete customers in Delete Bin"
+                  />
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={newAccount.can_view_reports}
+                        onChange={(e) => setNewAccount({ ...newAccount, can_view_reports: e.target.checked })}
+                      />
+                    }
+                    label="Can view Admin Reports"
+                  />
+                </FormGroup>
+                <Divider />
+                <FormControl fullWidth>
+                  <InputLabel>Allowed Cities (leave empty for all)</InputLabel>
+                  <Select
+                    multiple
+                    value={newAccount.allowed_cities}
+                    onChange={(e) => setNewAccount({ ...newAccount, allowed_cities: e.target.value })}
+                    input={<OutlinedInput label="Allowed Cities (leave empty for all)" />}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {cities.map((city) => (
+                      <MenuItem key={city} value={city}>
+                        <Checkbox checked={newAccount.allowed_cities.indexOf(city) > -1} />
+                        <ListItemText primary={city} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </>
+            ) : (
+              accountDialog.account && (
+                <>
+                  <TextField
+                    label="Username/ID"
+                    value={accountDialog.account.id}
+                    disabled
+                    fullWidth
+                  />
+                  <TextField
+                    label="Full Name"
+                    value={accountDialog.account.full_name || ''}
+                    onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, full_name: e.target.value } })}
+                    fullWidth
+                  />
+                  <TextField
+                    label="Email"
+                    type="email"
+                    value={accountDialog.account.email || ''}
+                    onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, email: e.target.value } })}
+                    fullWidth
+                  />
+                  <FormControl fullWidth>
+                    <InputLabel>Role</InputLabel>
+                    <Select
+                      value={accountDialog.account.role}
+                      onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, role: e.target.value } })}
+                      label="Role"
+                      disabled={accountDialog.account.id === 'admin'}
+                    >
+                      <MenuItem value="employee">Employee</MenuItem>
+                      <MenuItem value="admin">Admin</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={accountDialog.account.is_active}
+                        onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, is_active: e.target.checked } })}
+                      />
+                    }
+                    label="Account is active"
+                  />
+                  <Divider />
+                  <Typography variant="subtitle2" fontWeight="bold">Permissions</Typography>
+                  <FormGroup>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={accountDialog.account.can_edit_customers}
+                          onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_edit_customers: e.target.checked } })}
+                        />
+                      }
+                      label="Can edit customer information in Unified Management"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={accountDialog.account.can_force_delete}
+                          onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_force_delete: e.target.checked } })}
+                        />
+                      }
+                      label="Can permanently delete customers in Delete Bin"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={accountDialog.account.can_view_reports}
+                          onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_view_reports: e.target.checked } })}
+                        />
+                      }
+                      label="Can view Admin Reports"
+                    />
+                  </FormGroup>
+                  <Divider />
+                  <FormControl fullWidth>
+                    <InputLabel>Allowed Cities (leave empty for all)</InputLabel>
+                    <Select
+                      multiple
+                      value={accountDialog.account.allowed_cities || []}
+                      onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, allowed_cities: e.target.value } })}
+                      input={<OutlinedInput label="Allowed Cities (leave empty for all)" />}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      )}
+                    >
+                      {cities.map((city) => (
+                        <MenuItem key={city} value={city}>
+                          <Checkbox checked={(accountDialog.account.allowed_cities || []).indexOf(city) > -1} />
+                          <ListItemText primary={city} />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </>
+              )
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAccountDialog({ open: false, mode: 'create', account: null })}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={accountDialog.mode === 'create' ? handleCreateAccount : handleUpdateAccount}
+          >
+            {accountDialog.mode === 'create' ? 'Create' : 'Update'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Change Password Dialog */}
+      <Dialog
+        open={changePasswordDialog.open}
+        onClose={() => setChangePasswordDialog({ open: false, accountId: '', accountName: '', newPassword: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Change Password for {changePasswordDialog.accountName}</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="New Password"
+            type={showChangePassword ? "text" : "password"}
+            value={changePasswordDialog.newPassword}
+            onChange={(e) => setChangePasswordDialog({ ...changePasswordDialog, newPassword: e.target.value })}
+            fullWidth
+            sx={{ mt: 2 }}
+            autoFocus
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label="toggle password visibility"
+                    onClick={() => setShowChangePassword(!showChangePassword)}
+                    edge="end"
+                  >
+                    {showChangePassword ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setChangePasswordDialog({ open: false, accountId: '', accountName: '', newPassword: '' })}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handleChangePassword}>
+            Change Password
           </Button>
         </DialogActions>
       </Dialog>

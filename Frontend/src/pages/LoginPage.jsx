@@ -1,4 +1,5 @@
-import { Box, Paper, Typography, TextField, Button, Snackbar, Alert } from "@mui/material";
+import { Box, Paper, Typography, TextField, Button, Snackbar, Alert, IconButton, InputAdornment } from "@mui/material";
+import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import company_logo from "../assets/company_logo.png";
@@ -7,17 +8,44 @@ import "../css/LoginPage.css"; // Import the CSS file
 
 function LoginPage() {
   const navigate = useNavigate();
+  const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const handleLogin = async () => {
+    if (!userId || !password) {
+      setError("Please enter both ID and password");
+      return;
+    }
     try {
-      // Always use role "1" (Dashboard) in the backend
-      const res = await api.post("/auth/login", { id: "employee", password });
+      const res = await api.post("/auth/login", { id: userId, password });
       localStorage.setItem("token", res.data.token);
-      navigate("/dashboard"); // always go to dashboard
+      localStorage.setItem("userId", userId);
+      
+      // Fetch user permissions
+      try {
+        const userRes = await api.get(`/accounts/me/${userId}`);
+        if (userRes.data.ok && userRes.data.account) {
+          localStorage.setItem("userPermissions", JSON.stringify(userRes.data.account));
+        }
+      } catch (permErr) {
+        console.error("Failed to fetch user permissions:", permErr);
+      }
+      
+      navigate("/dashboard");
     } catch (err) {
-      setError("Invalid password");
+      if (err.response?.status === 403) {
+        setError("Inactive account, please contact admin");
+      } else {
+        setError("Invalid credentials");
+      }
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleLogin();
     }
   };
 
@@ -47,11 +75,34 @@ function LoginPage() {
         <Typography variant="h5" sx={{ fontWeight: "bold", mt: 1 }}>Login</Typography>
 
         <TextField
+          label="User ID"
+          value={userId}
+          onChange={(e) => setUserId(e.target.value)}
+          onKeyPress={handleKeyPress}
+          sx={{ width: "60%" }}
+          autoFocus
+        />
+
+        <TextField
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          onKeyPress={handleKeyPress}
           sx={{ width: "60%" }}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label="toggle password visibility"
+                  onClick={() => setShowPassword(!showPassword)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
 
         <Button

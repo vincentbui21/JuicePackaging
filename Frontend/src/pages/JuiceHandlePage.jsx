@@ -17,6 +17,7 @@ import {
   IconButton,
   Tooltip,
   Divider,
+  Alert,
 } from "@mui/material";
 import { Print, QrCode, CheckCircle, Save, Delete } from "@mui/icons-material";
 import { useEffect, useState } from "react";
@@ -25,7 +26,6 @@ import { io } from "socket.io-client";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
 import printImage from "../services/send_to_printer";
-import PasswordModal from "../components/PasswordModal";
 
 // Build socket URL from same base as axios
 const WS_URL = (import.meta.env.VITE_API_BASE_URL || "https://api.mehustaja.fi/").replace(/\/+$/, "");
@@ -39,8 +39,6 @@ function JuiceHandlePage() {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [search, setSearch] = useState("");
   const [inlineEdits, setInlineEdits] = useState({});
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-  const [rowToDelete, setRowToDelete] = useState(null);
 
   // QR dialog
   const [qrCodes, setQrCodes] = useState({}); // { [orderId]: [{index, url}] }
@@ -51,6 +49,9 @@ function JuiceHandlePage() {
 
   // notifications
   const [snackbarMsg, setSnackbarMsg] = useState("");
+
+  // permission
+  const [canAccessJuiceHandle, setCanAccessJuiceHandle] = useState(false);
 
   const statusOptions = [
     { value: "Created", label: "Created" },
@@ -80,6 +81,19 @@ function JuiceHandlePage() {
   // lifecycle
   useEffect(() => {
     fetchProcessingOrders({ page: 1, append: false });
+
+    // Load permission - only admin or employees with Kuopio city access
+    try {
+      const permissionsStr = localStorage.getItem('userPermissions');
+      if (permissionsStr) {
+        const permissions = JSON.parse(permissionsStr);
+        const isAdmin = permissions.role === 'admin';
+        const hasKuopioAccess = permissions.allowed_cities && permissions.allowed_cities.includes('Kuopio');
+        setCanAccessJuiceHandle(isAdmin || hasKuopioAccess);
+      }
+    } catch (err) {
+      console.error('Failed to parse user permissions:', err);
+    }
 
     const handleSocketUpdate = () => {
       fetchProcessingOrders({ page: 1, append: false });
@@ -298,26 +312,11 @@ function JuiceHandlePage() {
     }
   };
 
-  const handleDeleteClick = (row) => {
-    setRowToDelete(row);
-    setPasswordModalOpen(true);
-  };
-
-  const handlePasswordCancel = () => {
-    setRowToDelete(null);
-    setPasswordModalOpen(false);
-  };
-
-  const handlePasswordConfirm = async ({ id, password }) => {
-    if (!rowToDelete) return;
-
+  const handleDeleteClick = async (order) => {
     try {
-      await api.post('/auth/login', { id, password });
-
-      const customer_id = rowToDelete.customer_id;
+      const customer_id = order.customer_id;
       if (!customer_id) {
         setSnackbarMsg("Delete failed: Customer ID not found on the selected order.");
-        setPasswordModalOpen(false);
         return;
       }
 
@@ -327,10 +326,7 @@ function JuiceHandlePage() {
       setSnackbarMsg("Customer moved to Delete Bin");
     } catch (err) {
       console.error("Delete failed:", err);
-      setSnackbarMsg(err.response?.data?.error || "Delete failed. Check credentials or server error.");
-    } finally {
-      setRowToDelete(null);
-      setPasswordModalOpen(false);
+      setSnackbarMsg(err.response?.data?.error || "Delete failed.");
     }
   };
 
@@ -364,6 +360,12 @@ function JuiceHandlePage() {
           <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
             Apple Juice Processing Station
           </Typography>
+
+          {!canAccessJuiceHandle && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              ⚠️ View-only access. Only Admin and Kuopio staff can perform actions on this page.
+            </Alert>
+          )}
 
           <TextField
             label="Search by customer, order ID, or city"
@@ -420,25 +422,53 @@ function JuiceHandlePage() {
                         </Typography>
                       </Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                        <Tooltip title="Print pouch label">
-                          <IconButton size="small" color="primary" onClick={() => printPouchLabels(order)}>
-                            <Print fontSize="small" />
-                          </IconButton>
+                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Print pouch label"}>
+                          <span>
+                            <IconButton 
+                              size="small" 
+                              color="primary" 
+                              onClick={() => printPouchLabels(order)}
+                              disabled={!canAccessJuiceHandle}
+                            >
+                              <Print fontSize="small" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
-                        <Tooltip title="Generate QR codes">
-                          <IconButton size="small" color="secondary" onClick={() => generateQRCodes(order)}>
-                            <QrCode fontSize="small" />
-                          </IconButton>
+                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Generate QR codes"}>
+                          <span>
+                            <IconButton 
+                              size="small" 
+                              color="secondary" 
+                              onClick={() => generateQRCodes(order)}
+                              disabled={!canAccessJuiceHandle}
+                            >
+                              <QrCode fontSize="small" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
-                        <Tooltip title="Mark as done">
-                          <IconButton size="small" color="success" onClick={() => markOrderDone(order.order_id)}>
-                            <CheckCircle fontSize="small" />
-                          </IconButton>
+                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Mark as done"}>
+                          <span>
+                            <IconButton 
+                              size="small" 
+                              color="success" 
+                              onClick={() => markOrderDone(order.order_id)}
+                              disabled={!canAccessJuiceHandle}
+                            >
+                              <CheckCircle fontSize="small" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
-                        <Tooltip title="Delete order">
-                          <IconButton size="small" color="error" onClick={() => handleDeleteClick(order)}>
-                            <Delete fontSize="small" />
-                          </IconButton>
+                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Delete order"}>
+                          <span>
+                            <IconButton 
+                              size="small" 
+                              color="error" 
+                              onClick={() => handleDeleteClick(order)}
+                              disabled={!canAccessJuiceHandle}
+                            >
+                              <Delete fontSize="small" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       </Stack>
                     </Stack>
@@ -513,14 +543,19 @@ function JuiceHandlePage() {
                         </TextField>
                       </Grid> */}
                       <Grid item xs={12} sm={6} md={3}>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<Save fontSize="small" />}
-                          onClick={() => handleInlineSave(order.order_id)}
-                        >
-                          Save
-                        </Button>
+                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : ""} placement="top">
+                          <span>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              startIcon={<Save fontSize="small" />}
+                              onClick={() => handleInlineSave(order.order_id)}
+                              disabled={!canAccessJuiceHandle}
+                            >
+                              Save
+                            </Button>
+                          </span>
+                        </Tooltip>
                       </Grid>
                     </Grid>
 
@@ -605,12 +640,6 @@ function JuiceHandlePage() {
           </Button>
         </DialogActions>
       </Dialog>
-
-      <PasswordModal
-        open={passwordModalOpen}
-        onClose={handlePasswordCancel}
-        onConfirm={handlePasswordConfirm}
-      />
     </>
   );
 }

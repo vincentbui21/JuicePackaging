@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Box, Toolbar, AppBar, Typography, IconButton, Container } from "@mui/material";
-import { Settings, Menu } from "lucide-react";
+import { Box, Toolbar, AppBar, Typography, IconButton, Container, Chip } from "@mui/material";
+import { Settings, Menu, User } from "lucide-react";
 import { Link, Outlet } from "react-router-dom";
 import AppSidebar from "./AppSidebar";
 import NotificationsBell from "./NotificationsBell";
@@ -10,10 +10,16 @@ export default function AdminReportsLayout({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem("sidebarCollapsed") === "1";
   });
+  const [loggedInUserId, setLoggedInUserId] = useState("");
 
   useEffect(() => {
     localStorage.setItem("sidebarCollapsed", sidebarCollapsed ? "1" : "0");
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const userId = localStorage.getItem("userId");
+    setLoggedInUserId(userId || "");
+  }, []);
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "#f3f7f4", overflowX: "hidden" }}>
@@ -44,7 +50,20 @@ export default function AdminReportsLayout({ children }) {
               Apple Processing Dashboard
             </Typography>
 
-            <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 1 }}>
+              {loggedInUserId && (
+                <Chip
+                  icon={<User size={14} />}
+                  label={loggedInUserId}
+                  size="small"
+                  sx={{
+                    bgcolor: "primary.light",
+                    color: "primary.contrastText",
+                    fontWeight: 600,
+                    display: { xs: 'none', sm: 'flex' }
+                  }}
+                />
+              )}
               <NotificationsBell />
               <IconButton aria-label="settings" component={Link} to="/setting">
                 <Settings size={18} />

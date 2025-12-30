@@ -15,7 +15,6 @@ import generateQRCode from '../services/qrcodGenerator';
 import printImage from '../services/send_to_printer';
 import DrawerComponent from '../components/drawer';
 import QRCodeDialog from '../components/qrcodeDialog';
-import PasswordModal from '../components/PasswordModal';
 
 const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pickup';
 
@@ -92,10 +91,6 @@ function SmsStatusChip({ customerId, refreshKey }) {
     const [qrDialogOpenBoxes, setQrDialogOpenBoxes] = useState(false);
     const [qrDialogOrderId, setQrDialogOrderId] = useState(null);
 
-    // Password modal for delete
-    const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-    const [rowToDelete, setRowToDelete] = useState(null);
-
     // Snackbar
     const [snackbarMsg, setSnackbarMsg] = useState('');
 
@@ -120,6 +115,8 @@ function SmsStatusChip({ customerId, refreshKey }) {
     });
 
     const [cities, setCities] = useState([]);
+    const [canEditCustomers, setCanEditCustomers] = useState(false);
+    const [allowedCities, setAllowedCities] = useState([]);
 
     // Popover for column settings
     const [anchorEl, setAnchorEl] = useState(null);
@@ -151,6 +148,24 @@ function SmsStatusChip({ customerId, refreshKey }) {
         }
         };
         fetchCities();
+
+        // Load edit permission and allowed cities
+        try {
+            const permissionsStr = localStorage.getItem('userPermissions');
+            if (permissionsStr) {
+                const permissions = JSON.parse(permissionsStr);
+                setCanEditCustomers(permissions.can_edit_customers === 1 || permissions.role === 'admin');
+                
+                // Set allowed cities - if user is admin or has no restrictions, allow all cities
+                if (permissions.role === 'admin' || !permissions.allowed_cities || permissions.allowed_cities.length === 0) {
+                    setAllowedCities([]);
+                } else {
+                    setAllowedCities(permissions.allowed_cities);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to parse user permissions:', err);
+        }
     }, []);
 
     const fetchData = useCallback(async () => {
@@ -180,14 +195,19 @@ function SmsStatusChip({ customerId, refreshKey }) {
             };
         });
 
-        setRows(enriched);
+        // Filter by allowed cities if user has city restrictions
+        const filteredData = allowedCities.length > 0
+            ? enriched.filter(row => allowedCities.includes(row.city))
+            : enriched;
+
+        setRows(filteredData);
         } catch (err) {
         console.error('Failed to fetch data', err);
         setSnackbarMsg('Failed to fetch data');
         } finally {
         setLoading(false);
         }
-    }, []);
+    }, [allowedCities]);
 
     useEffect(() => {
         fetchData();
@@ -261,31 +281,15 @@ function SmsStatusChip({ customerId, refreshKey }) {
     };
 
     // Delete handler
-    const handleDeleteClick = (row) => {
-        setRowToDelete(row);
-        setPasswordModalOpen(true);
-    };
-
-    const handlePasswordConfirm = async ({ id, password }) => {
+    const handleDeleteClick = async (row) => {
         try {
-        await api.post('/auth/login', { id, password });
-        if (rowToDelete) {
-            // Delete customer
-            await api.delete('/customer', { data: { customer_id: rowToDelete.customer_id } });
-            setSnackbarMsg('Deleted successfully');
+            await api.delete('/customer', { data: { customer_id: row.customer_id } });
+            setSnackbarMsg('Customer moved to Delete Bin');
             fetchData();
-        }
         } catch (err) {
-        console.error('Delete failed', err);
-        setSnackbarMsg('Failed to delete');
-        } finally {
-        setPasswordModalOpen(false);
+            console.error('Delete failed', err);
+            setSnackbarMsg('Failed to delete');
         }
-    };
-
-    const handlePasswordCancel = () => {
-        setRowToDelete(null);
-        setPasswordModalOpen(false);
     };
 
     // QR for crates
@@ -525,6 +529,14 @@ function SmsStatusChip({ customerId, refreshKey }) {
                     <Typography variant={isMobile ? "h5" : "h4"} sx={{ textAlign: 'center', mb: isMobile ? 2 : 3, fontWeight: 'bold' }}>
                         Unified Management
                     </Typography>
+
+                    {allowedCities.length > 0 && (
+                        <Box sx={{ mb: 2, textAlign: 'center' }}>
+                            <Typography color="info.main" sx={{ fontWeight: 500 }}>
+                                🔒 Viewing customers from: {allowedCities.join(', ')}
+                            </Typography>
+                        </Box>
+                    )}
     
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                         <TextField
@@ -624,6 +636,11 @@ function SmsStatusChip({ customerId, refreshKey }) {
         >
             <DialogTitle>Edit Customer & Order</DialogTitle>
             <DialogContent>
+            {!canEditCustomers && (
+                <Typography color="warning.main" sx={{ mb: 2, mt: 1 }}>
+                    You have view-only access. Editing is disabled.
+                </Typography>
+            )}
             <Stack spacing={isMobile ? 1 : 2} mt={1}>
                 <TextField
                 label="Name"
@@ -631,6 +648,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 label="Email"
@@ -638,6 +656,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 onChange={(e) => setEditedFields((p) => ({ ...p, email: e.target.value }))}
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 label="Phone"
@@ -645,6 +664,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 onChange={(e) => setEditedFields((p) => ({ ...p, phone: e.target.value }))}
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 select
@@ -653,6 +673,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 onChange={(e) => setEditedFields((p) => ({ ...p, city: e.target.value }))}
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                disabled={!canEditCustomers}
                 >
                 {cities.map((city) => (
                     <MenuItem key={city} value={city}>
@@ -669,6 +690,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 label="Crates"
@@ -679,6 +701,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 label="Cost (€)"
@@ -689,6 +712,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 select
@@ -699,6 +723,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                disabled={!canEditCustomers}
                 >
                 {['Created', 'Picked up', 'Ready for pickup', 'Processing complete', 'In Progress'].map(
                     (option) => (
@@ -717,6 +742,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 fullWidth
                 multiline
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 label="Estimated Pouches"
@@ -727,6 +753,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
                 label="Estimated Boxes"
@@ -737,13 +764,19 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
+                InputProps={{ readOnly: !canEditCustomers }}
                 />
             </Stack>
             </DialogContent>
             <DialogActions>
             <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleEditSave}>
-                Save
+            <Button 
+                variant="contained" 
+                onClick={handleEditSave}
+                disabled={!canEditCustomers}
+                color={canEditCustomers ? 'primary' : 'error'}
+            >
+                {canEditCustomers ? 'Save' : 'No Edit Permission'}
             </Button>
             </DialogActions>
         </Dialog>
@@ -826,13 +859,6 @@ function SmsStatusChip({ customerId, refreshKey }) {
             </Button>
             </DialogActions>
         </Dialog>
-
-        {/* Password modal */}
-        <PasswordModal
-            open={passwordModalOpen}
-            onClose={handlePasswordCancel}
-            onConfirm={handlePasswordConfirm}
-        />
 
         {/* Snackbar */}
         <Snackbar

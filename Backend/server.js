@@ -200,6 +200,154 @@ function emitActivity(type, message, extra = {}) {
 // ---------- Routes ----------
 app.use("/auth", authRouter);
 
+// ========== Account Management Endpoints ==========
+
+// Get all accounts (admin only)
+app.get('/accounts', async (req, res) => {
+    try {
+        const [accounts] = await pool.query(
+            `SELECT id, role, full_name, email, can_edit_customers, can_force_delete, 
+             can_view_reports, allowed_cities, is_active, created_at, updated_at 
+             FROM Accounts 
+             ORDER BY role DESC, full_name ASC`
+        );
+        
+        // Parse JSON allowed_cities for each account
+        const parsedAccounts = accounts.map(acc => ({
+            ...acc,
+            allowed_cities: acc.allowed_cities ? JSON.parse(acc.allowed_cities) : []
+        }));
+        
+        res.json({ ok: true, accounts: parsedAccounts });
+    } catch (err) {
+        console.error('Error fetching accounts:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Create new account (admin only)
+app.post('/accounts', async (req, res) => {
+    try {
+        const { id, password, full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, allowed_cities } = req.body;
+        
+        if (!id || !password) {
+            return res.status(400).json({ error: 'ID and password are required' });
+        }
+        
+        // Check if account already exists
+        const [existing] = await pool.query('SELECT id FROM Accounts WHERE id = ?', [id]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'Account ID already exists' });
+        }
+        
+        const allowedCitiesJson = Array.isArray(allowed_cities) ? JSON.stringify(allowed_cities) : '[]';
+        
+        await pool.query(
+            `INSERT INTO Accounts 
+            (id, password, role, full_name, email, can_edit_customers, can_force_delete, can_view_reports, allowed_cities, is_active) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [id, password, role || 'employee', full_name || null, email || null, 
+             can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, allowedCitiesJson]
+        );
+        
+        res.status(201).json({ ok: true, message: 'Account created successfully' });
+    } catch (err) {
+        console.error('Error creating account:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update account (admin only)
+app.put('/accounts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, allowed_cities, is_active } = req.body;
+        
+        const allowedCitiesJson = Array.isArray(allowed_cities) ? JSON.stringify(allowed_cities) : '[]';
+        
+        await pool.query(
+            `UPDATE Accounts 
+            SET full_name = ?, email = ?, role = ?, can_edit_customers = ?, 
+                can_force_delete = ?, can_view_reports = ?, allowed_cities = ?, is_active = ?
+            WHERE id = ?`,
+            [full_name || null, email || null, role || 'employee', 
+             can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, 
+             allowedCitiesJson, is_active ? 1 : 0, id]
+        );
+        
+        res.json({ ok: true, message: 'Account updated successfully' });
+    } catch (err) {
+        console.error('Error updating account:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Change password
+app.put('/accounts/:id/password', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { newPassword } = req.body;
+        
+        if (!newPassword) {
+            return res.status(400).json({ error: 'New password is required' });
+        }
+        
+        await pool.query('UPDATE Accounts SET password = ? WHERE id = ?', [newPassword, id]);
+        
+        res.json({ ok: true, message: 'Password updated successfully' });
+    } catch (err) {
+        console.error('Error updating password:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete account (admin only)
+app.delete('/accounts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Prevent deleting the main admin account
+        if (id === 'admin') {
+            return res.status(400).json({ error: 'Cannot delete the main admin account' });
+        }
+        
+        await pool.query('DELETE FROM Accounts WHERE id = ?', [id]);
+        
+        res.json({ ok: true, message: 'Account deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting account:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get current user's account info (permissions)
+app.get('/accounts/me/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [accounts] = await pool.query(
+            `SELECT id, role, full_name, email, can_edit_customers, can_force_delete, 
+             can_view_reports, allowed_cities, is_active 
+             FROM Accounts 
+             WHERE id = ? LIMIT 1`,
+            [id]
+        );
+        
+        if (accounts.length === 0) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+        
+        const account = accounts[0];
+        account.allowed_cities = account.allowed_cities ? JSON.parse(account.allowed_cities) : [];
+        
+        res.json({ ok: true, account });
+    } catch (err) {
+        console.error('Error fetching account info:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ==================================================
+
 app.get('/ping', (req, res) => {
   res.json({ msg: 'pong' });
 });

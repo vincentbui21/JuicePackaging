@@ -11,14 +11,39 @@ export default function PickupPage() {
     const [loading, setLoading] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
     const [searchTerm, setSearchTerm] = useState('');
+    const [allowedCities, setAllowedCities] = useState([]);
+
+    // Load city restrictions on mount
+    useEffect(() => {
+        try {
+            const permissionsStr = localStorage.getItem('userPermissions');
+            if (permissionsStr) {
+                const permissions = JSON.parse(permissionsStr);
+                // If user is admin or has no restrictions, allow all cities
+                if (permissions.role === 'admin' || !permissions.allowed_cities || permissions.allowed_cities.length === 0) {
+                    setAllowedCities([]);
+                } else {
+                    setAllowedCities(permissions.allowed_cities);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to parse user permissions:', err);
+        }
+    }, []);
 
     const fetchReadyOrders = useCallback(() => {
         setLoading(true);
         api.get('/orders?status=Ready for pickup')
             .then((res) => {
                 const validOrders = Array.isArray(res.data) ? res.data : [];
-                setOrders(validOrders);
-                setFilteredOrders(validOrders);
+                
+                // Filter by allowed cities if user has city restrictions
+                const filteredByCities = allowedCities.length > 0
+                    ? validOrders.filter(order => allowedCities.includes(order.city))
+                    : validOrders;
+                
+                setOrders(filteredByCities);
+                setFilteredOrders(filteredByCities);
             })
             .catch((err) => {
                 console.error('Failed to fetch ready orders:', err);
@@ -27,7 +52,7 @@ export default function PickupPage() {
             .finally(() => {
                 setLoading(false);
             });
-    }, []);
+    }, [allowedCities]);
 
     useEffect(() => {
         fetchReadyOrders();
@@ -110,6 +135,13 @@ export default function PickupPage() {
                     <Typography variant="h4" sx={{ textAlign: 'center', mb: 3, fontWeight: 'bold' }}>
                         Pickup Coordination
                     </Typography>
+                    {allowedCities.length > 0 && (
+                        <Box sx={{ mb: 2, textAlign: 'center' }}>
+                            <Typography color="info.main" sx={{ fontWeight: 500 }}>
+                                🔒 Viewing pickups from: {allowedCities.join(', ')}
+                            </Typography>
+                        </Box>
+                    )}
                     <SearchBar onSearch={setSearchTerm} /> {/* Integrate the SearchBar */}
                     {loading && (
                         <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>

@@ -56,6 +56,7 @@ function UnifiedShelvesPalletsManagement() {
   // Common states
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [error, setError] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const fetchLocations = useCallback(async () => {
     try {
@@ -126,6 +127,19 @@ function UnifiedShelvesPalletsManagement() {
   useEffect(() => {
     if (tabValue === 1 && selectedCity) fetchPallets();
   }, [selectedCity, tabValue, fetchPallets]);
+
+  // Load admin permission on mount
+  useEffect(() => {
+    try {
+      const permissionsStr = localStorage.getItem('userPermissions');
+      if (permissionsStr) {
+        const permissions = JSON.parse(permissionsStr);
+        setIsAdmin(permissions.role === 'admin');
+      }
+    } catch (err) {
+      console.error('Failed to parse user permissions:', err);
+    }
+  }, []);
 
   // Shelves functions
   const handleShowQR = async (shelf) => {
@@ -361,7 +375,12 @@ function UnifiedShelvesPalletsManagement() {
           <IconButton color="info" onClick={() => handleViewContents(params.row.shelf_id)}>
             <Visibility />
           </IconButton>
-          <IconButton color="error" onClick={() => handleDeleteShelf(params.row.shelf_id)}>
+          <IconButton 
+            color="error" 
+            onClick={() => handleDeleteShelf(params.row.shelf_id)}
+            disabled={!isAdmin}
+            title={!isAdmin ? 'Admin only' : 'Delete shelf'}
+          >
             <Delete />
           </IconButton>
         </>
@@ -388,7 +407,12 @@ function UnifiedShelvesPalletsManagement() {
           <IconButton color="info" onClick={() => handleViewBoxes(params.row.pallet_id)}>
             <Visibility />
           </IconButton>
-          <IconButton color="error" onClick={() => handleDeletePallet(params.row.pallet_id)}>
+          <IconButton 
+            color="error" 
+            onClick={() => handleDeletePallet(params.row.pallet_id)}
+            disabled={!isAdmin}
+            title={!isAdmin ? 'Admin only' : 'Delete pallet'}
+          >
             <Delete />
           </IconButton>
         </>

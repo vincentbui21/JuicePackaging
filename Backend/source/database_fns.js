@@ -263,14 +263,55 @@ async function get_deleted_customers() {
     const connection = await pool.getConnection();
     try {
         const query = `
-            SELECT customer_id, name, email, phone, city, deleted_at
-            FROM Customers
-            WHERE is_deleted = true
-            ORDER BY deleted_at DESC
+            SELECT 
+                c.customer_id, 
+                c.name, 
+                c.email, 
+                c.phone, 
+                c.city, 
+                c.deleted_at,
+                o.order_id,
+                o.pouches_count,
+                o.weight_kg,
+                o.boxes_count,
+                o.status as order_status,
+                o.total_cost
+            FROM Customers c
+            LEFT JOIN Orders o ON c.customer_id = o.customer_id
+            WHERE c.is_deleted = true
+            ORDER BY c.deleted_at DESC, o.order_id DESC
         `;
         const [rows] = await connection.query(query);
         connection.release();
-        return rows;
+        
+        // Group orders by customer
+        const customersMap = new Map();
+        rows.forEach(row => {
+            if (!customersMap.has(row.customer_id)) {
+                customersMap.set(row.customer_id, {
+                    customer_id: row.customer_id,
+                    name: row.name,
+                    email: row.email,
+                    phone: row.phone,
+                    city: row.city,
+                    deleted_at: row.deleted_at,
+                    orders: []
+                });
+            }
+            
+            if (row.order_id) {
+                customersMap.get(row.customer_id).orders.push({
+                    order_id: row.order_id,
+                    pouches_count: row.pouches_count,
+                    weight_kg: row.weight_kg,
+                    boxes_count: row.boxes_count,
+                    status: row.order_status,
+                    total_cost: row.total_cost
+                });
+            }
+        });
+        
+        return Array.from(customersMap.values());
     } catch (error) {
         console.error('Error fetching deleted customers:', error);
         connection.release();

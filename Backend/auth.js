@@ -21,7 +21,7 @@ router.post("/login", async (req, res) => {
     let rows;
     try {
       [rows] = await pool.query(
-        "SELECT id, password FROM Accounts WHERE id = ? LIMIT 1",
+        "SELECT id, password, is_active FROM Accounts WHERE id = ? LIMIT 1",
         [id]
       );
     } catch (dbErr) {
@@ -34,6 +34,11 @@ router.post("/login", async (req, res) => {
     }
 
     const user = rows[0];
+
+    // Check if account is active
+    if (!user.is_active) {
+      return res.status(403).json({ success: false, error: "Account is inactive" });
+    }
 
     // Simple password check (plain-text)
     if (user.password !== password) {

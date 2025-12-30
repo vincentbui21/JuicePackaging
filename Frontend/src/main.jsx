@@ -8,6 +8,7 @@ import DashboardLayout from "./components/DashboardLayout.jsx";
 import AdminReportsLayout from "./components/AdminReportsLayout.jsx";
 import PageHeader from "./components/PageHeader.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import AdminRoute from "./components/AdminRoute.jsx";
 
 /** Icons */
 import { Home, Users, Package, Droplets, Boxes, Archive, MapPin, UserCog, Grid3X3, Layers, Plus, Settings as Cog } from "lucide-react";
@@ -105,14 +106,14 @@ const router = createBrowserRouter([
 
   // Create / Settings
   { path: "/setting", element: (
-    <ProtectedRoute>{wrap(SettingPage, { icon: Cog, title: "Settings" })}</ProtectedRoute>
+    <AdminRoute>{wrap(SettingPage, { icon: Cog, title: "Settings" })}</AdminRoute>
   )},
 
   // Admin
   { path: "/admin/reports", element: (
-    <ProtectedRoute>
+    <AdminRoute requirePermission="can_view_reports">
       <AdminReportsLayout><AdminReports /></AdminReportsLayout>
-    </ProtectedRoute>
+    </AdminRoute>
   )},
 ]);
 

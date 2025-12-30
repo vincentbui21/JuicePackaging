@@ -1,12 +1,12 @@
 // src/components/AppSidebar.jsx
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Drawer, Toolbar, List, ListItemButton, ListItemIcon, ListItemText,
   Box, Typography, Divider, Stack, IconButton, Avatar, Tooltip
 } from "@mui/material";
 import {
   Home, Users, Package, Droplets, Boxes, Archive, MapPin,
-  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut, BarChart3
+  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut, BarChart3, Settings
 } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import companyLogo from "../assets/company_logo.png";
@@ -39,6 +39,7 @@ const createNew = [
 
 const adminItems = [
   { label: "Admin Reports", to: "/admin/reports", icon: <BarChart3 size={18} /> },
+  { label: "Settings", to: "/setting", icon: <Settings size={18} /> },
 ];
 
 export default function AppSidebar({
@@ -51,10 +52,27 @@ export default function AppSidebar({
   const { pathname } = useLocation();
   const isActive = useMemo(() => (p) => pathname === p, [pathname]);
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
+  const [canViewReports, setCanViewReports] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    try {
+      const permissionsStr = localStorage.getItem("userPermissions");
+      if (permissionsStr) {
+        const permissions = JSON.parse(permissionsStr);
+        setCanViewReports(permissions.can_view_reports === 1 || permissions.role === 'admin');
+        setIsAdmin(permissions.role === 'admin');
+      }
+    } catch (err) {
+      console.error("Failed to parse user permissions:", err);
+    }
+  }, []);
 
   const handleLogout = () => {
     try {
       localStorage.removeItem("token");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userPermissions");
       localStorage.removeItem("role");
       sessionStorage.clear();
     } catch {}
@@ -164,7 +182,16 @@ export default function AppSidebar({
         <Section title="Operations" items={operations} />
         <Section title="Management" items={management} />
         {/* <Section title="Create New" items={createNew} /> */}
-        <Section title="Admin" items={adminItems} />
+        {(canViewReports || isAdmin) && (
+          <Section 
+            title="Admin" 
+            items={adminItems.filter(item => {
+              if (item.to === "/admin/reports") return canViewReports;
+              if (item.to === "/setting") return isAdmin;
+              return false;
+            })} 
+          />
+        )}
       </Box>
 
       <Divider />
