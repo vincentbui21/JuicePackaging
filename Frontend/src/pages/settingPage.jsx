@@ -1,9 +1,19 @@
-import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment, TablePagination } from "@mui/material";
+import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment, TablePagination, Autocomplete } from "@mui/material";
 import { Add, Delete, Edit, Lock, Visibility, VisibilityOff } from "@mui/icons-material";
 import DrawerComponent from "../components/drawer";
 import { useState, useEffect } from "react";
 import api from '../services/axios';
 import PasswordModal from "../components/PasswordModal";
+
+// Major Finland cities for autocomplete suggestions
+const FINLAND_CITIES = [
+  "Helsinki", "Espoo", "Tampere", "Vantaa", "Oulu", "Turku", "Jyväskylä", "Lahti", "Kuopio", 
+  "Pori", "Joensuu", "Lappeenranta", "Hämeenlinna", "Vaasa", "Rovaniemi", "Seinäjoki", 
+  "Mikkeli", "Kotka", "Salo", "Porvoo", "Kouvola", "Hyvinkää", "Nurmijärvi", "Järvenpää",
+  "Rauma", "Tuusula", "Kirkkonummi", "Kajaani", "Kerava", "Savonlinna", "Nokia", "Ylöjärvi",
+  "Kangasala", "Vihti", "Kaarina", "Raisio", "Iisalmi", "Kemi", "Tornio", "Raahe",
+  "Lapinlahti", "Varkaus", "Imatra", "Lohja", "Valkeakoski", "Sipoo", "Lieto"
+].sort();
 
 function SettingPage() {
   const [tabValue, setTabValue] = useState(0);
@@ -45,12 +55,17 @@ function SettingPage() {
   };
 
   const handleAddCity = async () => {
-    const name = newCity.trim();
-    if (!name) {
+    const trimmed = newCity.trim();
+    if (!trimmed) {
       setSnackbarMsg("City name is required");
       setOpenSnackbar(true);
       return;
     }
+    // Capitalize first letter of each word
+    const name = trimmed.split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+    
     if (cities.includes(name)) {
       setSnackbarMsg("City already exists");
       setOpenSnackbar(true);
@@ -100,12 +115,15 @@ function SettingPage() {
   };
 
   /* ───────────────── SMS templates editor ───────────────── */
-  const SMS_KEYS = ["lapinlahti", "kuopio", "lahti", "joensuu", "mikkeli", "varkaus", "default"];
   const [smsLoading, setSmsLoading] = useState(false);
   const [smsSaving, setSmsSaving] = useState(false);
-  const [smsTemplates, setSmsTemplates] = useState({
-    lapinlahti: "", kuopio: "", lahti: "", joensuu: "", mikkeli: "", varkaus: "", default: ""
-  });
+  const [smsTemplates, setSmsTemplates] = useState({});
+
+  // Dynamic SMS keys based on cities + default
+  const getSmsKeys = () => {
+    const cityKeys = cities.map(c => c.toLowerCase());
+    return [...cityKeys, "default"];
+  };
 
   const human = (k) => (k === "default" ? "Default (fallback)" : k.charAt(0).toUpperCase() + k.slice(1));
 
@@ -114,8 +132,10 @@ function SettingPage() {
     try {
       const { data } = await api.get("/sms-templates");
       const incoming = data?.templates || data || {};
-      const next = { ...smsTemplates };
-      SMS_KEYS.forEach(k => { next[k] = incoming[k] ?? next[k] ?? ""; });
+      const next = {};
+      // Load templates for all cities + default
+      const keys = getSmsKeys();
+      keys.forEach(k => { next[k] = incoming[k] ?? ""; });
       setSmsTemplates(next);
     } catch (e) {
       console.error("Failed to load SMS templates", e);
@@ -293,7 +313,10 @@ function SettingPage() {
       fetchCities(); // Need cities for allowed_cities dropdown
       fetchAccounts();
     }
-    if (tabValue === 3) loadSmsTemplates();
+    if (tabValue === 3) {
+      // Load cities first, then SMS templates
+      fetchCities().then(() => loadSmsTemplates());
+    }
     if (tabValue === 4) fetchActivities();
   }, [tabValue]);
 
@@ -449,13 +472,20 @@ function SettingPage() {
               <Stack spacing={2} sx={{ mb: 3 }}>
                 <Grid container spacing={2} alignItems="center">
                   <Grid item xs={12} sm={8}>
-                    <TextField
-                      label="New City Name"
-                      fullWidth
+                    <Autocomplete
+                      freeSolo
+                      options={FINLAND_CITIES}
                       value={newCity}
-                      onChange={(e) => setNewCity(e.target.value)}
-                      variant="filled"
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddCity()}
+                      onInputChange={(event, newValue) => setNewCity(newValue)}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="New City Name"
+                          variant="filled"
+                          onKeyPress={(e) => e.key === 'Enter' && handleAddCity()}
+                          helperText="Please make sure the city name is spelled correctly."
+                        />
+                      )}
                     />
                   </Grid>
                   <Grid item xs={12} sm={4}>
@@ -632,8 +662,13 @@ function SettingPage() {
                   <Alert severity="info">
                     These messages are sent when orders are ready for pickup. Customize per location; "Default" is used when a city does not match.
                   </Alert>
+                  {cities.length === 0 && (
+                    <Alert severity="warning">
+                      No cities found. Add cities in the Cities tab first.
+                    </Alert>
+                  )}
                   <Divider />
-                  {SMS_KEYS.map((k) => (
+                  {getSmsKeys().map((k) => (
                     <TextField
                       key={k}
                       label={human(k)}
