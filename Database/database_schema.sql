@@ -16,12 +16,22 @@ DROP TABLE IF EXISTS `Accounts`;
 CREATE TABLE `Accounts` (
     `id` varchar(50) NOT NULL,
     `password` varchar(255) NOT NULL,
+    `role` enum('admin','employee') NOT NULL DEFAULT 'employee',
+    `full_name` varchar(255) DEFAULT NULL,
+    `email` varchar(255) DEFAULT NULL,
+    `can_edit_customers` tinyint(1) NOT NULL DEFAULT 1,
+    `can_force_delete` tinyint(1) NOT NULL DEFAULT 0,
+    `can_view_reports` tinyint(1) NOT NULL DEFAULT 0,
+    `allowed_cities` json DEFAULT NULL,
+    `is_active` tinyint(1) NOT NULL DEFAULT 1,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert initial admin account
-INSERT INTO `Accounts` (`id`, `password`)
-VALUES ('admin', 'newMehustaja@2025');
+INSERT INTO `Accounts` (`id`, `password`, `role`, `full_name`, `email`, `can_edit_customers`, `can_force_delete`, `can_view_reports`, `allowed_cities`, `is_active`)
+VALUES ('admin', 'newMehustaja@2025', 'admin', 'System Administrator', NULL, 1, 1, 1, '[]', 1);
 
 -- Customers table
 DROP TABLE IF EXISTS `Customers`;
@@ -32,9 +42,14 @@ CREATE TABLE `Customers` (
     `phone` varchar(50) DEFAULT NULL,
     `email` varchar(255) DEFAULT NULL,
     `city` text DEFAULT NULL,
+    `crate_count` int(11) DEFAULT 0,
+    `additional_info` text DEFAULT NULL,
+    `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
+    `deleted_at` datetime DEFAULT NULL,
     `created_at` datetime NOT NULL DEFAULT current_timestamp(),
     PRIMARY KEY (`customer_id`),
-    KEY `idx_customers_created_at` (`created_at`)
+    KEY `idx_customers_created_at` (`created_at`),
+    KEY `idx_customers_is_deleted` (`is_deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Pallets table
