@@ -97,22 +97,44 @@ function SmsStatusChip({ customerId, refreshKey }) {
     // Refresh key for SMS
     const [smsRefreshTick, setSmsRefreshTick] = useState(0);
 
-    // Column visibility
-    const [columnVisibility, setColumnVisibility] = useState({
-        order_id: false,
-        name: true,
-        phone: true,
-        weight_kg: true,
-        crate_count: true,
-        estimated_pouches: true,
-        estimated_boxes: true,
-        total_cost: true,
-        city: true,
-        created_at: false,
-        status: true,
-        sms_status: true,
-        notes: true,
-    });
+    // Column visibility - load from localStorage or use defaults
+    const getInitialColumnVisibility = () => {
+        try {
+            const saved = localStorage.getItem('unifiedManagementColumnVisibility');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+        } catch (err) {
+            console.error('Failed to load column visibility from localStorage', err);
+        }
+        // Default visibility
+        return {
+            order_id: false,
+            name: true,
+            phone: true,
+            weight_kg: true,
+            crate_count: true,
+            estimated_pouches: true,
+            estimated_boxes: true,
+            total_cost: true,
+            city: true,
+            created_at: false,
+            status: true,
+            sms_status: true,
+            notes: true,
+        };
+    };
+
+    const [columnVisibility, setColumnVisibility] = useState(getInitialColumnVisibility());
+
+    // Save column visibility to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem('unifiedManagementColumnVisibility', JSON.stringify(columnVisibility));
+        } catch (err) {
+            console.error('Failed to save column visibility to localStorage', err);
+        }
+    }, [columnVisibility]);
 
     const [cities, setCities] = useState([]);
     const [canEditCustomers, setCanEditCustomers] = useState(false);
