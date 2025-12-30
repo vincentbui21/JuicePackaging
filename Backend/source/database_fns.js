@@ -1813,7 +1813,7 @@ async function getDashboardSummary() {
 
 // ----- Recent activity for dashboard/notifications -----
 async function getRecentActivity(limit = 20) {
-  limit = Math.max(1, Math.min(100, Number(limit || 20)));
+  limit = Math.max(1, Math.min(10000, Number(limit || 20)));
   const [rows] = await pool.query(
     `
     SELECT * FROM (
@@ -1822,6 +1822,15 @@ async function getRecentActivity(limit = 20) {
              CONCAT('New customer registered - ', c.name) AS message,
              'customer' AS type
         FROM Customers c
+       WHERE c.is_deleted = 0
+
+      UNION ALL
+      -- customer deleted to bin
+      SELECT c.deleted_at AS ts,
+             CONCAT('Customer deleted to bin - ', c.name) AS message,
+             'customer' AS type
+        FROM Customers c
+       WHERE c.is_deleted = 1 AND c.deleted_at IS NOT NULL
 
       UNION ALL
       -- processing completed (boxes created)
@@ -1832,11 +1841,27 @@ async function getRecentActivity(limit = 20) {
         LEFT JOIN Customers cu ON b.customer_id = cu.customer_id
 
       UNION ALL
+      -- order picked up (based on ready_at timestamp when status changed to Picked up)
+      SELECT o.ready_at AS ts,
+             CONCAT('Order picked up - ', c.name) AS message,
+             'customer' AS type
+        FROM Orders o
+        LEFT JOIN Customers c ON o.customer_id = c.customer_id
+       WHERE o.status = 'Picked up' AND o.ready_at IS NOT NULL
+
+      UNION ALL
       -- pallet created
       SELECT p.created_at AS ts,
-             CONCAT('Pallet created - ', IFNULL(p.location,'')) AS message,
+             CONCAT('Pallet created - ', p.pallet_id) AS message,
              'warehouse' AS type
         FROM Pallets p
+
+      UNION ALL
+      -- shelf created
+      SELECT s.created_at AS ts,
+             CONCAT('Shelf created - ', s.shelf_name, ' (', IFNULL(s.location,''), ')') AS message,
+             'warehouse' AS type
+        FROM Shelves s
     ) t
     WHERE ts IS NOT NULL
     ORDER BY ts DESC

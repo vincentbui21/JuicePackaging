@@ -1,4 +1,4 @@
-import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment } from "@mui/material";
+import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment, TablePagination } from "@mui/material";
 import { Add, Delete, Edit, Lock, Visibility, VisibilityOff } from "@mui/icons-material";
 import DrawerComponent from "../components/drawer";
 import { useState, useEffect } from "react";
@@ -142,6 +142,27 @@ function SettingPage() {
   };
   /* ──────────────────────────────────────────────────────── */
 
+  /* ───────────────── Activity Log ───────────────── */
+  const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [activityPage, setActivityPage] = useState(0);
+  const [activityRowsPerPage, setActivityRowsPerPage] = useState(25);
+
+  const fetchActivities = async () => {
+    setActivitiesLoading(true);
+    try {
+      const res = await api.get('/dashboard/activity?limit=10000');
+      setActivities(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch activities', err);
+      setSnackbarMsg('Failed to load activity log');
+      setOpenSnackbar(true);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  };
+  /* ──────────────────────────────────────────────────────── */
+
   /* ───────────────── Accounts Management ───────────────── */
   const [accounts, setAccounts] = useState([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
@@ -273,6 +294,7 @@ function SettingPage() {
       fetchAccounts();
     }
     if (tabValue === 3) loadSmsTemplates();
+    if (tabValue === 4) fetchActivities();
   }, [tabValue]);
 
   const handleConfirm = ({ id, password }) => {
@@ -344,6 +366,7 @@ function SettingPage() {
             <Tab label="Cities Management" />
             <Tab label="Accounts Management" />
             <Tab label="SMS Templates" />
+            <Tab label="Activity Log" />
           </Tabs>
 
           {/* Tab 0: Default Values */}
@@ -632,6 +655,96 @@ function SettingPage() {
                     {smsSaving ? "Saving..." : "Save SMS Templates"}
                   </Button>
                 </Stack>
+              )}
+            </Box>
+          )}
+
+          {/* Tab 4: Activity Log */}
+          {tabValue === 4 && (
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                System Activity Log
+              </Typography>
+
+              {activitiesLoading ? (
+                <Stack alignItems="center" py={3}>
+                  <CircularProgress size={24} />
+                </Stack>
+              ) : (
+                <Box>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Showing all recent system activities. This includes customer registrations, juice processing completions, and pallet creations.
+                  </Alert>
+
+                  {activities.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" textAlign="center" py={4}>
+                      No activities found.
+                    </Typography>
+                  ) : (
+                    <Box>
+                      <List sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                        {activities
+                          .slice(activityPage * activityRowsPerPage, activityPage * activityRowsPerPage + activityRowsPerPage)
+                          .map((activity, index) => (
+                          <Box key={activityPage * activityRowsPerPage + index}>
+                            <ListItem sx={{ py: 2 }}>
+                              <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
+                                <Box
+                                  sx={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: '50%',
+                                    bgcolor:
+                                      activity.type === 'customer' ? 'success.main' :
+                                      activity.type === 'processing' ? 'warning.main' :
+                                      activity.type === 'warehouse' ? 'info.main' :
+                                      'text.secondary',
+                                    flexShrink: 0
+                                  }}
+                                />
+                                <ListItemText
+                                  primary={activity.message}
+                                  secondary={new Date(activity.ts).toLocaleString()}
+                                  primaryTypographyProps={{ variant: 'body2' }}
+                                  secondaryTypographyProps={{ variant: 'caption' }}
+                                />
+                                <Chip
+                                  label={activity.type}
+                                  size="small"
+                                  sx={{
+                                    bgcolor:
+                                      activity.type === 'customer' ? 'success.light' :
+                                      activity.type === 'processing' ? 'warning.light' :
+                                      activity.type === 'warehouse' ? 'info.light' :
+                                      'grey.300',
+                                    color:
+                                      activity.type === 'customer' ? 'success.dark' :
+                                      activity.type === 'processing' ? 'warning.dark' :
+                                      activity.type === 'warehouse' ? 'info.dark' :
+                                      'text.primary',
+                                  }}
+                                />
+                              </Stack>
+                            </ListItem>
+                            {index < Math.min(activityRowsPerPage, activities.length - activityPage * activityRowsPerPage) - 1 && <Divider />}
+                          </Box>
+                        ))}
+                      </List>
+                      <TablePagination
+                        component="div"
+                        count={activities.length}
+                        page={activityPage}
+                        onPageChange={(e, newPage) => setActivityPage(newPage)}
+                        rowsPerPage={activityRowsPerPage}
+                        onRowsPerPageChange={(e) => {
+                          setActivityRowsPerPage(parseInt(e.target.value, 10));
+                          setActivityPage(0);
+                        }}
+                        rowsPerPageOptions={[10, 25, 50, 100]}
+                      />
+                    </Box>
+                  )}
+                </Box>
               )}
             </Box>
           )}
