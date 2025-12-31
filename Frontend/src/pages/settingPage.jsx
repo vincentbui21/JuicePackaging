@@ -186,6 +186,7 @@ function SettingPage() {
   /* ───────────────── Accounts Management ───────────────── */
   const [accounts, setAccounts] = useState([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountSearchTerm, setAccountSearchTerm] = useState('');
   const [accountDialog, setAccountDialog] = useState({ open: false, mode: 'create', account: null });
   const [newAccount, setNewAccount] = useState({
     id: '', password: '', full_name: '', email: '', role: 'employee',
@@ -568,13 +569,34 @@ function SettingPage() {
                 </Button>
               </Stack>
 
+              {/* Search Bar */}
+              <TextField
+                fullWidth
+                variant="outlined"
+                placeholder="Search by username, full name, email, or city..."
+                value={accountSearchTerm}
+                onChange={(e) => setAccountSearchTerm(e.target.value)}
+                sx={{ mb: 3 }}
+              />
+
               {accountsLoading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
                   <CircularProgress />
                 </Box>
               ) : (
                 <List>
-                  {accounts.map((acc) => (
+                  {accounts
+                    .filter((acc) => {
+                      if (!accountSearchTerm.trim()) return true;
+                      const search = accountSearchTerm.toLowerCase();
+                      return (
+                        (acc.id || '').toLowerCase().includes(search) ||
+                        (acc.full_name || '').toLowerCase().includes(search) ||
+                        (acc.email || '').toLowerCase().includes(search) ||
+                        (acc.allowed_cities || []).some(city => city.toLowerCase().includes(search))
+                      );
+                    })
+                    .map((acc) => (
                     <ListItem
                       key={acc.id}
                       sx={{
@@ -583,7 +605,12 @@ function SettingPage() {
                         mb: 2,
                         flexDirection: 'column',
                         alignItems: 'flex-start',
-                        backgroundColor: acc.is_active ? 'transparent' : '#f5f5f5'
+                        backgroundColor: acc.is_active ? 'transparent' : '#f5f5f5',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: 6,
+                        }
                       }}
                     >
                       <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
@@ -652,8 +679,21 @@ function SettingPage() {
                       </Grid>
                     </ListItem>
                   ))}
-                  {accounts.length === 0 && (
-                    <Alert severity="info">No accounts found. Create your first account to get started.</Alert>
+                  {accounts.filter((acc) => {
+                    if (!accountSearchTerm.trim()) return true;
+                    const search = accountSearchTerm.toLowerCase();
+                    return (
+                      (acc.id || '').toLowerCase().includes(search) ||
+                      (acc.full_name || '').toLowerCase().includes(search) ||
+                      (acc.email || '').toLowerCase().includes(search) ||
+                      (acc.allowed_cities || []).some(city => city.toLowerCase().includes(search))
+                    );
+                  }).length === 0 && (
+                    <Alert severity="info">
+                      {accountSearchTerm.trim() 
+                        ? `No accounts found matching "${accountSearchTerm}"`
+                        : 'No accounts found. Create your first account to get started.'}
+                    </Alert>
                   )}
                 </List>
               )}
@@ -683,17 +723,29 @@ function SettingPage() {
                   )}
                   <Divider />
                   {getSmsKeys().map((k) => (
-                    <TextField
+                    <Paper
                       key={k}
-                      label={human(k)}
-                      value={smsTemplates[k] ?? ""}
-                      onChange={(e) => setSmsTemplates((prev) => ({ ...prev, [k]: e.target.value }))}
-                      fullWidth
-                      multiline
-                      minRows={3}
-                      variant="filled"
-                      helperText={`${(smsTemplates[k] || "").length} characters`}
-                    />
+                      elevation={1}
+                      sx={{
+                        p: 2,
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: 6,
+                        }
+                      }}
+                    >
+                      <TextField
+                        label={human(k)}
+                        value={smsTemplates[k] ?? ""}
+                        onChange={(e) => setSmsTemplates((prev) => ({ ...prev, [k]: e.target.value }))}
+                        fullWidth
+                        multiline
+                        minRows={3}
+                        variant="filled"
+                        helperText={`${(smsTemplates[k] || "").length} characters`}
+                      />
+                    </Paper>
                   ))}
                   <Button
                     variant="contained"

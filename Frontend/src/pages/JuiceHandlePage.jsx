@@ -18,8 +18,10 @@ import {
   Tooltip,
   Divider,
   Alert,
+  ToggleButtonGroup,
+  ToggleButton,
 } from "@mui/material";
-import { Print, QrCode, CheckCircle, Save, Delete } from "@mui/icons-material";
+import { Print, QrCode, CheckCircle, Save, Delete, ViewList, ViewModule } from "@mui/icons-material";
 import { useEffect, useState } from "react";
 import api from "../services/axios";
 import { io } from "socket.io-client";
@@ -39,6 +41,13 @@ function JuiceHandlePage() {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [search, setSearch] = useState("");
   const [inlineEdits, setInlineEdits] = useState({});
+  const [viewMode, setViewMode] = useState(() => {
+    // Load view mode from localStorage, default to "list"
+    return localStorage.getItem('juiceHandleViewMode') || "list";
+  });
+
+  // Delete confirmation dialog
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, order: null });
 
   // QR dialog
   const [qrCodes, setQrCodes] = useState({}); // { [orderId]: [{index, url}] }
@@ -312,7 +321,14 @@ function JuiceHandlePage() {
     }
   };
 
-  const handleDeleteClick = async (order) => {
+  const handleDeleteClick = (order) => {
+    setDeleteConfirmDialog({ open: true, order });
+  };
+
+  const handleConfirmDelete = async () => {
+    const order = deleteConfirmDialog.order;
+    setDeleteConfirmDialog({ open: false, order: null });
+
     try {
       const customer_id = order.customer_id;
       if (!customer_id) {
@@ -330,6 +346,10 @@ function JuiceHandlePage() {
     }
   };
 
+  const handleCancelDelete = () => {
+    setDeleteConfirmDialog({ open: false, order: null });
+  };
+
   const filteredOrders = orders.filter((order) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -339,6 +359,13 @@ function JuiceHandlePage() {
       order?.city,
     ].some((v) => String(v || "").toLowerCase().includes(q));
   });
+
+  const handleViewModeChange = (event, newMode) => {
+    if (newMode !== null) {
+      setViewMode(newMode);
+      localStorage.setItem('juiceHandleViewMode', newMode);
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // render
@@ -356,7 +383,7 @@ function JuiceHandlePage() {
           justifyContent: "center",
         }}
       >
-        <Paper elevation={3} sx={{ width: "min(95%, 1200px)", p: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
+        <Paper elevation={3} sx={{ width: viewMode === "grid" ? "min(95%, 1400px)" : "min(95%, 1200px)", p: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
           <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
             Apple Juice Processing Station
           </Typography>
@@ -367,21 +394,36 @@ function JuiceHandlePage() {
             </Alert>
           )}
 
-          <TextField
-            label="Search by customer, order ID, or city"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            fullWidth
-            size="small"
-            sx={{ mb: 2 }}
-          />
+          <Stack direction="row" spacing={2} sx={{ mb: 2 }} alignItems="center">
+            <TextField
+              label="Search by customer, order ID, or city"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              fullWidth
+              size="small"
+            />
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={handleViewModeChange}
+              aria-label="view mode"
+            >
+              <ToggleButton value="list" aria-label="list view">
+                <ViewList />
+              </ToggleButton>
+              <ToggleButton value="grid" aria-label="grid view">
+                <ViewModule />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
 
-          <Stack spacing={2}>
-            {filteredOrders.length === 0 && (
-              <Typography variant="body2" color="text.secondary">
-                No orders found.
-              </Typography>
-            )}
+          {viewMode === "list" ? (
+            <Stack spacing={2}>
+              {filteredOrders.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  No orders found.
+                </Typography>
+              )}
 
             {filteredOrders.map((order) => {
               const estimatedPouches =
@@ -400,7 +442,19 @@ function JuiceHandlePage() {
               ).padStart(2, "0")}/${exp.getFullYear()}`;
 
               return (
-                <Card key={order.order_id} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <Card 
+                  key={order.order_id} 
+                  sx={{ 
+                    border: "1px solid", 
+                    borderColor: "divider", 
+                    borderRadius: 3,
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: 6,
+                    }
+                  }}
+                >
                   <CardContent>
                     <Stack
                       direction={{ xs: "column", md: "row" }}
@@ -413,12 +467,12 @@ function JuiceHandlePage() {
                           {order.name || "Unknown"}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          City: {order.city || "—"} • Order ID: {order.order_id}
+                          <strong>City:</strong> {order.city || "—"} • <strong>Order ID:</strong> {order.order_id}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          Est: {estimatedPouches || 0} pouches • Est boxes: {estimatedBoxes || 0} • Actual pouches:{" "}
-                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • Actual boxes:{" "}
-                          {inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw} • Exp: {expiryUi}
+                          <strong>Est:</strong> {estimatedPouches || 0} pouches • <strong>Est boxes:</strong> {estimatedBoxes || 0} • <strong>Actual pouches:</strong>{" "}
+                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • <strong>Actual boxes:</strong>{" "}
+                          {inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw} • <strong>Exp:</strong> {expiryUi}
                         </Typography>
                       </Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -484,6 +538,12 @@ function JuiceHandlePage() {
                           value={estimatedPouches || 0}
                           InputProps={{ readOnly: true }}
                           fullWidth
+                          sx={{
+                            '& .MuiInputBase-root': {
+                              backgroundColor: '#f5f5f5',
+                              color: '#757575'
+                            }
+                          }}
                         />
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
@@ -504,6 +564,12 @@ function JuiceHandlePage() {
                           value={estimatedBoxes || 0}
                           InputProps={{ readOnly: true }}
                           fullWidth
+                          sx={{
+                            '& .MuiInputBase-root': {
+                              backgroundColor: '#f5f5f5',
+                              color: '#757575'
+                            }
+                          }}
                         />
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
@@ -575,6 +641,198 @@ function JuiceHandlePage() {
               );
             })}
           </Stack>
+          ) : (
+            <Grid container spacing={3}>
+              {filteredOrders.length === 0 && (
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary">
+                    No orders found.
+                  </Typography>
+                </Grid>
+              )}
+              {filteredOrders.map((order) => {
+                const estimatedPouches = computeEstimatedPouches(order);
+                const estimatedBoxes = computeEstimatedBoxes(order, estimatedPouches);
+                const inlineActualRaw = getInlineValue(order.order_id, "actual_pouches", order?.actual_pouches ?? "");
+                const inlineActualBoxesRaw = getInlineValue(order.order_id, "actual_boxes", order?.boxes_count ?? "");
+                const inlineWeightRaw = getInlineValue(order.order_id, "weight_kg", order?.weight_kg ?? "");
+
+                const exp = new Date();
+                exp.setFullYear(exp.getFullYear() + 1);
+                const expiryUi = `${String(exp.getDate()).padStart(2, "0")}/${String(
+                  exp.getMonth() + 1
+                ).padStart(2, "0")}/${exp.getFullYear()}`;
+
+                return (
+                  <Grid item xs={12} sm={6} key={order.order_id}>
+                    <Card 
+                      sx={{ 
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: 3,
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: 6,
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ flexGrow: 1 }}>
+                        <Typography variant="h6" fontWeight={700} gutterBottom noWrap>
+                          {order.name || "Unknown"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          City: {order.city || "—"}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                          Order: {order.order_id.slice(0, 8)}...
+                        </Typography>
+
+                        <Divider sx={{ my: 1 }} />
+
+                        <Stack spacing={1} sx={{ my: 2 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="body2" color="text.secondary">Est. Pouches:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{estimatedPouches || 0}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="body2" color="text.secondary">Actual Pouches:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{inlineActualRaw === "" ? "—" : inlineActualRaw}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="body2" color="text.secondary">Est. Boxes:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{estimatedBoxes || 0}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="body2" color="text.secondary">Actual Boxes:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="body2" color="text.secondary">Weight:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{inlineWeightRaw} kg</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="body2" color="text.secondary">Expiry:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{expiryUi}</Typography>
+                          </Box>
+                        </Stack>
+
+                        <Divider sx={{ my: 1 }} />
+
+                        <Stack direction="row" spacing={1} justifyContent="center" sx={{ mt: 2 }}>
+                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Print pouch label"}>
+                            <span>
+                              <IconButton 
+                                size="small" 
+                                color="primary" 
+                                onClick={() => printPouchLabels(order)}
+                                disabled={!canAccessJuiceHandle}
+                              >
+                                <Print fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Generate QR codes"}>
+                            <span>
+                              <IconButton 
+                                size="small" 
+                                color="secondary" 
+                                onClick={() => generateQRCodes(order)}
+                                disabled={!canAccessJuiceHandle}
+                              >
+                                <QrCode fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Mark as done"}>
+                            <span>
+                              <IconButton 
+                                size="small" 
+                                color="success" 
+                                onClick={() => markOrderDone(order.order_id)}
+                                disabled={!canAccessJuiceHandle}
+                              >
+                                <CheckCircle fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Delete order"}>
+                            <span>
+                              <IconButton 
+                                size="small" 
+                                color="error" 
+                                onClick={() => handleDeleteClick(order)}
+                                disabled={!canAccessJuiceHandle}
+                              >
+                                <Delete fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Stack>
+
+                        <TextField
+                          label="Comments"
+                          fullWidth
+                          multiline
+                          minRows={2}
+                          size="small"
+                          value={comments[order.order_id] || ""}
+                          onChange={(e) =>
+                            setComments((prev) => ({ ...prev, [order.order_id]: e.target.value }))
+                          }
+                          sx={{ mt: 2 }}
+                        />
+
+                        <Stack spacing={1} sx={{ mt: 2 }}>
+                          <TextField
+                            label="Actual pouches"
+                            size="small"
+                            type="number"
+                            value={inlineActualRaw}
+                            onChange={(e) => handleInlineChange(order.order_id, "actual_pouches", e.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="Actual boxes"
+                            size="small"
+                            type="number"
+                            value={inlineActualBoxesRaw}
+                            onChange={(e) => handleInlineChange(order.order_id, "actual_boxes", e.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="Weight (kg)"
+                            size="small"
+                            type="number"
+                            value={inlineWeightRaw}
+                            onChange={(e) => handleInlineChange(order.order_id, "weight_kg", e.target.value)}
+                            fullWidth
+                          />
+                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : ""} placement="top">
+                            <span>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                fullWidth
+                                startIcon={<Save fontSize="small" />}
+                                onClick={() => handleInlineSave(order.order_id)}
+                                disabled={!canAccessJuiceHandle}
+                              >
+                                Save Changes
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          )}
 
           {hasMore && (
             <Stack alignItems="center" sx={{ mt: 2 }}>
@@ -637,6 +895,22 @@ function JuiceHandlePage() {
             disabled={!qrDialog.order || !(qrCodes[qrDialog.order.order_id] || []).length}
           >
             Print All
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmDialog.open} onClose={handleCancelDelete}>
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to move <strong>{deleteConfirmDialog.order?.name}</strong> to the Delete Bin?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDelete}>Cancel</Button>
+          <Button onClick={handleConfirmDelete} variant="contained" color="error">
+            Yes, Delete
           </Button>
         </DialogActions>
       </Dialog>
