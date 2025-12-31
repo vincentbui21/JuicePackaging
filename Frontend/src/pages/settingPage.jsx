@@ -384,7 +384,21 @@ function SettingPage() {
             Settings
           </Typography>
 
-          <Tabs value={tabValue} onChange={handleTabChange} centered sx={{ mb: 3 }}>
+          <Tabs 
+            value={tabValue} 
+            onChange={handleTabChange} 
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            sx={{ 
+              mb: 3,
+              '& .MuiTab-root': {
+                minWidth: 'auto',
+                px: 2,
+                whiteSpace: 'nowrap'
+              }
+            }}
+          >
             <Tab label="Default Values" />
             <Tab label="Cities Management" />
             <Tab label="Accounts Management" />
