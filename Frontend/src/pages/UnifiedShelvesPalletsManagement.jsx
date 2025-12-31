@@ -60,6 +60,9 @@ function UnifiedShelvesPalletsManagement() {
   const [error, setError] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // Delete confirmation dialog
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, type: null, id: null, name: "" });
+
   const fetchLocations = useCallback(async () => {
     try {
       const res = await api.get("/cities");
@@ -157,14 +160,20 @@ function UnifiedShelvesPalletsManagement() {
     printImage(qrImage, `${name || qrShelfName} ${city ? `(${city})` : ""}`.trim())
   };
 
-  const handleDeleteShelf = async (shelf_id) => {
+  const handleDeleteShelf = async (shelf_id, shelf_name) => {
+    setDeleteDialog({ open: true, type: 'shelf', id: shelf_id, name: shelf_name || shelf_id });
+  };
+
+  const confirmDeleteShelf = async () => {
     try {
-      await api.delete(`/shelves/${shelf_id}`);
+      await api.delete(`/shelves/${deleteDialog.id}`);
       setSnackbarMsg(t('unified_management.shelf_deleted'));
       fetchShelves();
     } catch (err) {
       console.error("Failed to delete shelf", err);
       setSnackbarMsg(t('unified_management.failed_delete_shelf'));
+    } finally {
+      setDeleteDialog({ open: false, type: null, id: null, name: "" });
     }
   };
 
@@ -240,14 +249,20 @@ function UnifiedShelvesPalletsManagement() {
     printImage(qrImage, id)
   };
 
-  const handleDeletePallet = async (pallet_id) => {
+  const handleDeletePallet = async (pallet_id, pallet_name) => {
+    setDeleteDialog({ open: true, type: 'pallet', id: pallet_id, name: pallet_name || pallet_id });
+  };
+
+  const confirmDeletePallet = async () => {
     try {
-      await api.delete(`/pallets/${pallet_id}`);
+      await api.delete(`/pallets/${deleteDialog.id}`);
       setSnackbarMsg(t('unified_management.pallet_deleted'));
       fetchPallets();
     } catch (err) {
       console.error("Failed to delete pallet", err);
       setSnackbarMsg(t('unified_management.failed_delete_pallet'));
+    } finally {
+      setDeleteDialog({ open: false, type: null, id: null, name: "" });
     }
   };
 
@@ -379,7 +394,7 @@ function UnifiedShelvesPalletsManagement() {
           </IconButton>
           <IconButton 
             color="error" 
-            onClick={() => handleDeleteShelf(params.row.shelf_id)}
+            onClick={() => handleDeleteShelf(params.row.shelf_id, params.row.shelf_name)}
             disabled={!isAdmin}
             title={!isAdmin ? t('unified_management.admin_only') : t('unified_management.delete_shelf')}
           >
@@ -411,7 +426,7 @@ function UnifiedShelvesPalletsManagement() {
           </IconButton>
           <IconButton 
             color="error" 
-            onClick={() => handleDeletePallet(params.row.pallet_id)}
+            onClick={() => handleDeletePallet(params.row.pallet_id, params.row.pallet_name)}
             disabled={!isAdmin}
             title={!isAdmin ? t('unified_management.admin_only') : t('unified_management.delete_pallet')}
           >
@@ -432,7 +447,7 @@ function UnifiedShelvesPalletsManagement() {
 
       <Box
         sx={{
-          backgroundColor: "#ffffff",
+          backgroundColor: "background.default",
           minHeight: "90vh",
           pt: 4,
           pb: 4,
@@ -445,7 +460,6 @@ function UnifiedShelvesPalletsManagement() {
           sx={{
             width: "min(1200px, 95%)",
             p: 3,
-            backgroundColor: "#ffffff",
             borderRadius: 2,
           }}
         >
@@ -495,14 +509,14 @@ function UnifiedShelvesPalletsManagement() {
                 </Grid>
               </Box>
 
-              <Box sx={{ backgroundColor: "white", borderRadius: 2 }}>
+              <Box sx={{ borderRadius: 2 }}>
                 <DataGrid
                   rows={shelves.map((s, i) => ({ ...s, id: i }))}
                   columns={shelvesColumns}
                   autoHeight
                   pageSizeOptions={[10, 20, 50]}
                   initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-                  sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+                  sx={{ borderRadius: 2, boxShadow: 3 }}
                 />
               </Box>
             </>
@@ -565,14 +579,14 @@ function UnifiedShelvesPalletsManagement() {
                 </Grid>
               </Box>
 
-              <Box sx={{ backgroundColor: "white", borderRadius: 2 }}>
+              <Box sx={{ borderRadius: 2 }}>
                 <DataGrid
                   rows={filteredPallets.map((p, i) => ({ ...p, id: i }))}
                   columns={palletsColumns}
                   autoHeight
                   pageSizeOptions={[10, 20, 50]}
                   initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-                  sx={{ backgroundColor: "white", borderRadius: 2, boxShadow: 3 }}
+                  sx={{ borderRadius: 2, boxShadow: 3 }}
                 />
               </Box>
             </>
@@ -845,6 +859,33 @@ function UnifiedShelvesPalletsManagement() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBoxDialogOpen(false)}>{t('unified_management.close')}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, type: null, id: null, name: "" })}>
+        <DialogTitle>{t('unified_management.confirm_delete')}</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {deleteDialog.type === 'shelf' 
+              ? t('unified_management.confirm_delete_shelf', { name: deleteDialog.name })
+              : t('unified_management.confirm_delete_pallet', { name: deleteDialog.name })}
+          </Typography>
+          <Typography color="error" sx={{ mt: 2, fontWeight: 'bold' }}>
+            {t('unified_management.cannot_be_undone')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialog({ open: false, type: null, id: null, name: "" })}>
+            {t('unified_management.cancel')}
+          </Button>
+          <Button 
+            onClick={deleteDialog.type === 'shelf' ? confirmDeleteShelf : confirmDeletePallet} 
+            color="error" 
+            variant="contained"
+          >
+            {t('unified_management.delete')}
+          </Button>
         </DialogActions>
       </Dialog>
 

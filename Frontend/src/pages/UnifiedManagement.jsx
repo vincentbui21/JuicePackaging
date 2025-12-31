@@ -860,7 +860,6 @@ function SmsStatusChip({ customerId, refreshKey }) {
                         key={index}
                         sx={{
                         p: isMobile ? 0.5 : 1,
-                        backgroundColor: '#fff',
                         minWidth: isMobile ? 140 : 160,
                         }}
                     >

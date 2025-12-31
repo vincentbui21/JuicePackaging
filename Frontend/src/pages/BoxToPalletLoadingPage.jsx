@@ -479,15 +479,10 @@ export default function BoxToPalletLoadingPage() {
               {/* Show the button as soon as we have at least one box; enable only when canSubmit */}
               {scannedBoxes.length > 0 && (
                 <Button
-                  color="success"
+                  color="primary"
                   variant="contained"
                   onClick={handleSubmit}
                   disabled={!canSubmit}
-                  sx={{
-                    backgroundColor: "#d6d0b1",
-                    color: "black",
-                    "&:hover": { backgroundColor: "#c5bfa3" },
-                  }}
                 >
                   {isKuopio ? t('box_to_pallet.assign_to_shelf', { count: expectedCount || 0 }) : t('box_to_pallet.assign_to_pallet', { count: expectedCount || 0 })}
                 </Button>

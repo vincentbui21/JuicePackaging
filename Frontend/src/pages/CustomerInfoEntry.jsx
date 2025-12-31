@@ -74,7 +74,7 @@ function CustomerInfoEntry() {
 
       <Box
         sx={{
-          backgroundColor: "#fffff",
+          backgroundColor: "background.default",
           minHeight: "100vh",
           paddingTop: 4,
           paddingBottom: 4,
@@ -87,7 +87,6 @@ function CustomerInfoEntry() {
           sx={{
             width: "min(90%, 800px)",
             padding: 4,
-            backgroundColor: "#ffffff",
             borderRadius: 2
           }}
         >
@@ -110,7 +109,7 @@ function CustomerInfoEntry() {
               variant="contained"
               size="large"
               onClick={handleSubmit}
-              sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}
+              color="primary"
             >
               {t('customer_info_entry.submit_button')}
             </Button>

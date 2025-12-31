@@ -236,7 +236,7 @@ export default function AppSidebar({
             boxSizing: "border-box",
             borderRight: "1px solid",
             borderColor: "divider",
-            backgroundColor: "#fafdf9",
+            backgroundColor: "background.paper",
             overflowX: "hidden",
           },
         }}
@@ -256,7 +256,7 @@ export default function AppSidebar({
             boxSizing: "border-box",
             borderRight: "1px solid",
             borderColor: "divider",
-            backgroundColor: "#fafdf9",
+            backgroundColor: "background.paper",
             transition: "width 200ms ease",
             overflowX: "hidden", // prevent horizontal scroll
           },

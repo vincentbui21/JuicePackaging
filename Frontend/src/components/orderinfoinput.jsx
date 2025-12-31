@@ -68,7 +68,7 @@ function OrderInfoInput({data, setdata, city}) {
                 }
             }>
                 <Paper elevation={1}>
-                    <Grid container bgcolor={"#fffff"} sx={
+                    <Grid container sx={
                         {
                             height: "auto",
                             rowGap: "5px",

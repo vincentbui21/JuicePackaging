@@ -44,7 +44,7 @@ function CustomerInfo({data, setdata}) {
                     }
             }>
                 <Paper elevation={1}>
-                    <Grid container bgcolor={"#fffff"} 
+                    <Grid container 
                     sx={
                         {
                             height: "auto",

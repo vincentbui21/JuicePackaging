@@ -144,11 +144,9 @@ function CrateHandling() {
                                 </Button>
                             )}
                             {!disabledSubmitButton && (
-                                <Button color="success" variant="contained" onClick={handleSubmitButton} sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}>
+                                <Button color="primary" variant="contained" onClick={handleSubmitButton}>
                                     {t('crate_management.submit_button')}
                                 </Button>
-
-                                
                             )}
                         </Stack>
                     </Stack>

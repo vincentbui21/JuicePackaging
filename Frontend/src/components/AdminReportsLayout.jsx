@@ -22,7 +22,7 @@ export default function AdminReportsLayout({ children }) {
   }, []);
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "#f3f7f4", overflowX: "hidden" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default", overflowX: "hidden" }}>
       <AppSidebar
         mobileOpen={mobileOpen}
         onClose={() => setMobileOpen(false)}
@@ -35,7 +35,7 @@ export default function AdminReportsLayout({ children }) {
           elevation={0}
           position="sticky"
           color="inherit"
-          sx={{ borderBottom: "1px solid", borderColor: "divider", bgcolor: "rgba(255,255,255,0.8)", backdropFilter: "blur(6px)" }}
+          sx={{ borderBottom: "1px solid", borderColor: "divider", bgcolor: "background.paper", backdropFilter: "blur(6px)" }}
         >
           <Toolbar sx={{ minHeight: 64, gap: 1 }}>
             <IconButton
@@ -56,9 +56,8 @@ export default function AdminReportsLayout({ children }) {
                   icon={<User size={14} />}
                   label={loggedInUserId}
                   size="small"
+                  color="primary"
                   sx={{
-                    bgcolor: "primary.light",
-                    color: "primary.contrastText",
                     fontWeight: 600,
                     display: { xs: 'none', sm: 'flex' }
                   }}

@@ -1,7 +1,9 @@
 {
   "app": {
     "title": "Apple Processing Dashboard",
-    "subtitle": "Monitor your apple juice processing operations in real-time"
+    "subtitle": "Monitor your apple juice processing operations in real-time",
+    "dark_mode": "Switch to dark mode",
+    "light_mode": "Switch to light mode"
   },
   "header": {
     "dashboard": "Dashboard",
@@ -343,7 +345,13 @@
     "city_label": "City:",
     "created_label": "Created:",
     "no_details_found": "No pallet or shelf details found.",
-    "pallet_label": "Pallet:"
+    "pallet_label": "Pallet:",
+    "confirm_delete": "Confirm Delete",
+    "confirm_delete_shelf": "Are you sure you want to delete shelf '{{name}}'?",
+    "confirm_delete_pallet": "Are you sure you want to delete pallet '{{name}}'?",
+    "cannot_be_undone": "This action cannot be undone.",
+    "delete": "Delete",
+    "cancel": "Cancel"
   },
   "unified_mgmt": {
     "title": "Unified Management",

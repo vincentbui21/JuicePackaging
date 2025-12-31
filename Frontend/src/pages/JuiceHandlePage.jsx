@@ -377,7 +377,7 @@ function JuiceHandlePage() {
 
       <Box
         sx={{
-          backgroundColor: "#fffff",
+          backgroundColor: "background.default",
           minHeight: "90vh",
           pt: 4,
           pb: 4,
@@ -385,7 +385,7 @@ function JuiceHandlePage() {
           justifyContent: "center",
         }}
       >
-        <Paper elevation={3} sx={{ width: viewMode === "grid" ? "min(95%, 1400px)" : "min(95%, 1200px)", p: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
+        <Paper elevation={3} sx={{ width: viewMode === "grid" ? "min(95%, 1400px)" : "min(95%, 1200px)", p: 4, borderRadius: 2 }}>
           <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
             {t('juice_processing.title')}
           </Typography>
@@ -542,8 +542,8 @@ function JuiceHandlePage() {
                           fullWidth
                           sx={{
                             '& .MuiInputBase-root': {
-                              backgroundColor: '#f5f5f5',
-                              color: '#757575'
+                              backgroundColor: 'action.hover',
+                              color: 'text.secondary'
                             }
                           }}
                         />
@@ -568,8 +568,8 @@ function JuiceHandlePage() {
                           fullWidth
                           sx={{
                             '& .MuiInputBase-root': {
-                              backgroundColor: '#f5f5f5',
-                              color: '#757575'
+                              backgroundColor: 'action.hover',
+                              color: 'text.secondary'
                             }
                           }}
                         />

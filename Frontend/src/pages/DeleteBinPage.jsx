@@ -247,8 +247,6 @@ export default function DeleteBinPage() {
 
                             paddingTop: "40px",
 
-                            color: "black",
-
                             width: "min(1200px, 90%)",
 
                             textAlign: "center",
@@ -334,7 +332,7 @@ export default function DeleteBinPage() {
                         {t('delete_bin.customer_details')}
                     </DialogTitle>
                     <DialogContent>
-                        <Alert severity="info" sx={{ mb: 2 }}>
+                        <Alert severity="warning" sx={{ mb: 2 }}>
                             {t('delete_bin.restore_to_change')}
                         </Alert>
                         
@@ -366,7 +364,7 @@ export default function DeleteBinPage() {
                                 <Typography variant="h6" sx={{ mb: 2, mt: 3, fontWeight: 'bold' }}>{t('delete_bin.orders_count', { count: detailsData.orders?.length || 0 })}</Typography>
                                 {detailsData.orders?.length > 0 ? (
                                     detailsData.orders.map((order, idx) => (
-                                        <Box key={order.order_id || idx} sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 1, bgcolor: '#f9f9f9' }}>
+                                        <Box key={order.order_id || idx} sx={{ mb: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'action.hover' }}>
                                             <Grid container spacing={2}>
                                                 <Grid item xs={12} sm={6}>
                                                     <Typography><strong>{t('delete_bin.order_id')}:</strong> {order.order_id}</Typography>

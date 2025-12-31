@@ -26,6 +26,7 @@ import {
   CircularProgress,
   Alert,
   Snackbar,
+  useTheme,
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon, Close as CloseIcon } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -143,8 +144,36 @@ const TabPanel = ({ value, tab, children }) => (
 );
 
 export default function AdminReports() {
+  const theme = useTheme();
   const [preset, setPreset] = useState("month");
   const [activeTab, setActiveTab] = useState("overview");
+
+  // Custom Tooltip component using theme from parent
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <Box
+          sx={{
+            backgroundColor: theme.palette.background.paper,
+            border: `1px solid ${theme.palette.divider}`,
+            borderRadius: 1,
+            p: 1.5,
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: theme.palette.text.primary }}>
+            {label}
+          </Typography>
+          {payload.map((entry, index) => (
+            <Typography key={index} variant="body2" sx={{ color: theme.palette.text.primary }}>
+              <span style={{ color: entry.color }}>{entry.name}: </span>
+              {entry.value}
+            </Typography>
+          ))}
+        </Box>
+      );
+    }
+    return null;
+  };
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [selectedCities, setSelectedCities] = useState([]);
@@ -1446,12 +1475,12 @@ export default function AdminReports() {
                   </Typography>
                   <ResponsiveContainer width="100%" height={280}>
                     <LineChart data={report.timeSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <ReTooltip />
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                      <XAxis dataKey="date" stroke={theme.palette.text.secondary} />
+                      <YAxis stroke={theme.palette.text.secondary} />
+                      <ReTooltip content={<CustomTooltip />} />
                       <Legend />
-                      <Line type="monotone" dataKey="kilos" stroke="#2e7d32" name="Kilos produced" strokeWidth={2} />
+                      <Line type="monotone" dataKey="kilos" stroke={theme.palette.primary.main} name="Kilos produced" strokeWidth={2} />
                       <Line type="monotone" dataKey="pouches" stroke="#ef6c00" name="Pouches sold" strokeWidth={2} />
                       <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Sales revenue (€)" strokeWidth={2} />
                     </LineChart>
@@ -1466,12 +1495,12 @@ export default function AdminReports() {
                   </Typography>
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={report.citySeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="city" />
-                      <YAxis />
-                      <ReTooltip />
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                      <XAxis dataKey="city" stroke={theme.palette.text.secondary} />
+                      <YAxis stroke={theme.palette.text.secondary} />
+                      <ReTooltip content={<CustomTooltip />} />
                       <Legend />
-                      <Bar dataKey="kilos" fill="#2e7d32" name="Kilos produced" />
+                      <Bar dataKey="kilos" fill={theme.palette.primary.main} name="Kilos produced" />
                       <Bar dataKey="pouches" fill="#ef6c00" name="Pouches sold" />
                       <Bar dataKey="revenue" fill="#1976d2" name="Revenue (€)" />
                     </BarChart>
@@ -1486,12 +1515,12 @@ export default function AdminReports() {
                   </Typography>
                   <ResponsiveContainer width="100%" height={280}>
                     <LineChart data={report.varianceSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="period" />
-                      <YAxis />
-                      <ReTooltip />
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                      <XAxis dataKey="period" stroke={theme.palette.text.secondary} />
+                      <YAxis stroke={theme.palette.text.secondary} />
+                      <ReTooltip content={<CustomTooltip />} />
                       <Legend />
-                      <Line type="monotone" dataKey="pouches" stroke="#2e7d32" name="Actual pouches" strokeWidth={2} />
+                      <Line type="monotone" dataKey="pouches" stroke={theme.palette.primary.main} name="Actual pouches" strokeWidth={2} />
                       <Line type="monotone" dataKey="expected_pouches" stroke="#9e9e9e" name="Expected pouches" strokeWidth={2} />
                       <Line type="monotone" dataKey="variance_pct" stroke="#d32f2f" name="Variance (%)" strokeWidth={2} />
                     </LineChart>

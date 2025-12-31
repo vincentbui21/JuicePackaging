@@ -1,7 +1,9 @@
 {
   "app": {
     "title": "Omenan Käsittelyn Hallintapaneeli",
-    "subtitle": "Seuraa omenamehujen käsittelyä reaaliajassa"
+    "subtitle": "Seuraa omenamehujen käsittelyä reaaliajassa",
+    "dark_mode": "Vaihda tummaan tilaan",
+    "light_mode": "Vaihda vaaleaan tilaan"
   },
   "header": {
     "dashboard": "Hallintapaneeli",
@@ -343,7 +345,13 @@
     "city_label": "Kaupunki:",
     "created_label": "Luotu:",
     "no_details_found": "Lavan tai hyllyn tietoja ei löytynyt.",
-    "pallet_label": "Lava:"
+    "pallet_label": "Lava:",
+    "confirm_delete": "Vahvista poisto",
+    "confirm_delete_shelf": "Haluatko varmasti poistaa hyllyn '{{name}}'?",
+    "confirm_delete_pallet": "Haluatko varmasti poistaa lavan '{{name}}'?",
+    "cannot_be_undone": "Tätä toimintoa ei voi peruuttaa.",
+    "delete": "Poista",
+    "cancel": "Peruuta"
   },
   "unified_mgmt": {
     "title": "Yhdistetty Hallinta",

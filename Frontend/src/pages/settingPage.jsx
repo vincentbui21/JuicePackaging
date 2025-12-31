@@ -363,7 +363,7 @@ function SettingPage() {
       <DrawerComponent />
       <Box
         sx={{
-          backgroundColor: "#ffffff",
+          backgroundColor: "background.default",
           minHeight: "90vh",
           paddingTop: 4,
           paddingBottom: 4,
@@ -376,7 +376,6 @@ function SettingPage() {
           sx={{
             width: "min(90%, 800px)",
             padding: 4,
-            backgroundColor: "#ffffff",
             borderRadius: 2,
           }}
         >
@@ -607,7 +606,7 @@ function SettingPage() {
                         mb: 2,
                         flexDirection: 'column',
                         alignItems: 'flex-start',
-                        backgroundColor: acc.is_active ? 'transparent' : '#f5f5f5',
+                        backgroundColor: acc.is_active ? 'transparent' : 'action.hover',
                         transition: 'transform 0.2s, box-shadow 0.2s',
                         '&:hover': {
                           transform: 'translateY(-4px)',
@@ -868,7 +867,7 @@ function SettingPage() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ backgroundColor: '#f44336', color: 'white', fontWeight: 'bold' }}>
+        <DialogTitle sx={{ backgroundColor: 'error.main', color: 'white', fontWeight: 'bold' }}>
           {t('settings.cannot_delete_city')}
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>

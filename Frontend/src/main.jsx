@@ -1,8 +1,8 @@
-import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
 import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./i18n"; // Initialize i18n
+import { ThemeModeProvider } from "./contexts/ThemeContext.jsx";
 
 /** Layout & components */
 import DashboardLayout from "./components/DashboardLayout.jsx";
@@ -31,18 +31,6 @@ import SettingPage from "./pages/settingPage.jsx";
 import AdminReports from "./pages/AdminReports.jsx";
 
 import DeleteBinPage from "./pages/DeleteBinPage.jsx";
-
-/** Theme */
-const theme = createTheme({
-  palette: {
-    primary: { main: "#2e7d32" },
-    success: { main: "#2e7d32" },
-    warning: { main: "#f59e0b" },
-    info: { main: "#2f80ed" },
-    background: { default: "#f3f7f4" },
-  },
-  shape: { borderRadius: 12 },
-});
 
 /** Helper to wrap a page with the dashboard layout */
 const wrap = (Content, { icon, title, subtitle, badge }) => (
@@ -121,9 +109,8 @@ const router = createBrowserRouter([
 /** Mount app */
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeModeProvider>
       <RouterProvider router={router} />
-    </ThemeProvider>
+    </ThemeModeProvider>
   </StrictMode>
 );

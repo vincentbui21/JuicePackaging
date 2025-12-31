@@ -5,6 +5,7 @@ import { Settings, Menu, User } from "lucide-react";
 import { Link, Outlet } from "react-router-dom";
 import NotificationsBell from "./NotificationsBell";
 import LanguageSelector from "./LanguageSelector";
+import ThemeModeToggle from "./ThemeModeToggle";
 import { useTranslation } from "react-i18next";
 
 export default function DashboardLayout({ children }) {
@@ -25,7 +26,7 @@ export default function DashboardLayout({ children }) {
   }, []);
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "#f3f7f4" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
       <AppSidebar
         mobileOpen={mobileOpen}
         onClose={() => setMobileOpen(false)}
@@ -38,7 +39,12 @@ export default function DashboardLayout({ children }) {
           elevation={0}
           position="sticky"
           color="inherit"
-          sx={{ borderBottom: "1px solid", borderColor: "divider", bgcolor: "rgba(255,255,255,0.8)", backdropFilter: "blur(6px)" }}
+          sx={{ 
+            borderBottom: "1px solid", 
+            borderColor: "divider", 
+            bgcolor: "background.paper",
+            backdropFilter: "blur(6px)" 
+          }}
         >
           <Toolbar sx={{ minHeight: 64, gap: 1 }}>
             {/* hamburger shows only on mobile */}
@@ -60,14 +66,14 @@ export default function DashboardLayout({ children }) {
                   icon={<User size={14} />}
                   label={loggedInUserId}
                   size="small"
+                  color="primary"
                   sx={{
-                    bgcolor: "primary.light",
-                    color: "primary.contrastText",
                     fontWeight: 600,
                     display: { xs: 'none', sm: 'flex' }
                   }}
                 />
               )}
+              <ThemeModeToggle />
               <LanguageSelector />
               <NotificationsBell />
               <IconButton aria-label="settings" component={Link} to="/setting">
