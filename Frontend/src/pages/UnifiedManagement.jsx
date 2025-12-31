@@ -88,6 +88,9 @@ function SmsStatusChip({ customerId, refreshKey }) {
 
     // QR for boxes (from JuiceProcessingManagement)
     const [qrCodes, setQrCodes] = useState({});
+
+    // Delete confirmation dialog
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, row: null });
     const [qrDialogOpenBoxes, setQrDialogOpenBoxes] = useState(false);
     const [qrDialogOrderId, setQrDialogOrderId] = useState(null);
 
@@ -312,7 +315,14 @@ function SmsStatusChip({ customerId, refreshKey }) {
     };
 
     // Delete handler
-    const handleDeleteClick = async (row) => {
+    const handleDeleteClick = (row) => {
+        setDeleteConfirmDialog({ open: true, row });
+    };
+
+    const handleConfirmDelete = async () => {
+        const row = deleteConfirmDialog.row;
+        setDeleteConfirmDialog({ open: false, row: null });
+
         try {
             await api.delete('/customer', { data: { customer_id: row.customer_id } });
             setSnackbarMsg('Customer moved to Delete Bin');
@@ -321,6 +331,10 @@ function SmsStatusChip({ customerId, refreshKey }) {
             console.error('Delete failed', err);
             setSnackbarMsg('Failed to delete');
         }
+    };
+
+    const handleCancelDelete = () => {
+        setDeleteConfirmDialog({ open: false, row: null });
     };
 
     // QR for crates
@@ -887,6 +901,22 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 }
             >
                 Print All
+            </Button>
+            </DialogActions>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteConfirmDialog.open} onClose={handleCancelDelete}>
+            <DialogTitle>Confirm Delete</DialogTitle>
+            <DialogContent>
+            <Typography>
+                Are you sure you want to move <strong>{deleteConfirmDialog.row?.name}</strong> to the Delete Bin?
+            </Typography>
+            </DialogContent>
+            <DialogActions>
+            <Button onClick={handleCancelDelete}>Cancel</Button>
+            <Button onClick={handleConfirmDelete} variant="contained" color="error">
+                Yes, Delete
             </Button>
             </DialogActions>
         </Dialog>

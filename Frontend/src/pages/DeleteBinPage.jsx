@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Box, Button, Stack, Typography, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Chip, Alert } from '@mui/material';
+import { Box, Button, Stack, Typography, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Chip, Alert, IconButton, Tooltip } from '@mui/material';
 import { RestoreFromTrash, DeleteForever } from '@mui/icons-material';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
@@ -184,7 +184,7 @@ export default function DeleteBinPage() {
             {
             field: 'actions',
             headerName: 'Actions',
-            width: 300,
+            width: 120,
             sortable: false,
             filterable: false,
             renderCell: (params) => (
@@ -195,26 +195,33 @@ export default function DeleteBinPage() {
                 alignItems="center"
                 sx={{ width: '100%', height: '100%' }} // important for centering in the cell
                 >
-                <Button
-                    variant="outlined"
-                    size="small"
-                    color="success"
-                    startIcon={<RestoreFromTrash />}
-                    onClick={() => handleRestore(params.row)}
-                >
-                    Restore
-                </Button>
-                <Button
-                    variant="outlined"
-                    size="small"
-                    color="error"
-                    startIcon={<DeleteForever />}
-                    onClick={() => handleDeleteClick(params.row)}
-                    disabled={!canForceDelete}
-                    title={!canForceDelete ? 'No permission to permanently delete' : ''}
-                >
-                    Delete Permanently
-                </Button>
+                <Tooltip title="Restore customer">
+                    <IconButton
+                        size="small"
+                        color="success"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleRestore(params.row);
+                        }}
+                    >
+                        <RestoreFromTrash />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={!canForceDelete ? 'No permission to permanently delete' : 'Delete permanently'}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteClick(params.row);
+                            }}
+                            disabled={!canForceDelete}
+                        >
+                            <DeleteForever />
+                        </IconButton>
+                    </span>
+                </Tooltip>
                 </Stack>
             ),
             }
