@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Typography,
@@ -22,9 +23,10 @@ import SmsConfirmDialog from "../components/SmsConfirmDialog";
 
 // Small chip showing each scanned box id
 function BoxChip({ index, id }) {
+  const { t } = useTranslation();
   return (
     <Chip
-      label={`Box ${index}: ${id}`}
+      label={`${t('box_to_pallet.box')} ${index}: ${id}`}
       sx={{ maxWidth: "100%", textOverflow: "ellipsis" }}
     />
   );
@@ -88,6 +90,7 @@ async function fetchOrderDone(api, orderId) {
 
 
 export default function BoxToPalletLoadingPage() {
+  const { t } = useTranslation();
   const [scanResult, setScanResult] = useState(null);
 
   // Basic order summary (locked by first scanned box)
@@ -203,7 +206,7 @@ export default function BoxToPalletLoadingPage() {
       const normalized = normalizeBoxCode(raw);
       const orderId = extractOrderId(normalized);
       if (!orderId) {
-        setSnackbarMsg("Could not read order from box QR.");
+        setSnackbarMsg(t('box_to_pallet.could_not_read_order'));
         return;
       }
 
@@ -211,14 +214,14 @@ export default function BoxToPalletLoadingPage() {
         // Keep a single order locked for the session
         if (orderInfo.order_id && orderInfo.order_id !== orderId) {
           setSnackbarMsg(
-            "This box belongs to a different order. Finish current order first."
+            t('box_to_pallet.different_order')
           );
           return;
         }
 
         // If backend sent a canonical list, validate membership
         if (fetchedBoxList.length > 0 && !belongsToFetchedOrder(normalized)) {
-          setSnackbarMsg("This box does not belong to the current order.");
+          setSnackbarMsg(t('box_to_pallet.box_not_belong'));
           return;
         }
 
@@ -229,19 +232,19 @@ export default function BoxToPalletLoadingPage() {
             (b) => extractOrderId(b) === orderId && extractSuffix(b) === suffix
           );
           if (suffixAlready) {
-            setSnackbarMsg(`Box #${suffix} for this order is already scanned.`);
+            setSnackbarMsg(t('box_to_pallet.box_already_scanned_suffix', { suffix }));
             return;
           }
         }
 
         // Final dedupe by exact id
         if (scannedBoxes.includes(normalized)) {
-          setSnackbarMsg("Box already scanned.");
+          setSnackbarMsg(t('box_to_pallet.box_already_scanned'));
           return;
         }
 
         setScannedBoxes((prev) => [...prev, normalized]);
-        setSnackbarMsg("Box scanned.");
+        setSnackbarMsg(t('box_to_pallet.box_scanned'));
       };
 
       // First box → fetch order + canonical box list, then accept the scan
@@ -254,7 +257,7 @@ export default function BoxToPalletLoadingPage() {
             const list = Array.isArray(res?.data?.boxes) ? res.data.boxes : [];
           
             if (!info || !info.order_id) {
-              setSnackbarMsg("Order not found for this box.");
+              setSnackbarMsg(t('box_to_pallet.order_not_found'));
               return;
             }
           
@@ -301,7 +304,7 @@ export default function BoxToPalletLoadingPage() {
           })
           .catch((e) => {
             console.error(e);
-            setSnackbarMsg("Failed to fetch order info for this box.");
+            setSnackbarMsg(t('box_to_pallet.failed_fetch_order'));
           });
       } else {
         processScan();
@@ -310,7 +313,7 @@ export default function BoxToPalletLoadingPage() {
       return;
     }
 
-    setSnackbarMsg("Unrecognized QR");
+    setSnackbarMsg(t('box_to_pallet.unrecognized_qr'));
   }, [scanResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ──────────────────────────────────────────────────────────────
@@ -334,7 +337,7 @@ export default function BoxToPalletLoadingPage() {
       boxes: allBoxIds.length > 0 ? allBoxIds : scannedBoxes // Use all boxes if available, fallback to scanned
     });
     resetAll();
-    setSnackbarMsg("Submitted successfully.");
+    setSnackbarMsg(t('box_to_pallet.submitted_successfully'));
   };
 
   // Kuopio submit + optional SMS (controlled by confirm dialog)
@@ -352,7 +355,7 @@ export default function BoxToPalletLoadingPage() {
 
     // ✅ No extra /orders/:orderId/sms-status call here (server updates counters)
     resetAll();
-    setSnackbarMsg(sendNow ? "Submitted; SMS queued." : "Submitted without SMS.");
+    setSnackbarMsg(sendNow ? t('box_to_pallet.submitted_sms') : t('box_to_pallet.submitted_no_sms'));
   };
 
   const handleSubmit = async () => {
@@ -365,7 +368,7 @@ export default function BoxToPalletLoadingPage() {
       }
     } catch (err) {
       console.error(err);
-      setSnackbarMsg("Submit failed. See console for details.");
+      setSnackbarMsg(t('box_to_pallet.submit_failed'));
     }
   };
 
@@ -393,7 +396,7 @@ export default function BoxToPalletLoadingPage() {
             variant="h4"
             sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
           >
-            {isKuopio ? "Box → Shelf Handling (Kuopio)" : "Box → Pallet Handling"}
+            {isKuopio ? t('box_to_pallet.title_kuopio') : t('box_to_pallet.title_pallet')}
           </Typography>
 
           {isKuopio && (
@@ -402,7 +405,7 @@ export default function BoxToPalletLoadingPage() {
               color="text.secondary"
               sx={{ textAlign: "center", mb: 2, fontStyle: "italic" }}
             >
-              Scan any box to identify the order, then scan the shelf QR to assign all boxes
+              {t('box_to_pallet.instruction_shelf')}
             </Typography>
           )}
 
@@ -412,7 +415,7 @@ export default function BoxToPalletLoadingPage() {
               color="text.secondary"
               sx={{ textAlign: "center", mb: 2, fontStyle: "italic" }}
             >
-              Scan any box to identify the order, then scan the pallet QR to assign all boxes
+              {t('box_to_pallet.instruction_pallet')}
             </Typography>
           )}
 
@@ -438,7 +441,7 @@ export default function BoxToPalletLoadingPage() {
             {/* Show Shelf explicitly for Kuopio */}
             {isKuopio && shelfId && (
               <Typography variant="body2" color="text.secondary">
-                Shelf: <strong>{shelfId}</strong>
+                {t('box_to_pallet.shelf')}: <strong>{shelfId}</strong>
               </Typography>
             )}
 
@@ -446,13 +449,13 @@ export default function BoxToPalletLoadingPage() {
               <Typography variant="body2" color="text.secondary">
                 {isKuopio ? (
                   <>
-                    Order has <strong>{expectedCount || 0}</strong> box{expectedCount !== 1 ? 'es' : ''}
-                    {shelfId && " · Ready to assign all boxes to shelf"}
+                    {t('box_to_pallet.order_has')} <strong>{expectedCount || 0}</strong> {t('box_to_pallet.boxes', { count: expectedCount || 0 })}
+                    {shelfId && ` · ${t('box_to_pallet.ready_shelf')}`}
                   </>
                 ) : (
                   <>
-                    Order has <strong>{expectedCount || 0}</strong> box{expectedCount !== 1 ? 'es' : ''}
-                    {palletId && " · Ready to assign all boxes to pallet"}
+                    {t('box_to_pallet.order_has')} <strong>{expectedCount || 0}</strong> {t('box_to_pallet.boxes', { count: expectedCount || 0 })}
+                    {palletId && ` · ${t('box_to_pallet.ready_pallet')}`}
                   </>
                 )}
               </Typography>
@@ -469,7 +472,7 @@ export default function BoxToPalletLoadingPage() {
             <Stack spacing={2} direction="row">
               {scannedBoxes.length > 0 && (
                 <Button color="error" variant="contained" onClick={handleCancel}>
-                  Cancel
+                  {t('box_to_pallet.cancel')}
                 </Button>
               )}
 
@@ -486,7 +489,7 @@ export default function BoxToPalletLoadingPage() {
                     "&:hover": { backgroundColor: "#c5bfa3" },
                   }}
                 >
-                  {isKuopio ? `Assign All ${expectedCount || 0} Boxes to Shelf` : `Assign All ${expectedCount || 0} Boxes to Pallet`}
+                  {isKuopio ? t('box_to_pallet.assign_to_shelf', { count: expectedCount || 0 }) : t('box_to_pallet.assign_to_pallet', { count: expectedCount || 0 })}
                 </Button>
               )}
             </Stack>
@@ -504,11 +507,11 @@ export default function BoxToPalletLoadingPage() {
             await submitKuopio(sendNow);
           } catch (e) {
             console.error(e);
-            setSnackbarMsg("Submit failed. See console for details.");
+            setSnackbarMsg(t('box_to_pallet.submit_failed'));
           }
         }}
-        title="Send SMS to customer now?"
-        message={`Order: ${orderInfo.name || "—"} · City: ${orderInfo.city || "—"}`}
+        title={t('box_to_pallet.sms_dialog_title')}
+        message={`${t('box_to_pallet.order')}: ${orderInfo.name || "—"} · ${t('box_to_pallet.city')}: ${orderInfo.city || "—"}`}
       />
 
       {/* Not-done dialog */}
@@ -518,14 +521,13 @@ export default function BoxToPalletLoadingPage() {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Order not marked as done</DialogTitle>
+        <DialogTitle>{t('box_to_pallet.not_done_title')}</DialogTitle>
         <DialogContent>
-          Please mark this order as <strong>Processing complete</strong> before
-          loading boxes to a pallet or shelf.
+          {t('box_to_pallet.not_done_message')}
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={() => setNotDoneOpen(false)}>
-            OK
+            {t('box_to_pallet.ok')}
           </Button>
         </DialogActions>
       </Dialog>

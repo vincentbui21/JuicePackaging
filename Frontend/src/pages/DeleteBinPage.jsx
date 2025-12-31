@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DataGrid } from '@mui/x-data-grid';
 import { Box, Button, Stack, Typography, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Chip, Alert, IconButton, Tooltip } from '@mui/material';
 import { RestoreFromTrash, DeleteForever } from '@mui/icons-material';
@@ -7,6 +8,7 @@ import DrawerComponent from '../components/drawer';
 import ConfirmationDialog from '../components/ConfirmationDialog';
 
 export default function DeleteBinPage() {
+    const { t } = useTranslation();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -157,24 +159,24 @@ export default function DeleteBinPage() {
 
         const columns = [
 
-            { field: 'name', headerName: 'Name', width: 150 },
+            { field: 'name', headerName: t('delete_bin.name'), width: 150 },
 
-            { field: 'email', headerName: 'Email', width: 200 },
+            { field: 'email', headerName: t('delete_bin.email'), width: 200 },
 
-            { field: 'phone', headerName: 'Phone', width: 150 },
+            { field: 'phone', headerName: t('delete_bin.phone'), width: 150 },
 
-            { field: 'city', headerName: 'City', width: 120 },
+            { field: 'city', headerName: t('delete_bin.city'), width: 120 },
 
             {
             field: 'deleted_at',
-            headerName: 'Deleted At',
+            headerName: t('delete_bin.deleted_at'),
             width: 220,
             valueGetter: (value, row) => {
                 const raw = row?.deleted_at;
-                if (!raw) return 'N/A';
+                if (!raw) return t('delete_bin.na');
 
                 const d = new Date(raw); 
-                if (Number.isNaN(d.getTime())) return 'N/A';
+                if (Number.isNaN(d.getTime())) return t('delete_bin.na');
 
                 return d.toLocaleString();
             },
@@ -183,7 +185,7 @@ export default function DeleteBinPage() {
 
             {
             field: 'actions',
-            headerName: 'Actions',
+            headerName: t('delete_bin.actions'),
             width: 120,
             sortable: false,
             filterable: false,
@@ -195,7 +197,7 @@ export default function DeleteBinPage() {
                 alignItems="center"
                 sx={{ width: '100%', height: '100%' }} // important for centering in the cell
                 >
-                <Tooltip title="Restore customer">
+                <Tooltip title={t('delete_bin.restore_customer')}>
                     <IconButton
                         size="small"
                         color="success"
@@ -207,7 +209,7 @@ export default function DeleteBinPage() {
                         <RestoreFromTrash />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={!canForceDelete ? 'No permission to permanently delete' : 'Delete permanently'}>
+                <Tooltip title={!canForceDelete ? t('delete_bin.no_permission_delete') : t('delete_bin.delete_permanently')}>
                     <span>
                         <IconButton
                             size="small"
@@ -259,14 +261,14 @@ export default function DeleteBinPage() {
 
                     >
 
-                        Delete Bin
+                        {t('delete_bin.title')}
 
                     </Typography>
 
                     {!canForceDelete && (
                         <Box sx={{ width: 'min(1200px, 90%)', mb: 2 }}>
                             <Typography color="warning.main" sx={{ textAlign: 'center', fontWeight: 500 }}>
-                                ⚠️ You have view-only access. Permanent deletion is disabled.
+                                ⚠️ {t('delete_bin.view_only_warning')}
                             </Typography>
                         </Box>
                     )}
@@ -275,7 +277,7 @@ export default function DeleteBinPage() {
 
                         <TextField
 
-                            label="Search by Name or Phone Number"
+                            label={t('delete_bin.search_label')}
 
                             variant="outlined"
 
@@ -329,75 +331,75 @@ export default function DeleteBinPage() {
                     fullWidth
                 >
                     <DialogTitle>
-                        Customer Details
+                        {t('delete_bin.customer_details')}
                     </DialogTitle>
                     <DialogContent>
                         <Alert severity="info" sx={{ mb: 2 }}>
-                            This customer is in the delete bin. Restore the customer to make any changes.
+                            {t('delete_bin.restore_to_change')}
                         </Alert>
                         
                         {loadingDetails ? (
-                            <Typography>Loading...</Typography>
+                            <Typography>{t('delete_bin.loading')}</Typography>
                         ) : detailsData ? (
                             <Box>
                                 {/* Customer Information */}
-                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Customer Information</Typography>
+                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>{t('delete_bin.customer_information')}</Typography>
                                 <Grid container spacing={2} sx={{ mb: 3 }}>
                                     <Grid item xs={12} sm={6}>
-                                        <Typography><strong>Name:</strong> {detailsData.customer?.name || 'N/A'}</Typography>
+                                        <Typography><strong>{t('delete_bin.name')}:</strong> {detailsData.customer?.name || t('delete_bin.na')}</Typography>
                                     </Grid>
                                     <Grid item xs={12} sm={6}>
-                                        <Typography><strong>Email:</strong> {detailsData.customer?.email || 'N/A'}</Typography>
+                                        <Typography><strong>{t('delete_bin.email')}:</strong> {detailsData.customer?.email || t('delete_bin.na')}</Typography>
                                     </Grid>
                                     <Grid item xs={12} sm={6}>
-                                        <Typography><strong>Phone:</strong> {detailsData.customer?.phone || 'N/A'}</Typography>
+                                        <Typography><strong>{t('delete_bin.phone')}:</strong> {detailsData.customer?.phone || t('delete_bin.na')}</Typography>
                                     </Grid>
                                     <Grid item xs={12} sm={6}>
-                                        <Typography><strong>City:</strong> {detailsData.customer?.city || 'N/A'}</Typography>
+                                        <Typography><strong>{t('delete_bin.city')}:</strong> {detailsData.customer?.city || t('delete_bin.na')}</Typography>
                                     </Grid>
                                     <Grid item xs={12} sm={6}>
-                                        <Typography><strong>Deleted At:</strong> {detailsData.customer?.deleted_at ? new Date(detailsData.customer.deleted_at).toLocaleString() : 'N/A'}</Typography>
+                                        <Typography><strong>{t('delete_bin.deleted_at')}:</strong> {detailsData.customer?.deleted_at ? new Date(detailsData.customer.deleted_at).toLocaleString() : t('delete_bin.na')}</Typography>
                                     </Grid>
                                 </Grid>
 
                                 {/* Orders Information */}
-                                <Typography variant="h6" sx={{ mb: 2, mt: 3, fontWeight: 'bold' }}>Orders ({detailsData.orders?.length || 0})</Typography>
+                                <Typography variant="h6" sx={{ mb: 2, mt: 3, fontWeight: 'bold' }}>{t('delete_bin.orders_count', { count: detailsData.orders?.length || 0 })}</Typography>
                                 {detailsData.orders?.length > 0 ? (
                                     detailsData.orders.map((order, idx) => (
                                         <Box key={order.order_id || idx} sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 1, bgcolor: '#f9f9f9' }}>
                                             <Grid container spacing={2}>
                                                 <Grid item xs={12} sm={6}>
-                                                    <Typography><strong>Order ID:</strong> {order.order_id}</Typography>
+                                                    <Typography><strong>{t('delete_bin.order_id')}:</strong> {order.order_id}</Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={6}>
-                                                    <Typography><strong>Status:</strong> <Chip label={order.status} size="small" /></Typography>
+                                                    <Typography><strong>{t('delete_bin.status')}:</strong> <Chip label={order.status} size="small" /></Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={6}>
-                                                    <Typography><strong>Total Cost:</strong> {order.total_cost ? `€${order.total_cost}` : 'N/A'}</Typography>
+                                                    <Typography><strong>{t('delete_bin.total_cost')}:</strong> {order.total_cost ? `€${order.total_cost}` : t('delete_bin.na')}</Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={6}>
-                                                    <Typography><strong>Pouches:</strong> {order.pouches_count || 0}</Typography>
+                                                    <Typography><strong>{t('delete_bin.pouches')}:</strong> {order.pouches_count || 0}</Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={6}>
-                                                    <Typography><strong>Weight:</strong> {order.weight_kg || 0} kg</Typography>
+                                                    <Typography><strong>{t('delete_bin.weight')}:</strong> {order.weight_kg || 0} kg</Typography>
                                                 </Grid>
                                                 <Grid item xs={12} sm={6}>
-                                                    <Typography><strong>Boxes:</strong> {order.boxes_count || 0}</Typography>
+                                                    <Typography><strong>{t('delete_bin.boxes')}:</strong> {order.boxes_count || 0}</Typography>
                                                 </Grid>
                                             </Grid>
                                         </Box>
                                     ))
                                 ) : (
-                                    <Typography color="text.secondary">No orders found for this customer.</Typography>
+                                    <Typography color="text.secondary">{t('delete_bin.no_orders')}</Typography>
                                 )}
 
                             </Box>
                         ) : (
-                            <Typography color="error">Failed to load customer details.</Typography>
+                            <Typography color="error">{t('delete_bin.failed_load_details')}</Typography>
                         )}
                     </DialogContent>
                     <DialogActions>
-                        <Button onClick={() => setDetailsDialogOpen(false)}>Close</Button>
+                        <Button onClick={() => setDetailsDialogOpen(false)}>{t('delete_bin.close')}</Button>
                     </DialogActions>
                 </Dialog>
 
@@ -409,11 +411,11 @@ export default function DeleteBinPage() {
 
                     onConfirm={handleConfirmDelete}
 
-                    title="Permanently Delete Customer?"
+                    title={t('delete_bin.confirm_delete_title')}
 
-                    message={`Are you sure you want to permanently delete ${selectedCustomer?.name}? This action cannot be undone.`}
+                    message={t('delete_bin.confirm_delete_message', { name: selectedCustomer?.name })}
 
-                    confirmText="Delete"
+                    confirmText={t('delete_bin.delete')}
 
                 />
 

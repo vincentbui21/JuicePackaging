@@ -6,8 +6,10 @@ import CustomerInfoCard from '../components/customerinfoshowcard';
 import CrateInfoCard from '../components/CrateInfoCard';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
+import { useTranslation } from 'react-i18next';
 
 function CrateHandling() {
+    const { t } = useTranslation();
 
     const InitialCustomerInfo = {
         name: "",
@@ -115,7 +117,7 @@ function CrateHandling() {
                         flexDirection: "column"
                         }}>
                     <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
-                        Crate Management System
+                        {t('crate_management.title')}
                     </Typography>
 
                     <Stack spacing={3} alignItems="center">
@@ -123,8 +125,8 @@ function CrateHandling() {
 
                         {Boolean(customerInfo.order_id) && (
                       <Typography variant="body2" color="text.secondary">
-                        Scanned <strong>{scannedCratesID.length}</strong> of{" "}
-                                <strong>{parseInt(customerInfo.crate_count || 0, 10)}</strong> crates
+                        {t('crate_management.scanned_info')} <strong>{scannedCratesID.length}</strong> {t('crate_management.of')}{" "}
+                                <strong>{parseInt(customerInfo.crate_count || 0, 10)}</strong> {t('crate_management.crates')}
                      </Typography>
                         )}
                         <CustomerInfoCard customerInfo={customerInfo} />
@@ -138,12 +140,12 @@ function CrateHandling() {
                         <Stack spacing={2} direction="row">
                             {scannedCratesID.length > 0 && (
                                 <Button color="error" variant="contained" onClick={Delete_all_data}>
-                                    Cancel
+                                    {t('crate_management.cancel_button')}
                                 </Button>
                             )}
                             {!disabledSubmitButton && (
                                 <Button color="success" variant="contained" onClick={handleSubmitButton} sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}>
-                                    Submit
+                                    {t('crate_management.submit_button')}
                                 </Button>
 
                                 

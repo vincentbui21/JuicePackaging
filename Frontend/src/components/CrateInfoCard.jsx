@@ -1,6 +1,8 @@
 import { Paper, Grid, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 
 function CrateInfoCard({index, crateID}) {
+    const { t } = useTranslation();
     return (  
         <>
             <Paper elevation={6} sx={{
@@ -13,7 +15,7 @@ function CrateInfoCard({index, crateID}) {
                 <Grid container>
 
                     <Grid item size={1} display={"flex"} alignItems={"center"}>
-                        <Typography variant='body1' fontWeight={"bold"}>Crate:</Typography>
+                        <Typography variant='body1' fontWeight={"bold"}>{t('crate_management.crate_label')}:</Typography>
                     </Grid>
 
                     <Grid item size={5} display={"flex"} alignItems={"center"} justifyContent={"center"}>
@@ -21,7 +23,7 @@ function CrateInfoCard({index, crateID}) {
                     </Grid>
 
                     <Grid item size={1} display={"flex"} alignItems={"center"}>
-                        <Typography vvariant='body1' fontWeight={"bold"}>ID:</Typography>
+                        <Typography vvariant='body1' fontWeight={"bold"}>{t('crate_management.id_label')}:</Typography>
                     </Grid>
 
                     <Grid item size={5} display={"flex"} alignItems={"center"}>

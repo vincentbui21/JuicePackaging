@@ -28,12 +28,14 @@ import { io } from "socket.io-client";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
 import printImage from "../services/send_to_printer";
+import { useTranslation } from "react-i18next";
 
 // Build socket URL from same base as axios
 const WS_URL = (import.meta.env.VITE_API_BASE_URL || "https://api.mehustaja.fi/").replace(/\/+$/, "");
 const socket = io(WS_URL);
 
 function JuiceHandlePage() {
+  const { t } = useTranslation();
   // data
   const [orders, setOrders] = useState([]);
   const [page, setPage] = useState(1);
@@ -385,18 +387,18 @@ function JuiceHandlePage() {
       >
         <Paper elevation={3} sx={{ width: viewMode === "grid" ? "min(95%, 1400px)" : "min(95%, 1200px)", p: 4, backgroundColor: "#ffffff", borderRadius: 2 }}>
           <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
-            Apple Juice Processing Station
+            {t('juice_processing.title')}
           </Typography>
 
           {!canAccessJuiceHandle && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              ⚠️ View-only access. Only Admin and Kuopio staff can perform actions on this page.
+              {t('juice_processing.view_only_warning')}
             </Alert>
           )}
 
           <Stack direction="row" spacing={2} sx={{ mb: 2 }} alignItems="center">
             <TextField
-              label="Search by customer, order ID, or city"
+              label={t('juice_processing.search_placeholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               fullWidth
@@ -421,7 +423,7 @@ function JuiceHandlePage() {
             <Stack spacing={2}>
               {filteredOrders.length === 0 && (
                 <Typography variant="body2" color="text.secondary">
-                  No orders found.
+                  {t('juice_processing.no_orders_found')}
                 </Typography>
               )}
 
@@ -464,19 +466,19 @@ function JuiceHandlePage() {
                     >
                       <Box>
                         <Typography variant="h6" fontWeight={700}>
-                          {order.name || "Unknown"}
+                          {order.name || t('juice_processing.unknown')}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          <strong>City:</strong> {order.city || "—"} • <strong>Order ID:</strong> {order.order_id}
+                          <strong>{t('juice_processing.city')}:</strong> {order.city || "—"} • <strong>{t('juice_processing.order_id')}:</strong> {order.order_id}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          <strong>Est:</strong> {estimatedPouches || 0} pouches • <strong>Est boxes:</strong> {estimatedBoxes || 0} • <strong>Actual pouches:</strong>{" "}
-                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • <strong>Actual boxes:</strong>{" "}
-                          {inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw} • <strong>Exp:</strong> {expiryUi}
+                          <strong>{t('juice_processing.est')}:</strong> {estimatedPouches || 0} {t('juice_processing.pouches')} • <strong>{t('juice_processing.est_boxes')}:</strong> {estimatedBoxes || 0} • <strong>{t('juice_processing.actual_pouches')}:</strong>{" "}
+                          {inlineActualRaw === "" ? "—" : inlineActualRaw} • <strong>{t('juice_processing.actual_boxes')}:</strong>{" "}
+                          {inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw} • <strong>{t('juice_processing.exp')}:</strong> {expiryUi}
                         </Typography>
                       </Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Print pouch label"}>
+                        <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.print_pouch_label')}>
                           <span>
                             <IconButton 
                               size="small" 
@@ -488,7 +490,7 @@ function JuiceHandlePage() {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Generate QR codes"}>
+                        <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.generate_qr_codes')}>
                           <span>
                             <IconButton 
                               size="small" 
@@ -500,7 +502,7 @@ function JuiceHandlePage() {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Mark as done"}>
+                        <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.mark_as_done')}>
                           <span>
                             <IconButton 
                               size="small" 
@@ -512,7 +514,7 @@ function JuiceHandlePage() {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Delete order"}>
+                        <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.delete_order')}>
                           <span>
                             <IconButton 
                               size="small" 
@@ -532,7 +534,7 @@ function JuiceHandlePage() {
                     <Grid container spacing={2} alignItems="center">
                       <Grid item xs={12} sm={6} md={3}>
                         <TextField
-                          label="Estimated pouches"
+                          label={t('juice_processing.estimated_pouches')}
                           size="small"
                           type="number"
                           value={estimatedPouches || 0}
@@ -548,7 +550,7 @@ function JuiceHandlePage() {
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
                         <TextField
-                          label="Actual pouches"
+                          label={t('juice_processing.actual_pouches_label')}
                           size="small"
                           type="number"
                           value={inlineActualRaw}
@@ -558,7 +560,7 @@ function JuiceHandlePage() {
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
                         <TextField
-                          label="Estimated boxes"
+                          label={t('juice_processing.estimated_boxes')}
                           size="small"
                           type="number"
                           value={estimatedBoxes || 0}
@@ -574,7 +576,7 @@ function JuiceHandlePage() {
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
                         <TextField
-                          label="Actual boxes"
+                          label={t('juice_processing.actual_boxes_label')}
                           size="small"
                           type="number"
                           value={inlineActualBoxesRaw}
@@ -584,7 +586,7 @@ function JuiceHandlePage() {
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
                         <TextField
-                          label="Weight (kg)"
+                          label={t('juice_processing.weight_kg')}
                           size="small"
                           type="number"
                           value={inlineWeightRaw}
@@ -609,7 +611,7 @@ function JuiceHandlePage() {
                         </TextField>
                       </Grid> */}
                       <Grid item xs={12} sm={6} md={3}>
-                        <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : ""} placement="top">
+                        <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : ""} placement="top">
                           <span>
                             <Button
                               variant="outlined"
@@ -618,7 +620,7 @@ function JuiceHandlePage() {
                               onClick={() => handleInlineSave(order.order_id)}
                               disabled={!canAccessJuiceHandle}
                             >
-                              Save
+                              {t('juice_processing.save')}
                             </Button>
                           </span>
                         </Tooltip>
@@ -626,7 +628,7 @@ function JuiceHandlePage() {
                     </Grid>
 
                     <TextField
-                      label="Comments"
+                      label={t('juice_processing.comments')}
                       fullWidth
                       multiline
                       minRows={2}
@@ -685,37 +687,37 @@ function JuiceHandlePage() {
                           {order.name || "Unknown"}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" gutterBottom>
-                          City: {order.city || "—"}
+                          {t('juice_processing.city')}: {order.city || "—"}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                          Order: {order.order_id.slice(0, 8)}...
+                          {t('juice_processing.order')}: {order.order_id.slice(0, 8)}...
                         </Typography>
 
                         <Divider sx={{ my: 1 }} />
 
                         <Stack spacing={1} sx={{ my: 2 }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" color="text.secondary">Est. Pouches:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('juice_processing.est_pouches')}:</Typography>
                             <Typography variant="body2" fontWeight="medium">{estimatedPouches || 0}</Typography>
                           </Box>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" color="text.secondary">Actual Pouches:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('juice_processing.actual_pouches')}:</Typography>
                             <Typography variant="body2" fontWeight="medium">{inlineActualRaw === "" ? "—" : inlineActualRaw}</Typography>
                           </Box>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" color="text.secondary">Est. Boxes:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('juice_processing.est_boxes')}:</Typography>
                             <Typography variant="body2" fontWeight="medium">{estimatedBoxes || 0}</Typography>
                           </Box>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" color="text.secondary">Actual Boxes:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('juice_processing.actual_boxes')}:</Typography>
                             <Typography variant="body2" fontWeight="medium">{inlineActualBoxesRaw === "" ? "—" : inlineActualBoxesRaw}</Typography>
                           </Box>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" color="text.secondary">Weight:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('juice_processing.weight')}:</Typography>
                             <Typography variant="body2" fontWeight="medium">{inlineWeightRaw} kg</Typography>
                           </Box>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" color="text.secondary">Expiry:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('juice_processing.expiry')}:</Typography>
                             <Typography variant="body2" fontWeight="medium">{expiryUi}</Typography>
                           </Box>
                         </Stack>
@@ -723,7 +725,7 @@ function JuiceHandlePage() {
                         <Divider sx={{ my: 1 }} />
 
                         <Stack direction="row" spacing={1} justifyContent="center" sx={{ mt: 2 }}>
-                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Print pouch label"}>
+                          <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.print_pouch_label')}>
                             <span>
                               <IconButton 
                                 size="small" 
@@ -735,7 +737,7 @@ function JuiceHandlePage() {
                               </IconButton>
                             </span>
                           </Tooltip>
-                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Generate QR codes"}>
+                          <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.generate_qr_codes')}>
                             <span>
                               <IconButton 
                                 size="small" 
@@ -747,7 +749,7 @@ function JuiceHandlePage() {
                               </IconButton>
                             </span>
                           </Tooltip>
-                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Mark as done"}>
+                          <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.mark_as_done')}>
                             <span>
                               <IconButton 
                                 size="small" 
@@ -759,7 +761,7 @@ function JuiceHandlePage() {
                               </IconButton>
                             </span>
                           </Tooltip>
-                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : "Delete order"}>
+                          <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : t('juice_processing.delete_order')}>
                             <span>
                               <IconButton 
                                 size="small" 
@@ -774,7 +776,7 @@ function JuiceHandlePage() {
                         </Stack>
 
                         <TextField
-                          label="Comments"
+                          label={t('juice_processing.comments')}
                           fullWidth
                           multiline
                           minRows={2}
@@ -788,7 +790,7 @@ function JuiceHandlePage() {
 
                         <Stack spacing={1} sx={{ mt: 2 }}>
                           <TextField
-                            label="Actual pouches"
+                            label={t('juice_processing.actual_pouches_label')}
                             size="small"
                             type="number"
                             value={inlineActualRaw}
@@ -796,7 +798,7 @@ function JuiceHandlePage() {
                             fullWidth
                           />
                           <TextField
-                            label="Actual boxes"
+                            label={t('juice_processing.actual_boxes_label')}
                             size="small"
                             type="number"
                             value={inlineActualBoxesRaw}
@@ -804,14 +806,14 @@ function JuiceHandlePage() {
                             fullWidth
                           />
                           <TextField
-                            label="Weight (kg)"
+                            label={t('juice_processing.weight_kg')}
                             size="small"
                             type="number"
                             value={inlineWeightRaw}
                             onChange={(e) => handleInlineChange(order.order_id, "weight_kg", e.target.value)}
                             fullWidth
                           />
-                          <Tooltip title={!canAccessJuiceHandle ? "Kuopio access required" : ""} placement="top">
+                          <Tooltip title={!canAccessJuiceHandle ? t('juice_processing.kuopio_access_required') : ""} placement="top">
                             <span>
                               <Button
                                 variant="contained"
@@ -821,7 +823,7 @@ function JuiceHandlePage() {
                                 onClick={() => handleInlineSave(order.order_id)}
                                 disabled={!canAccessJuiceHandle}
                               >
-                                Save Changes
+                                {t('juice_processing.save_changes')}
                               </Button>
                             </span>
                           </Tooltip>
@@ -841,7 +843,7 @@ function JuiceHandlePage() {
                 onClick={() => fetchProcessingOrders({ page: page + 1, append: true })}
                 disabled={loadingOrders}
               >
-                {loadingOrders ? "Loading..." : "Load more"}
+                {loadingOrders ? t('juice_processing.loading') : t('juice_processing.load_more')}
               </Button>
             </Stack>
           )}
@@ -863,7 +865,7 @@ function JuiceHandlePage() {
         fullWidth
       >
         <DialogTitle>
-          {qrDialog.order ? `QR Codes — ${qrDialog.order.name}` : "QR Codes"}
+          {qrDialog.order ? `${t('juice_processing.qr_codes')} — ${qrDialog.order.name}` : t('juice_processing.qr_codes')}
         </DialogTitle>
         <DialogContent dividers>
           {qrDialog.order && (qrCodes[qrDialog.order.order_id] || []).length > 0 ? (
@@ -873,7 +875,7 @@ function JuiceHandlePage() {
                   <Card sx={{ p: 1 }}>
                     <CardContent sx={{ textAlign: "center" }}>
                       <Typography variant="body2" sx={{ mb: 1 }}>
-                        Box {index}
+                        {t('juice_processing.box')} {index}
                       </Typography>
                       <img src={url} alt={`QR ${index}`} style={{ width: 120, height: 120 }} />
                     </CardContent>
@@ -883,34 +885,34 @@ function JuiceHandlePage() {
             </Grid>
           ) : (
             <Typography variant="body2" color="text.secondary">
-              No QR codes generated.
+              {t('juice_processing.no_qr_codes')}
             </Typography>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setQrDialog({ open: false, order: null })}>Close</Button>
+          <Button onClick={() => setQrDialog({ open: false, order: null })}>{t('juice_processing.close')}</Button>
           <Button
             variant="contained"
             onClick={handlePrintAll}
             disabled={!qrDialog.order || !(qrCodes[qrDialog.order.order_id] || []).length}
           >
-            Print All
+            {t('juice_processing.print_all')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteConfirmDialog.open} onClose={handleCancelDelete}>
-        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogTitle>{t('juice_processing.confirm_delete')}</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to move <strong>{deleteConfirmDialog.order?.name}</strong> to the Delete Bin?
+            {t('juice_processing.delete_confirmation_message', { name: deleteConfirmDialog.order?.name })}
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancelDelete}>Cancel</Button>
+          <Button onClick={handleCancelDelete}>{t('juice_processing.cancel')}</Button>
           <Button onClick={handleConfirmDelete} variant="contained" color="error">
-            Yes, Delete
+            {t('juice_processing.yes_delete')}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DataGrid } from '@mui/x-data-grid';
 import {
   Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress, Dialog,
@@ -20,6 +21,7 @@ const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pic
 
 // Small chip component that fetches /customers/:id/sms-status
 function SmsStatusChip({ customerId, refreshKey }) {
+    const { t } = useTranslation();
     const [status, setStatus] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -48,12 +50,13 @@ function SmsStatusChip({ customerId, refreshKey }) {
         size="small"
         color={sent ? 'success' : 'default'}
         variant={sent ? 'filled' : 'outlined'}
-        label={sent ? `Sent (${count})` : 'Not sent'}
+        label={sent ? t('unified_mgmt.sms_sent', { count }) : t('unified_mgmt.sms_not_sent')}
         />
     );
     }
 
     export default function UnifiedManagement() {
+    const { t } = useTranslation();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -169,7 +172,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
             }
         } catch (err) {
             console.error('Failed to fetch cities', err);
-            setSnackbarMsg('Failed to load city list');
+            setSnackbarMsg(t('unified_mgmt.failed_load_cities'));
         }
         };
         fetchCities();
@@ -228,7 +231,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
         setRows(filteredData);
         } catch (err) {
         console.error('Failed to fetch data', err);
-        setSnackbarMsg('Failed to fetch data');
+        setSnackbarMsg(t('unified_mgmt.failed_fetch_data'));
         } finally {
         setLoading(false);
         }
@@ -305,11 +308,11 @@ function SmsStatusChip({ customerId, refreshKey }) {
             });
         }
 
-        setSnackbarMsg('Updated successfully');
+        setSnackbarMsg(t('unified_mgmt.updated_successfully'));
         fetchData();
         } catch (err) {
         console.error('Failed to update', err);
-        setSnackbarMsg('Failed to update');
+        setSnackbarMsg(t('unified_mgmt.failed_update'));
         }
         setEditDialogOpen(false);
     };
@@ -325,11 +328,11 @@ function SmsStatusChip({ customerId, refreshKey }) {
 
         try {
             await api.delete('/customer', { data: { customer_id: row.customer_id } });
-            setSnackbarMsg('Customer moved to Delete Bin');
+            setSnackbarMsg(t('unified_mgmt.customer_moved_bin'));
             fetchData();
         } catch (err) {
             console.error('Delete failed', err);
-            setSnackbarMsg('Failed to delete');
+            setSnackbarMsg(t('unified_mgmt.failed_delete'));
         }
     };
 
@@ -349,19 +352,19 @@ function SmsStatusChip({ customerId, refreshKey }) {
         }
         } catch (error) {
         console.error('Failed to fetch crate IDs:', error);
-        setSnackbarMsg('Failed to fetch crate IDs');
+        setSnackbarMsg(t('unified_mgmt.failed_fetch_crates'));
         }
     };
 
     // QR for boxes
     const handleShowQR = async (row) => {
         if (!row.order_id) {
-        setSnackbarMsg('No order found for this customer');
+        setSnackbarMsg(t('unified_mgmt.no_order_found'));
         return;
         }
         const boxesToUse = Number(row.estimated_boxes) || 0;
         if (boxesToUse === 0) {
-        setSnackbarMsg('No boxes to generate QR codes for');
+        setSnackbarMsg(t('unified_mgmt.no_boxes_generate'));
         return;
         }
         try {
@@ -371,7 +374,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
             if (url) codes.push({ index: i + 1, url });
         }
         if (codes.length === 0) {
-            setSnackbarMsg('Failed to generate QR codes');
+            setSnackbarMsg(t('unified_mgmt.failed_generate_qr'));
             return;
         }
         setQrCodes((prev) => ({
@@ -384,10 +387,10 @@ function SmsStatusChip({ customerId, refreshKey }) {
         }));
         setQrDialogOrderId(row.order_id);
         setQrDialogOpenBoxes(true);
-        setSnackbarMsg('QR Codes generated');
+        setSnackbarMsg(t('unified_mgmt.qr_codes_generated'));
         } catch (e) {
         console.error(e);
-        setSnackbarMsg('Failed to generate QR Codes');
+        setSnackbarMsg(t('unified_mgmt.failed_generate_qr'));
         }
     };
 
@@ -408,26 +411,26 @@ function SmsStatusChip({ customerId, refreshKey }) {
             expiryDate,
         });
 
-        setSnackbarMsg('Pouch print sent (Expiry +1 year)');
+        setSnackbarMsg(t('unified_mgmt.pouch_print_sent'));
         } catch (e) {
         console.error('printPouchLabels failed', e);
-        setSnackbarMsg('Failed to print pouch');
+        setSnackbarMsg(t('unified_mgmt.failed_print_pouch'));
         }
     };
 
     // Send SMS
     const handleNotifySMS = async (row) => {
         if (!isReadyForPickup(row.status)) {
-        alert("Can only send SMS when status is 'Ready for pickup'.");
+        alert(t('unified_mgmt.sms_ready_only'));
         return;
         }
         try {
         const res = await api.post(`/customers/${row.customer_id}/notify`, {});
-        setSnackbarMsg(res.data?.message || 'SMS attempted');
+        setSnackbarMsg(res.data?.message || t('unified_mgmt.sms_attempted'));
         reload();
         } catch (e) {
         console.error('Notify failed', e);
-        setSnackbarMsg('SMS failed');
+        setSnackbarMsg(t('unified_mgmt.sms_failed'));
         }
     };
 
@@ -476,7 +479,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
     const columns = [
         {
         field: 'actions',
-        headerName: 'Actions',
+        headerName: t('unified_mgmt.actions'),
         minWidth: 100,
         sortable: false,
         filterable: false,
@@ -491,21 +494,21 @@ function SmsStatusChip({ customerId, refreshKey }) {
             </IconButton>
         ),
         },
-        { field: 'order_id', headerName: 'Order ID', minWidth: 180, flex: 0.5 },
-        { field: 'name', headerName: 'Name', minWidth: 120, flex: 1 },
+        { field: 'order_id', headerName: t('unified_mgmt.order_id'), minWidth: 180, flex: 0.5 },
+        { field: 'name', headerName: t('unified_mgmt.name'), minWidth: 120, flex: 1 },
         // { field: 'email', headerName: 'Email', minWidth: 150, flex: 1.5, hide: isMobile },
-        { field: 'phone', headerName: 'Phone', minWidth: 120, flex: 1 },
-        { field: 'weight_kg', headerName: 'Weight (kg)', minWidth: 100, flex: 0.6 },
-        { field: 'crate_count', headerName: 'Crates', minWidth: 70, flex: 0.5 },
-        { field: 'estimated_pouches', headerName: 'Pouches', minWidth: 80, flex: 0.6 },
-        { field: 'estimated_boxes', headerName: 'Boxes', minWidth: 70, flex: 0.5 },
-        { field: 'total_cost', headerName: 'Cost (€)', minWidth: 80, flex: 0.6 },
-        { field: 'city', headerName: 'City', minWidth: 100, flex: 0.8, hide: isMobile },
-        { field: 'created_at', headerName: 'Date', minWidth: 120, flex: 1, hide: isMobile },
-        { field: 'status', headerName: 'Status', minWidth: 110, flex: 0.8 },
+        { field: 'phone', headerName: t('unified_mgmt.phone'), minWidth: 120, flex: 1 },
+        { field: 'weight_kg', headerName: t('unified_mgmt.weight_kg'), minWidth: 100, flex: 0.6 },
+        { field: 'crate_count', headerName: t('unified_mgmt.crates'), minWidth: 70, flex: 0.5 },
+        { field: 'estimated_pouches', headerName: t('unified_mgmt.pouches'), minWidth: 80, flex: 0.6 },
+        { field: 'estimated_boxes', headerName: t('unified_mgmt.boxes'), minWidth: 70, flex: 0.5 },
+        { field: 'total_cost', headerName: t('unified_mgmt.cost'), minWidth: 80, flex: 0.6 },
+        { field: 'city', headerName: t('unified_mgmt.city'), minWidth: 100, flex: 0.8, hide: isMobile },
+        { field: 'created_at', headerName: t('unified_mgmt.date'), minWidth: 120, flex: 1, hide: isMobile },
+        { field: 'status', headerName: t('unified_mgmt.status'), minWidth: 110, flex: 0.8 },
         {
         field: 'sms_status',
-        headerName: 'SMS',
+        headerName: t('unified_mgmt.sms'),
         minWidth: 100,
         flex: 0.7,
         sortable: false,
@@ -514,7 +517,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
             <SmsStatusChip customerId={params.row.customer_id} refreshKey={smsRefreshTick} />
         ),
         },
-        { field: 'notes', headerName: 'Notes', minWidth: 150, flex: 1.2, hide: isMobile },
+        { field: 'notes', headerName: t('unified_mgmt.notes'), minWidth: 150, flex: 1.2, hide: isMobile },
     ];
 
     const filteredRows = rows.filter((r) =>
@@ -527,10 +530,10 @@ function SmsStatusChip({ customerId, refreshKey }) {
         const order = rows.find((o) => o.order_id === orderId);
         try {
         await printImage(url, order?.name || 'Customer', `b${index}/1`);
-        setSnackbarMsg(`Box ${index} sent to printer`);
+        setSnackbarMsg(t('unified_mgmt.box_sent_printer', { index }));
         } catch (e) {
         console.error('Single print failed', e);
-        setSnackbarMsg('Failed to print QR');
+        setSnackbarMsg(t('unified_mgmt.failed_print_qr'));
         }
     };
 
@@ -544,10 +547,10 @@ function SmsStatusChip({ customerId, refreshKey }) {
         for (const { index, url } of data.codes) {
             await printImage(url, order?.name || 'Customer', `b${index}/${total}`);
         }
-        setSnackbarMsg('All QR codes sent to printer');
+        setSnackbarMsg(t('unified_mgmt.all_qr_sent'));
         } catch (e) {
         console.error('Print all failed', e);
-        setSnackbarMsg('Failed to print all QRs');
+        setSnackbarMsg(t('unified_mgmt.failed_print_all'));
         }
     };
 
@@ -572,20 +575,20 @@ function SmsStatusChip({ customerId, refreshKey }) {
                     }}
                 >
                     <Typography variant={isMobile ? "h5" : "h4"} sx={{ textAlign: 'center', mb: isMobile ? 2 : 3, fontWeight: 'bold' }}>
-                        Unified Management
+                        {t('unified_mgmt.title')}
                     </Typography>
 
                     {allowedCities.length > 0 && (
                         <Box sx={{ mb: 2, textAlign: 'center' }}>
                             <Typography color="info.main" sx={{ fontWeight: 500 }}>
-                                🔒 Viewing customers from: {allowedCities.join(', ')}
+                                🔒 {t('unified_mgmt.viewing_customers')}: {allowedCities.join(', ')}
                             </Typography>
                         </Box>
                     )}
     
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                         <TextField
-                            label="Search by Name"
+                            label={t('unified_mgmt.search_by_name')}
                             variant="outlined"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
@@ -605,7 +608,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                     >
                         <Box sx={{ p: 2, minWidth: 200 }}>
-                            <Typography variant="h6" sx={{ mb: 1 }}>Show/Hide Columns</Typography>
+                            <Typography variant="h6" sx={{ mb: 1 }}>{t('unified_mgmt.show_hide_columns')}</Typography>
                             <Stack direction="column" spacing={1}>
                                 {Object.keys(columnVisibility).map(field => {
                                     const col = columns.find(c => c.field === field);
@@ -650,23 +653,23 @@ function SmsStatusChip({ customerId, refreshKey }) {
         {/* Menu for row actions */}
         <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={handleMenuClose}>
             <MenuItem onClick={handleEditAction}>
-            <Edit fontSize="small" sx={{ mr: 1 }} /> Edit
+            <Edit fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.edit')}
             </MenuItem>
             <MenuItem onClick={handleDeleteAction}>
-            <Delete fontSize="small" sx={{ mr: 1 }} /> Delete
+            <Delete fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.delete')}
             </MenuItem>
             <MenuItem onClick={handleCrateQRPrintAction}>
-            <Trolley fontSize="small" sx={{ mr: 1 }} /> Print Crate QR
+            <Trolley fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.print_crate_qr')}
             </MenuItem>
             <MenuItem onClick={handleShowQRAction}>
-            <Inventory fontSize="small" sx={{ mr: 1 }} /> Print Box QR
+            <Inventory fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.print_box_qr')}
             </MenuItem>
             <MenuItem onClick={printPouchLabelsAction}>
-            <Print fontSize="small" sx={{ mr: 1 }} /> Print Pouch Label
+            <Print fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.print_pouch_label')}
             </MenuItem>
             {activeRow && isReadyForPickup(activeRow.status) && (
             <MenuItem onClick={handleNotifySMSAction}>
-                <Send fontSize="small" sx={{ mr: 1 }} /> Send SMS
+                <Send fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.send_sms')}
             </MenuItem>
             )}
         </Menu>
@@ -679,16 +682,16 @@ function SmsStatusChip({ customerId, refreshKey }) {
             maxWidth="md"
             fullScreen={isMobile}
         >
-            <DialogTitle>Edit Customer & Order</DialogTitle>
+            <DialogTitle>{t('unified_mgmt.edit_customer_order')}</DialogTitle>
             <DialogContent>
             {!canEditCustomers && (
                 <Typography color="warning.main" sx={{ mb: 2, mt: 1 }}>
-                    You have view-only access. Editing is disabled.
+                    {t('unified_mgmt.view_only_access')}
                 </Typography>
             )}
             <Stack spacing={isMobile ? 1 : 2} mt={1}>
                 <TextField
-                label="Name"
+                label={t('unified_mgmt.name')}
                 value={editedFields.name}
                 onChange={(e) => setEditedFields((p) => ({ ...p, name: e.target.value }))}
                 fullWidth
@@ -696,7 +699,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
-                label="Email"
+                label={t('unified_mgmt.email')}
                 value={editedFields.email}
                 onChange={(e) => setEditedFields((p) => ({ ...p, email: e.target.value }))}
                 fullWidth
@@ -704,7 +707,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
-                label="Phone"
+                label={t('unified_mgmt.phone')}
                 value={editedFields.phone}
                 onChange={(e) => setEditedFields((p) => ({ ...p, phone: e.target.value }))}
                 fullWidth
@@ -713,7 +716,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 />
                 <TextField
                 select
-                label="City"
+                label={t('unified_mgmt.city')}
                 value={editedFields.city}
                 onChange={(e) => setEditedFields((p) => ({ ...p, city: e.target.value }))}
                 fullWidth
@@ -727,7 +730,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 ))}
                 </TextField>
                 <TextField
-                label="Weight (kg)"
+                label={t('unified_mgmt.weight_kg')}
                 type="number"
                 value={editedFields.weight_kg}
                 onChange={(e) =>
@@ -738,7 +741,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
-                label="Crates"
+                label={t('unified_mgmt.crates')}
                 type="number"
                 value={editedFields.crate_count}
                 onChange={(e) =>
@@ -749,7 +752,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
-                label="Cost (€)"
+                label={t('unified_mgmt.cost')}
                 type="number"
                 value={editedFields.total_cost}
                 onChange={(e) =>
@@ -761,7 +764,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 />
                 <TextField
                 select
-                label="Status"
+                label={t('unified_mgmt.status')}
                 value={editedFields.status}
                 onChange={(e) =>
                     setEditedFields((p) => ({ ...p, status: e.target.value }))
@@ -779,7 +782,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 )}
                 </TextField>
                 <TextField
-                label="Notes"
+                label={t('unified_mgmt.notes')}
                 value={editedFields.notes}
                 onChange={(e) =>
                     setEditedFields((p) => ({ ...p, notes: e.target.value }))
@@ -790,7 +793,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
-                label="Estimated Pouches"
+                label={t('unified_mgmt.estimated_pouches')}
                 type="number"
                 value={editedFields.estimated_pouches}
                 onChange={(e) =>
@@ -801,7 +804,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 InputProps={{ readOnly: !canEditCustomers }}
                 />
                 <TextField
-                label="Estimated Boxes"
+                label={t('unified_mgmt.estimated_boxes')}
                 type="number"
                 value={editedFields.estimated_boxes}
                 onChange={(e) =>
@@ -814,14 +817,14 @@ function SmsStatusChip({ customerId, refreshKey }) {
             </Stack>
             </DialogContent>
             <DialogActions>
-            <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => setEditDialogOpen(false)}>{t('unified_mgmt.cancel')}</Button>
             <Button 
                 variant="contained" 
                 onClick={handleEditSave}
                 disabled={!canEditCustomers}
                 color={canEditCustomers ? 'primary' : 'error'}
             >
-                {canEditCustomers ? 'Save' : 'No Edit Permission'}
+                {canEditCustomers ? t('unified_mgmt.save') : t('unified_mgmt.no_edit_permission')}
             </Button>
             </DialogActions>
         </Dialog>
@@ -843,12 +846,12 @@ function SmsStatusChip({ customerId, refreshKey }) {
             maxWidth="md"
             fullScreen={isMobile}
         >
-        <DialogTitle>QR Codes — Order {qrDialogOrderId}</DialogTitle>
+        <DialogTitle>{t('unified_mgmt.qr_codes_order', { orderId: qrDialogOrderId })}</DialogTitle>
         <DialogContent dividers>
             {currentQrData ? (
                 <>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                    Pouches: {currentQrData.pouches} &nbsp; • &nbsp; Boxes:{' '}
+                    {t('unified_mgmt.pouches')}: {currentQrData.pouches} &nbsp; • &nbsp; {t('unified_mgmt.boxes')}:{' '}
                     {currentQrData.boxes}
                 </Typography>
                 <Stack direction="row" spacing={isMobile ? 1 : 2} flexWrap="wrap">
@@ -864,7 +867,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                         <CardContent
                         sx={{ textAlign: 'center', p: isMobile ? 1 : 2 }}
                         >
-                        <Typography variant="body2">Box {index}</Typography>
+                        <Typography variant="body2">{t('unified_mgmt.box_number', { number: index })}</Typography>
                         <img
                             src={url}
                             alt={`QR ${index}`}
@@ -881,7 +884,7 @@ function SmsStatusChip({ customerId, refreshKey }) {
                             printSingleQRCode(qrDialogOrderId, url, index)
                             }
                         >
-                            Print this
+                            {t('unified_mgmt.print_this')}
                         </Button>
                         </CardContent>
                     </Card>
@@ -889,34 +892,34 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 </Stack>
                 </>
             ) : (
-                <Typography variant="body2">No QR codes generated.</Typography>
+                <Typography variant="body2">{t('unified_mgmt.no_qr_codes')}</Typography>
             )}
             </DialogContent>
             <DialogActions>
-            <Button onClick={() => setQrDialogOpenBoxes(false)}>Close</Button>
+            <Button onClick={() => setQrDialogOpenBoxes(false)}>{t('unified_mgmt.close')}</Button>
             <Button
                 variant="contained"
                 onClick={() =>
                 qrDialogOrderId && printAllQRCodes(qrDialogOrderId)
                 }
             >
-                Print All
+                {t('unified_mgmt.print_all')}
             </Button>
             </DialogActions>
         </Dialog>
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteConfirmDialog.open} onClose={handleCancelDelete}>
-            <DialogTitle>Confirm Delete</DialogTitle>
+            <DialogTitle>{t('unified_mgmt.confirm_delete')}</DialogTitle>
             <DialogContent>
             <Typography>
-                Are you sure you want to move <strong>{deleteConfirmDialog.row?.name}</strong> to the Delete Bin?
+                {t('unified_mgmt.confirm_delete_message', { name: deleteConfirmDialog.row?.name })}
             </Typography>
             </DialogContent>
             <DialogActions>
-            <Button onClick={handleCancelDelete}>Cancel</Button>
+            <Button onClick={handleCancelDelete}>{t('unified_mgmt.cancel')}</Button>
             <Button onClick={handleConfirmDelete} variant="contained" color="error">
-                Yes, Delete
+                {t('unified_mgmt.yes_delete')}
             </Button>
             </DialogActions>
         </Dialog>

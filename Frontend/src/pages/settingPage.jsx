@@ -4,6 +4,7 @@ import DrawerComponent from "../components/drawer";
 import { useState, useEffect } from "react";
 import api from '../services/axios';
 import PasswordModal from "../components/PasswordModal";
+import { useTranslation } from 'react-i18next';
 
 // Major Finland cities for autocomplete suggestions
 const FINLAND_CITIES = [
@@ -16,6 +17,7 @@ const FINLAND_CITIES = [
 ].sort();
 
 function SettingPage() {
+  const { t } = useTranslation();
   const [tabValue, setTabValue] = useState(0);
 
   const initialSettings = {
@@ -382,7 +384,7 @@ function SettingPage() {
             variant="h4"
             sx={{ textAlign: "center", marginBottom: 3, fontWeight: "bold" }}
           >
-            Settings
+            {t('settings.title')}
           </Typography>
 
           <Tabs 
@@ -400,11 +402,11 @@ function SettingPage() {
               }
             }}
           >
-            <Tab label="Default Values" />
-            <Tab label="Cities Management" />
-            <Tab label="Accounts Management" />
-            <Tab label="SMS Templates" />
-            <Tab label="Activity Log" />
+            <Tab label={t('settings.tab_default_values')} />
+            <Tab label={t('settings.tab_cities')} />
+            <Tab label={t('settings.tab_accounts')} />
+            <Tab label={t('settings.tab_sms')} />
+            <Tab label={t('settings.tab_activity')} />
           </Tabs>
 
           {/* Tab 0: Default Values */}
@@ -421,7 +423,7 @@ function SettingPage() {
                     required
                     fullWidth
                     variant="filled"
-                    label="Juice Quantity (L/Kilo)"
+                    label={t('settings.juice_quantity_label')}
                     value={settings.juice_quantity}
                     onChange={handleChange}
                     autoComplete="off"
@@ -432,7 +434,7 @@ function SettingPage() {
                     required
                     fullWidth
                     variant="filled"
-                    label="Number of Pouches (L/Pouch)"
+                    label={t('settings.pouches_label')}
                     value={settings.no_pouches}
                     onChange={handleChange}
                     autoComplete="off"
@@ -443,7 +445,7 @@ function SettingPage() {
                     required
                     fullWidth
                     variant="filled"
-                    label="Price (€/L)"
+                    label={t('settings.price_label')}
                     value={settings.price}
                     onChange={handleChange}
                     autoComplete="off"
@@ -454,7 +456,7 @@ function SettingPage() {
                     required
                     fullWidth
                     variant="filled"
-                    label="Shipping fee (€/L)"
+                    label={t('settings.shipping_label')}
                     value={settings.shipping_fee}
                     onChange={handleChange}
                     autoComplete="off"
@@ -463,14 +465,14 @@ function SettingPage() {
                     name="printer_ip"
                     fullWidth
                     variant="filled"
-                    label="Printer IP Address"
+                    label={t('settings.printer_label')}
                     value={settings.printer_ip}
                     onChange={handleChange}
                     autoComplete="off"
                   />
 
                   <Button variant="contained" onClick={handleButtonClick} size="large">
-                    Save Default Values
+                    {t('settings.save_defaults')}
                   </Button>
                 </Stack>
               </form>
@@ -481,7 +483,7 @@ function SettingPage() {
           {tabValue === 1 && (
             <Box>
               <Typography variant="h6" sx={{ mb: 2 }}>
-                Manage Cities
+                {t('settings.add_city_title')}
               </Typography>
 
               <Stack spacing={2} sx={{ mb: 3 }}>
@@ -495,10 +497,10 @@ function SettingPage() {
                       renderInput={(params) => (
                         <TextField
                           {...params}
-                          label="New City Name"
+                          label={t('settings.select_city_label')}
                           variant="filled"
                           onKeyPress={(e) => e.key === 'Enter' && handleAddCity()}
-                          helperText="Please make sure the city name is spelled correctly."
+                          helperText={t('settings.select_city_helper')}
                         />
                       )}
                     />
@@ -511,7 +513,7 @@ function SettingPage() {
                       onClick={handleAddCity}
                       size="large"
                     >
-                      Add City
+                      {t('settings.add_city_button')}
                     </Button>
                   </Grid>
                 </Grid>
@@ -524,10 +526,10 @@ function SettingPage() {
               ) : (
                 <>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    {cities.length} {cities.length === 1 ? 'city' : 'cities'} in the system
+                    {cities.length === 1 ? t('settings.city_count', { count: cities.length }) : t('settings.city_count_plural', { count: cities.length })}
                   </Typography>
                   {cities.length === 0 ? (
-                    <Alert severity="info">No cities added yet. Add your first city above.</Alert>
+                    <Alert severity="info">{t('settings.no_cities')}</Alert>
                   ) : (
                     <List>
                       {cities.map((city) => (
@@ -539,7 +541,7 @@ function SettingPage() {
                               color="error" 
                               onClick={() => handleDeleteCity(city)}
                               disabled={city.toLowerCase() === 'kuopio'}
-                              title={city.toLowerCase() === 'kuopio' ? 'Cannot delete main city' : 'Delete city'}
+                              title={city.toLowerCase() === 'kuopio' ? t('settings.cannot_delete_main') : t('settings.delete_city')}
                             >
                               <Delete />
                             </IconButton>
@@ -548,7 +550,7 @@ function SettingPage() {
                         >
                           <ListItemText 
                             primary={city} 
-                            secondary={city.toLowerCase() === 'kuopio' ? 'Main City' : null}
+                            secondary={city.toLowerCase() === 'kuopio' ? t('settings.main_city') : null}
                           />
                         </ListItem>
                       ))}
@@ -563,9 +565,9 @@ function SettingPage() {
           {tabValue === 2 && (
             <Box>
               <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-                <Typography variant="h6">Accounts Management</Typography>
+                <Typography variant="h6">{t('settings.accounts_title')}</Typography>
                 <Button variant="contained" startIcon={<Add />} onClick={openCreateDialog}>
-                  Create New Account
+                  {t('settings.create_account')}
                 </Button>
               </Stack>
 
@@ -573,7 +575,7 @@ function SettingPage() {
               <TextField
                 fullWidth
                 variant="outlined"
-                placeholder="Search by username, full name, email, or city..."
+                placeholder={t('settings.search_accounts')}
                 value={accountSearchTerm}
                 onChange={(e) => setAccountSearchTerm(e.target.value)}
                 sx={{ mb: 3 }}
@@ -618,14 +620,14 @@ function SettingPage() {
                           <Typography variant="subtitle1" fontWeight="bold">
                             {acc.full_name || acc.id}
                             {acc.role === 'admin' && (
-                              <Chip label="Admin" size="small" color="error" sx={{ ml: 1 }} />
+                              <Chip label={t('settings.admin_label')} size="small" color="error" sx={{ ml: 1 }} />
                             )}
                             {!acc.is_active && (
-                              <Chip label="Inactive" size="small" color="default" sx={{ ml: 1 }} />
+                              <Chip label={t('settings.inactive_label')} size="small" color="default" sx={{ ml: 1 }} />
                             )}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            Username: {acc.id} {acc.email && `• Email: ${acc.email}`}
+                            {t('settings.username_label')}: {acc.id} {acc.email && `• ${t('settings.email_label')}: ${acc.email}`}
                           </Typography>
                         </Box>
                         <Stack direction="row" spacing={1}>
@@ -633,11 +635,11 @@ function SettingPage() {
                             size="small"
                             color="primary"
                             onClick={() => setChangePasswordDialog({ open: true, accountId: acc.id, accountName: acc.full_name || acc.id, newPassword: '' })}
-                            title="Change Password"
+                            title={t('settings.change_password')}
                           >
                             <Lock />
                           </IconButton>
-                          <IconButton size="small" color="primary" onClick={() => openEditDialog(acc)} title="Edit Account">
+                          <IconButton size="small" color="primary" onClick={() => openEditDialog(acc)} title={t('settings.edit_account')}>
                             <Edit />
                           </IconButton>
                           {acc.id !== 'admin' && (
@@ -645,7 +647,7 @@ function SettingPage() {
                               size="small"
                               color="error"
                               onClick={() => handleDeleteAccount(acc.id, acc.full_name)}
-                              title="Delete Account"
+                              title={t('settings.delete_account')}
                             >
                               <Delete />
                             </IconButton>
@@ -655,15 +657,15 @@ function SettingPage() {
                       <Divider sx={{ width: '100%', my: 1 }} />
                       <Grid container spacing={2}>
                         <Grid item xs={12} sm={6}>
-                          <Typography variant="caption" fontWeight="bold">Permissions:</Typography>
+                          <Typography variant="caption" fontWeight="bold">{t('settings.permissions_title')}</Typography>
                           <Box sx={{ pl: 1 }}>
-                            <Typography variant="body2">✓ Edit Customers: {acc.can_edit_customers ? 'Yes' : 'No'}</Typography>
-                            <Typography variant="body2">✓ Force Delete: {acc.can_force_delete ? 'Yes' : 'No'}</Typography>
-                            <Typography variant="body2">✓ View Reports: {acc.can_view_reports ? 'Yes' : 'No'}</Typography>
+                            <Typography variant="body2">✓ {t('settings.edit_customers')}: {acc.can_edit_customers ? t('settings.yes') : t('settings.no')}</Typography>
+                            <Typography variant="body2">✓ {t('settings.force_delete')}: {acc.can_force_delete ? t('settings.yes') : t('settings.no')}</Typography>
+                            <Typography variant="body2">✓ {t('settings.view_reports')}: {acc.can_view_reports ? t('settings.yes') : t('settings.no')}</Typography>
                           </Box>
                         </Grid>
                         <Grid item xs={12} sm={6}>
-                          <Typography variant="caption" fontWeight="bold">Allowed Cities:</Typography>
+                          <Typography variant="caption" fontWeight="bold">{t('settings.allowed_cities_title')}</Typography>
                           <Box sx={{ pl: 1 }}>
                             {acc.allowed_cities && acc.allowed_cities.length > 0 ? (
                               <Stack direction="row" flexWrap="wrap" gap={0.5}>
@@ -672,7 +674,7 @@ function SettingPage() {
                                 ))}
                               </Stack>
                             ) : (
-                              <Typography variant="body2" color="text.secondary">All cities</Typography>
+                              <Typography variant="body2" color="text.secondary">{t('settings.all_cities')}</Typography>
                             )}
                           </Box>
                         </Grid>
@@ -691,8 +693,8 @@ function SettingPage() {
                   }).length === 0 && (
                     <Alert severity="info">
                       {accountSearchTerm.trim() 
-                        ? `No accounts found matching "${accountSearchTerm}"`
-                        : 'No accounts found. Create your first account to get started.'}
+                        ? t('settings.no_accounts_found', { searchTerm: accountSearchTerm })
+                        : t('settings.no_accounts')}
                     </Alert>
                   )}
                 </List>
@@ -704,7 +706,7 @@ function SettingPage() {
           {tabValue === 3 && (
             <Box>
               <Typography variant="h6" sx={{ mb: 2 }}>
-                Pickup SMS Templates
+                {t('settings.sms_title')}
               </Typography>
 
               {smsLoading ? (
@@ -714,11 +716,11 @@ function SettingPage() {
               ) : (
                 <Stack spacing={2}>
                   <Alert severity="info">
-                    These messages are sent when orders are ready for pickup. Customize per location; "Default" is used when a city does not match.
+                    {t('settings.sms_info')}
                   </Alert>
                   {cities.length === 0 && (
                     <Alert severity="warning">
-                      No cities found. Add cities in the Cities tab first.
+                      {t('settings.no_cities_warning')}
                     </Alert>
                   )}
                   <Divider />
@@ -743,7 +745,7 @@ function SettingPage() {
                         multiline
                         minRows={3}
                         variant="filled"
-                        helperText={`${(smsTemplates[k] || "").length} characters`}
+                        helperText={t('settings.characters_count', { count: (smsTemplates[k] || "").length })}
                       />
                     </Paper>
                   ))}
@@ -753,7 +755,7 @@ function SettingPage() {
                     disabled={smsSaving}
                     size="large"
                   >
-                    {smsSaving ? "Saving..." : "Save SMS Templates"}
+                    {smsSaving ? t('settings.saving') : t('settings.save_sms')}
                   </Button>
                 </Stack>
               )}
@@ -764,7 +766,7 @@ function SettingPage() {
           {tabValue === 4 && (
             <Box>
               <Typography variant="h6" sx={{ mb: 2 }}>
-                System Activity Log
+                {t('settings.activity_title')}
               </Typography>
 
               {activitiesLoading ? (
@@ -774,12 +776,12 @@ function SettingPage() {
               ) : (
                 <Box>
                   <Alert severity="info" sx={{ mb: 2 }}>
-                    Showing all recent system activities. This includes customer registrations, juice processing completions, and pallet creations.
+                    {t('settings.activity_info')}
                   </Alert>
 
                   {activities.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" textAlign="center" py={4}>
-                      No activities found.
+                      {t('settings.no_activities')}
                     </Typography>
                   ) : (
                     <Box>
@@ -855,7 +857,7 @@ function SettingPage() {
       {/* Snackbar */}
       <Snackbar open={openSnackbar} autoHideDuration={3000} onClose={() => setOpenSnackbar(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         <Alert onClose={() => setOpenSnackbar(false)} severity="success" sx={{ width: '100%' }}>
-          {snackbarMsg || "Operation successful!"}
+          {snackbarMsg || t('settings.success_message')}
         </Alert>
       </Snackbar>
 
@@ -867,23 +869,23 @@ function SettingPage() {
         fullWidth
       >
         <DialogTitle sx={{ backgroundColor: '#f44336', color: 'white', fontWeight: 'bold' }}>
-          Cannot Delete City
+          {t('settings.cannot_delete_city')}
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Typography variant="body1" gutterBottom>
-            <strong>Cannot delete city "{deleteErrorDialog.cityName}".</strong>
+            <strong>{t('settings.cannot_delete_message', { cityName: deleteErrorDialog.cityName })}</strong>
           </Typography>
           <Typography variant="body1" gutterBottom sx={{ mt: 2 }}>
-            It is currently used by:
+            {t('settings.used_by')}
           </Typography>
           <Box sx={{ pl: 2, mb: 2 }}>
-            <Typography variant="body2">• <strong>{deleteErrorDialog.customerCount}</strong> customer(s)</Typography>
-            <Typography variant="body2">• <strong>{deleteErrorDialog.boxCount}</strong> box(es)</Typography>
+            <Typography variant="body2">• <strong>{t('settings.customer_count', { count: deleteErrorDialog.customerCount })}</strong></Typography>
+            <Typography variant="body2">• <strong>{t('settings.box_count', { count: deleteErrorDialog.boxCount })}</strong></Typography>
           </Box>
           <Alert severity="info" sx={{ mt: 2 }}>
             <Typography variant="body2">
-              <strong>To delete this city:</strong><br />
-              You will need to manually check from the <strong>Unified Management page</strong> and delete customers, boxes, selves and pallets related to this city first.
+              <strong>{t('settings.delete_instruction')}</strong><br />
+              <span dangerouslySetInnerHTML={{ __html: t('settings.delete_instruction_detail') }} />
             </Typography>
           </Alert>
         </DialogContent>
@@ -893,7 +895,7 @@ function SettingPage() {
             variant="contained"
             color="primary"
           >
-            Understood
+            {t('settings.understood')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -906,21 +908,21 @@ function SettingPage() {
         fullWidth
       >
         <DialogTitle>
-          {accountDialog.mode === 'create' ? 'Create New Account' : 'Edit Account'}
+          {accountDialog.mode === 'create' ? t('settings.create_dialog_title') : t('settings.edit_dialog_title')}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={3} sx={{ mt: 1 }}>
             {accountDialog.mode === 'create' ? (
               <>
                 <TextField
-                  label="Username/ID"
+                  label={t('settings.username_id')}
                   value={newAccount.id}
                   onChange={(e) => setNewAccount({ ...newAccount, id: e.target.value })}
                   required
                   fullWidth
                 />
                 <TextField
-                  label="Password"
+                  label={t('settings.password')}
                   type={showNewPassword ? "text" : "password"}
                   value={newAccount.password}
                   onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })}
@@ -941,31 +943,31 @@ function SettingPage() {
                   }}
                 />
                 <TextField
-                  label="Full Name"
+                  label={t('settings.full_name')}
                   value={newAccount.full_name}
                   onChange={(e) => setNewAccount({ ...newAccount, full_name: e.target.value })}
                   fullWidth
                 />
                 <TextField
-                  label="Email"
+                  label={t('settings.email')}
                   type="email"
                   value={newAccount.email}
                   onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })}
                   fullWidth
                 />
                 <FormControl fullWidth>
-                  <InputLabel>Role</InputLabel>
+                  <InputLabel>{t('settings.role')}</InputLabel>
                   <Select
                     value={newAccount.role}
                     onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}
-                    label="Role"
+                    label={t('settings.role')}
                   >
-                    <MenuItem value="employee">Employee</MenuItem>
-                    <MenuItem value="admin">Admin</MenuItem>
+                    <MenuItem value="employee">{t('settings.employee')}</MenuItem>
+                    <MenuItem value="admin">{t('settings.admin')}</MenuItem>
                   </Select>
                 </FormControl>
                 <Divider />
-                <Typography variant="subtitle2" fontWeight="bold">Permissions</Typography>
+                <Typography variant="subtitle2" fontWeight="bold">{t('settings.permissions')}</Typography>
                 <FormGroup>
                   <FormControlLabel
                     control={
@@ -974,7 +976,7 @@ function SettingPage() {
                         onChange={(e) => setNewAccount({ ...newAccount, can_edit_customers: e.target.checked })}
                       />
                     }
-                    label="Can edit customer information in Unified Management"
+                    label={t('settings.perm_edit_customers')}
                   />
                   <FormControlLabel
                     control={
@@ -983,7 +985,7 @@ function SettingPage() {
                         onChange={(e) => setNewAccount({ ...newAccount, can_force_delete: e.target.checked })}
                       />
                     }
-                    label="Can permanently delete customers in Delete Bin"
+                    label={t('settings.perm_force_delete')}
                   />
                   <FormControlLabel
                     control={
@@ -992,17 +994,17 @@ function SettingPage() {
                         onChange={(e) => setNewAccount({ ...newAccount, can_view_reports: e.target.checked })}
                       />
                     }
-                    label="Can view Admin Reports"
+                    label={t('settings.perm_view_reports')}
                   />
                 </FormGroup>
                 <Divider />
                 <FormControl fullWidth>
-                  <InputLabel>Allowed Cities (leave empty for all)</InputLabel>
+                  <InputLabel>{t('settings.allowed_cities_select')}</InputLabel>
                   <Select
                     multiple
                     value={newAccount.allowed_cities}
                     onChange={(e) => setNewAccount({ ...newAccount, allowed_cities: e.target.value })}
-                    input={<OutlinedInput label="Allowed Cities (leave empty for all)" />}
+                    input={<OutlinedInput label={t('settings.allowed_cities_select')} />}
                     renderValue={(selected) => (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {selected.map((value) => (
@@ -1024,34 +1026,34 @@ function SettingPage() {
               accountDialog.account && (
                 <>
                   <TextField
-                    label="Username/ID"
+                    label={t('settings.username_id')}
                     value={accountDialog.account.id}
                     disabled
                     fullWidth
                   />
                   <TextField
-                    label="Full Name"
+                    label={t('settings.full_name')}
                     value={accountDialog.account.full_name || ''}
                     onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, full_name: e.target.value } })}
                     fullWidth
                   />
                   <TextField
-                    label="Email"
+                    label={t('settings.email')}
                     type="email"
                     value={accountDialog.account.email || ''}
                     onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, email: e.target.value } })}
                     fullWidth
                   />
                   <FormControl fullWidth>
-                    <InputLabel>Role</InputLabel>
+                    <InputLabel>{t('settings.role')}</InputLabel>
                     <Select
                       value={accountDialog.account.role}
                       onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, role: e.target.value } })}
-                      label="Role"
+                      label={t('settings.role')}
                       disabled={accountDialog.account.id === 'admin'}
                     >
-                      <MenuItem value="employee">Employee</MenuItem>
-                      <MenuItem value="admin">Admin</MenuItem>
+                      <MenuItem value="employee">{t('settings.employee')}</MenuItem>
+                      <MenuItem value="admin">{t('settings.admin')}</MenuItem>
                     </Select>
                   </FormControl>
                   <FormControlLabel
@@ -1061,10 +1063,10 @@ function SettingPage() {
                         onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, is_active: e.target.checked } })}
                       />
                     }
-                    label="Account is active"
+                    label={t('settings.account_active')}
                   />
                   <Divider />
-                  <Typography variant="subtitle2" fontWeight="bold">Permissions</Typography>
+                  <Typography variant="subtitle2" fontWeight="bold">{t('settings.permissions')}</Typography>
                   <FormGroup>
                     <FormControlLabel
                       control={
@@ -1073,7 +1075,7 @@ function SettingPage() {
                           onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_edit_customers: e.target.checked } })}
                         />
                       }
-                      label="Can edit customer information in Unified Management"
+                      label={t('settings.perm_edit_customers')}
                     />
                     <FormControlLabel
                       control={
@@ -1082,7 +1084,7 @@ function SettingPage() {
                           onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_force_delete: e.target.checked } })}
                         />
                       }
-                      label="Can permanently delete customers in Delete Bin"
+                      label={t('settings.perm_force_delete')}
                     />
                     <FormControlLabel
                       control={
@@ -1091,17 +1093,17 @@ function SettingPage() {
                           onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_view_reports: e.target.checked } })}
                         />
                       }
-                      label="Can view Admin Reports"
+                      label={t('settings.perm_view_reports')}
                     />
                   </FormGroup>
                   <Divider />
                   <FormControl fullWidth>
-                    <InputLabel>Allowed Cities (leave empty for all)</InputLabel>
+                    <InputLabel>{t('settings.allowed_cities_select')}</InputLabel>
                     <Select
                       multiple
                       value={accountDialog.account.allowed_cities || []}
                       onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, allowed_cities: e.target.value } })}
-                      input={<OutlinedInput label="Allowed Cities (leave empty for all)" />}
+                      input={<OutlinedInput label={t('settings.allowed_cities_select')} />}
                       renderValue={(selected) => (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                           {selected.map((value) => (
@@ -1124,12 +1126,12 @@ function SettingPage() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAccountDialog({ open: false, mode: 'create', account: null })}>Cancel</Button>
+          <Button onClick={() => setAccountDialog({ open: false, mode: 'create', account: null })}>{t('settings.cancel')}</Button>
           <Button
             variant="contained"
             onClick={accountDialog.mode === 'create' ? handleCreateAccount : handleUpdateAccount}
           >
-            {accountDialog.mode === 'create' ? 'Create' : 'Update'}
+            {accountDialog.mode === 'create' ? t('settings.create') : t('settings.update')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1141,10 +1143,10 @@ function SettingPage() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Change Password for {changePasswordDialog.accountName}</DialogTitle>
+        <DialogTitle>{t('settings.change_password_title', { name: changePasswordDialog.accountName })}</DialogTitle>
         <DialogContent>
           <TextField
-            label="New Password"
+            label={t('settings.new_password')}
             type={showChangePassword ? "text" : "password"}
             value={changePasswordDialog.newPassword}
             onChange={(e) => setChangePasswordDialog({ ...changePasswordDialog, newPassword: e.target.value })}
@@ -1168,10 +1170,10 @@ function SettingPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setChangePasswordDialog({ open: false, accountId: '', accountName: '', newPassword: '' })}>
-            Cancel
+            {t('settings.cancel')}
           </Button>
           <Button variant="contained" onClick={handleChangePassword}>
-            Change Password
+            {t('settings.change_password_button')}
           </Button>
         </DialogActions>
       </Dialog>

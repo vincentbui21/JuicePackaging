@@ -4,8 +4,11 @@ import AppSidebar from "./AppSidebar";
 import { Settings, Menu, User } from "lucide-react";
 import { Link, Outlet } from "react-router-dom";
 import NotificationsBell from "./NotificationsBell";
+import LanguageSelector from "./LanguageSelector";
+import { useTranslation } from "react-i18next";
 
 export default function DashboardLayout({ children }) {
+  const { t } = useTranslation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem("sidebarCollapsed") === "1";
@@ -48,7 +51,7 @@ export default function DashboardLayout({ children }) {
             </IconButton>
 
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Apple Processing Dashboard
+              {t('app.title')}
             </Typography>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 1 }}>
@@ -65,6 +68,7 @@ export default function DashboardLayout({ children }) {
                   }}
                 />
               )}
+              <LanguageSelector />
               <NotificationsBell />
               <IconButton aria-label="settings" component={Link} to="/setting">
                 <Settings size={18} />

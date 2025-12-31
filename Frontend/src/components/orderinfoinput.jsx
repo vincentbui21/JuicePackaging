@@ -1,8 +1,10 @@
 import {Stack, Grid, Typography, TextField, InputAdornment, Divider, Paper} from "@mui/material"
 import { useState, useEffect } from "react";
 import api from "../services/axios";
+import { useTranslation } from "react-i18next";
 
 function OrderInfoInput({data, setdata, city}) {
+    const { t } = useTranslation();
     
     var default_settings ={
         juice_quantity : "",
@@ -82,12 +84,12 @@ function OrderInfoInput({data, setdata, city}) {
                             paddingRight: "min(45px, 10%)"
                         }}>
                             <Typography variant='body1'>
-                                Total Apple Weight
+                                {t('customer_info_entry.total_apple_weight')}
                             </Typography>
                         </Grid>
 
                         <Grid item size={8} display="flex" alignItems="center" >
-                            <TextField required name={"total_apple_weight"} type="number" variant='filled' label="Enter weight in kilograms" 
+                            <TextField required name={"total_apple_weight"} type="number" variant='filled' label={t('customer_info_entry.total_apple_weight_placeholder')} 
                             onChange={handleWeightInfoInput} value={data.total_apple_weight}
                             sx={
                                 {
@@ -111,12 +113,12 @@ function OrderInfoInput({data, setdata, city}) {
                             paddingRight: "min(45px, 10%)"
                         }}>
                             <Typography variant='body1'>
-                                Number of Crates
+                                {t('customer_info_entry.number_of_crates')}
                             </Typography>
                         </Grid>
 
                         <Grid item size={8} display="flex" alignItems="center" >
-                            <TextField name="No_of_Crates" type="number" variant='filled' label="Enter crate count" required
+                            <TextField name="No_of_Crates" type="number" variant='filled' label={t('customer_info_entry.number_of_crates_placeholder')} required
                             onChange={handleCustomerInfoUpdate} value={data.No_of_Crates}
                             sx={
                                 {
@@ -140,12 +142,12 @@ function OrderInfoInput({data, setdata, city}) {
                             paddingRight: "min(45px, 10%)"
                         }}>
                             <Typography variant='body1'>
-                                Juice Quantity
+                                {t('customer_info_entry.juice_quantity')}
                             </Typography>
                         </Grid>
 
                         <Grid item size={8} display="flex" alignItems="center" >
-                            <TextField type="number" variant='filled' label="Enter juice volume" name="Juice_quantity"
+                            <TextField type="number" variant='filled' label={t('customer_info_entry.juice_quantity_placeholder')} name="Juice_quantity"
                             onChange={handleCustomerInfoUpdate} value={data.Juice_quantity}
                             sx={
                                 {
@@ -169,12 +171,12 @@ function OrderInfoInput({data, setdata, city}) {
                             paddingRight: "min(45px, 10%)"
                         }}>
                             <Typography variant='body1'>
-                                Number of Pouches
+                                {t('customer_info_entry.number_of_pouches')}
                             </Typography>
                         </Grid>
 
                         <Grid item size={8} display="flex" alignItems="center" >
-                            <TextField type="number" variant='filled' label="Enter pouch count" name="No_of_Pouches"
+                            <TextField type="number" variant='filled' label={t('customer_info_entry.number_of_pouches_placeholder')} name="No_of_Pouches"
                             onChange={handleCustomerInfoUpdate} value={data.No_of_Pouches}
                             sx={
                                 {
@@ -197,7 +199,7 @@ function OrderInfoInput({data, setdata, city}) {
                             paddingRight: "min(45px, 10%)"
                         }}>
                             <Typography variant='body1'>
-                                Price
+                                {t('customer_info_entry.price')}
                             </Typography>
                         </Grid>
 
@@ -226,7 +228,7 @@ function OrderInfoInput({data, setdata, city}) {
                             }
                         }>
                             <Divider variant="middle">
-                                <Typography variant="overline">Notes</Typography>   
+                                <Typography variant="overline">{t('customer_info_entry.notes')}</Typography>   
                             </Divider>
                         </Grid>
 
@@ -240,10 +242,10 @@ function OrderInfoInput({data, setdata, city}) {
                             }
                         }>
                             <TextField
-                                label="Remarks / Observations"
+                                label={t('customer_info_entry.notes_label')}
                                 name = "Notes"
                                 onChange={handleCustomerInfoUpdate}
-                                placeholder="Enter any special instructions, observations, or remarks here..."
+                                placeholder={t('customer_info_entry.notes_placeholder')}
                                 multiline
                                 rows={4}
                                 fullWidth

@@ -6,8 +6,10 @@ import QRCodeDialog from '../components/qrcodeDialog';
 import { useState } from 'react';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
+import { useTranslation } from 'react-i18next';
 
 function CustomerInfoEntry() {
+  const { t } = useTranslation();
   const initialCustomerData = {
     full_name: "",
     address: "",
@@ -90,7 +92,7 @@ function CustomerInfoEntry() {
           }}
         >
           <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
-            Customer Information Entry
+            {t('customer_info_entry.title')}
           </Typography>
 
           <CustomerInfo data={customerdata} setdata={setCustomerData} />
@@ -110,7 +112,7 @@ function CustomerInfoEntry() {
               onClick={handleSubmit}
               sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}
             >
-              Submit New Order
+              {t('customer_info_entry.submit_button')}
             </Button>
           </Box>
         </Paper>

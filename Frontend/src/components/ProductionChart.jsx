@@ -12,8 +12,10 @@ import {
 } from "@mui/material";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import api from "../services/axios";
+import { useTranslation } from "react-i18next";
 
 export default function ProductionChart() {
+  const { t } = useTranslation();
   const [period, setPeriod] = useState("daily"); // daily, weekly, monthly, yearly
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -61,17 +63,17 @@ export default function ProductionChart() {
       <CardHeader
         title={
           <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="h6" fontWeight={800}>Production Trends</Typography>
+            <Typography variant="h6" fontWeight={800}>{t('dashboard.production_trends')}</Typography>
             <ToggleButtonGroup
               value={period}
               exclusive
               onChange={handlePeriodChange}
               size="small"
             >
-              <ToggleButton value="daily">Daily</ToggleButton>
-              <ToggleButton value="weekly">Weekly</ToggleButton>
-              <ToggleButton value="monthly">Monthly</ToggleButton>
-              <ToggleButton value="yearly">Yearly</ToggleButton>
+              <ToggleButton value="daily">{t('dashboard.daily')}</ToggleButton>
+              <ToggleButton value="weekly">{t('dashboard.weekly')}</ToggleButton>
+              <ToggleButton value="monthly">{t('dashboard.monthly')}</ToggleButton>
+              <ToggleButton value="yearly">{t('dashboard.yearly')}</ToggleButton>
             </ToggleButtonGroup>
           </Stack>
         }
@@ -90,7 +92,7 @@ export default function ProductionChart() {
             {/* Pouches Made Chart */}
             <Stack>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                Pouches Made
+                {t('dashboard.pouches_made')}
               </Typography>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
@@ -98,7 +100,7 @@ export default function ProductionChart() {
                   <XAxis dataKey="period" />
                   <YAxis />
                   <Tooltip />
-                  <Bar dataKey="pouches_made" fill="#2e7d32" name="Pouches Made" />
+                  <Bar dataKey="pouches_made" fill="#2e7d32" name={t('dashboard.pouches_made')} />
                 </BarChart>
               </ResponsiveContainer>
             </Stack>
@@ -106,7 +108,7 @@ export default function ProductionChart() {
             {/* Kilograms Processed vs Taken In Chart */}
             <Stack>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                Kilograms: Processed vs Taken In
+                {t('dashboard.kg_processed_vs_taken_in')}
               </Typography>
               <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
@@ -119,14 +121,14 @@ export default function ProductionChart() {
                     type="monotone"
                     dataKey="kg_processed"
                     stroke="#ef6c00"
-                    name="Kilograms Processed"
+                    name={t('dashboard.kg_processed_label')}
                     strokeWidth={2}
                   />
                   <Line
                     type="monotone"
                     dataKey="kg_taken_in"
                     stroke="#1976d2"
-                    name="Kilograms Taken In"
+                    name={t('dashboard.kg_taken_in_label')}
                     strokeWidth={2}
                   />
                 </LineChart>
@@ -137,7 +139,7 @@ export default function ProductionChart() {
 
         {!loading && !error && data.length === 0 && (
           <Typography variant="body2" color="text.secondary">
-            No data available for the selected period.
+            {t('dashboard.no_data_available')}
           </Typography>
         )}
       </CardContent>

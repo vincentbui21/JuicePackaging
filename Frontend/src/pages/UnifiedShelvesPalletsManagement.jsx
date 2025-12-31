@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Snackbar,
   IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button, List, ListItem, ListItemText, Tabs, Tab, Chip
@@ -11,6 +12,7 @@ import DrawerComponent from "../components/drawer";
 import printImage from '../services/send_to_printer'
 
 function UnifiedShelvesPalletsManagement() {
+  const { t } = useTranslation();
   const [tabValue, setTabValue] = useState(0);
 
   // Shelves Management states
@@ -70,7 +72,7 @@ function UnifiedShelvesPalletsManagement() {
       }
     } catch (err) {
       console.error("Failed to fetch shelf locations", err);
-      setSnackbarMsg("Failed to load locations");
+      setSnackbarMsg(t('unified_management.failed_load_locations'));
     }
   }, [selectedLocation]);
 
@@ -80,7 +82,7 @@ function UnifiedShelvesPalletsManagement() {
       setShelves(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Failed to fetch shelves", err);
-      setSnackbarMsg("Failed to load shelves");
+      setSnackbarMsg(t('unified_management.failed_load_shelves'));
     }
   }, [selectedLocation]);
 
@@ -94,7 +96,7 @@ function UnifiedShelvesPalletsManagement() {
       if (list.length && !selectedCity) setSelectedCity(list[0]);
     } catch (err) {
       console.error("Failed to fetch cities", err);
-      setSnackbarMsg("Failed to load cities");
+      setSnackbarMsg(t('unified_management.failed_load_cities'));
     }
   }, [selectedCity]);
 
@@ -103,10 +105,10 @@ function UnifiedShelvesPalletsManagement() {
       const res = await api.get(`/pallets?location=${encodeURIComponent(selectedCity)}`);
       const arr = Array.isArray(res.data) ? res.data : [];
       setPallets(arr);
-      if (!arr.length) setSnackbarMsg("No pallets found in this city");
+      if (!arr.length) setSnackbarMsg(t('unified_management.no_pallets_found'));
     } catch (err) {
       console.error("Failed to fetch pallets", err);
-      setSnackbarMsg("Failed to load pallets");
+      setSnackbarMsg(t('unified_management.failed_load_pallets'));
     }
   }, [selectedCity]);
 
@@ -158,11 +160,11 @@ function UnifiedShelvesPalletsManagement() {
   const handleDeleteShelf = async (shelf_id) => {
     try {
       await api.delete(`/shelves/${shelf_id}`);
-      setSnackbarMsg("Shelf deleted");
+      setSnackbarMsg(t('unified_management.shelf_deleted'));
       fetchShelves();
     } catch (err) {
       console.error("Failed to delete shelf", err);
-      setSnackbarMsg("Failed to delete shelf");
+      setSnackbarMsg(t('unified_management.failed_delete_shelf'));
     }
   };
 
@@ -195,7 +197,7 @@ function UnifiedShelvesPalletsManagement() {
       setPalletContent(null);
       setBoxesOnShelf([]);
       setContentDialogOpen(true);
-      setSnackbarMsg("No pallet or boxes found for this shelf");
+      setSnackbarMsg(t('unified_management.no_pallet_boxes'));
     }
   };
 
@@ -203,27 +205,27 @@ function UnifiedShelvesPalletsManagement() {
   const handleCreatePallet = async () => {
     try {
       await api.post("/pallets", { location: selectedCity });
-      setSnackbarMsg("Pallet created");
+      setSnackbarMsg(t('unified_management.pallet_created'));
       fetchPallets();
     } catch (err) {
       console.error("Failed to create pallet", err);
-      setSnackbarMsg("Creation failed");
+      setSnackbarMsg(t('unified_management.creation_failed'));
     }
   };
 
   const handleAddCity = async () => {
     const name = newCity.trim();
-    if (!name) return setSnackbarMsg("City name is required");
-    if (cities.includes(name)) return setSnackbarMsg("City already exists");
+    if (!name) return setSnackbarMsg(t('unified_management.city_name_required'));
+    if (cities.includes(name)) return setSnackbarMsg(t('unified_management.city_exists'));
     try {
       await api.post("/cities", { name });
       setCities((prev) => [...prev, name].sort());
       setNewCity("");
       setSelectedCity(name);
-      setSnackbarMsg("City added");
+      setSnackbarMsg(t('unified_management.city_added'));
     } catch (err) {
       console.error("Failed to add city", err);
-      setSnackbarMsg("Failed to add city");
+      setSnackbarMsg(t('unified_management.failed_add_city'));
     }
   };
 
@@ -241,11 +243,11 @@ function UnifiedShelvesPalletsManagement() {
   const handleDeletePallet = async (pallet_id) => {
     try {
       await api.delete(`/pallets/${pallet_id}`);
-      setSnackbarMsg("Pallet deleted");
+      setSnackbarMsg(t('unified_management.pallet_deleted'));
       fetchPallets();
     } catch (err) {
       console.error("Failed to delete pallet", err);
-      setSnackbarMsg("Failed to delete pallet");
+      setSnackbarMsg(t('unified_management.failed_delete_pallet'));
     }
   };
 
@@ -261,7 +263,7 @@ function UnifiedShelvesPalletsManagement() {
       setBoxDialogOpen(true);
     } catch (err) {
       console.error("Failed to fetch boxes for pallet", err);
-      setSnackbarMsg("Failed to load boxes");
+      setSnackbarMsg(t('unified_management.failed_load_boxes'));
     }
   };
 
@@ -282,7 +284,7 @@ function UnifiedShelvesPalletsManagement() {
     const loc = locationToUse.trim();
     if (!loc) {
       setError(true);
-      setSnackbarMsg("Please choose a location first.");
+      setSnackbarMsg(t('unified_management.choose_location'));
       return;
     }
 
@@ -302,7 +304,7 @@ function UnifiedShelvesPalletsManagement() {
       setQrImage(img);
       setCreatedShelfName(returned_name || shelfNameFromInput || "");
       setQrDialogOpen(true);
-      setSnackbarMsg("Shelf created successfully!");
+      setSnackbarMsg(t('unified_management.shelf_created_successfully'));
       setShelfName("");
       setError(false);
       
@@ -310,7 +312,7 @@ function UnifiedShelvesPalletsManagement() {
       fetchShelves();
     } catch (err) {
       console.error("Failed to create shelf:", err);
-      setSnackbarMsg("Failed to create shelf. Check server.");
+      setSnackbarMsg(t('unified_management.failed_create_shelf'));
       setError(true);
     }
   };
@@ -323,7 +325,7 @@ function UnifiedShelvesPalletsManagement() {
   const handleCreateNewPallet = async () => {
     const trimmed = palletLocation.trim();
     if (!trimmed) {
-      setSnackbarMsg("Please enter a pallet location");
+      setSnackbarMsg(t('unified_management.enter_pallet_location'));
       setError(true);
       return;
     }
@@ -341,13 +343,13 @@ function UnifiedShelvesPalletsManagement() {
       const img = await generateSmallPngQRCode(`PALLET_${pallet_id}`);
       setQrImage(img);
       setQrDialogOpen(true);
-      setSnackbarMsg("Pallet created successfully");
+      setSnackbarMsg(t('unified_management.pallet_created_successfully'));
       setPalletLocation("");
       setPalletName("");
       setError(false);
     } catch (err) {
       console.error("Failed to create pallet", err);
-      setSnackbarMsg("Failed to create pallet. Check the server.");
+      setSnackbarMsg(t('unified_management.failed_create_pallet'));
     }
   };
 
@@ -357,14 +359,14 @@ function UnifiedShelvesPalletsManagement() {
 
   // Columns
   const shelvesColumns = [
-    { field: "shelf_id", headerName: "Shelf ID", flex: 1.5 },
-    { field: "shelf_name", headerName: "Shelf Name", flex: 1 },
-    { field: "location", headerName: "Location", flex: 1 },
+    { field: "shelf_id", headerName: t('unified_management.shelf_id'), flex: 1.5 },
+    { field: "shelf_name", headerName: t('unified_management.shelf_name'), flex: 1 },
+    { field: "location", headerName: t('unified_management.location'), flex: 1 },
     // { field: "status", headerName: "Status", flex: 1 },
-    { field: "holding", headerName: "Holding", flex: 0.8 },
+    { field: "holding", headerName: t('unified_management.holding'), flex: 0.8 },
     {
       field: "actions",
-      headerName: "Actions",
+      headerName: t('unified_management.actions'),
       flex: 1.4,
       sortable: false,
       renderCell: (params) => (
@@ -379,7 +381,7 @@ function UnifiedShelvesPalletsManagement() {
             color="error" 
             onClick={() => handleDeleteShelf(params.row.shelf_id)}
             disabled={!isAdmin}
-            title={!isAdmin ? 'Admin only' : 'Delete shelf'}
+            title={!isAdmin ? t('unified_management.admin_only') : t('unified_management.delete_shelf')}
           >
             <Delete />
           </IconButton>
@@ -389,14 +391,14 @@ function UnifiedShelvesPalletsManagement() {
   ];
 
   const palletsColumns = [
-    { field: "pallet_id", headerName: "Pallet ID", flex: 1.5 },
-    { field: "pallet_name", headerName: "Pallet Name", flex: 1.2 },
-    { field: "location", headerName: "City", flex: 1 },
-    { field: "status", headerName: "Status", flex: 1 },
-    { field: "holding", headerName: "Holding", flex: 0.8 },
+    { field: "pallet_id", headerName: t('unified_management.pallet_id'), flex: 1.5 },
+    { field: "pallet_name", headerName: t('unified_management.pallet_name'), flex: 1.2 },
+    { field: "location", headerName: t('unified_management.city'), flex: 1 },
+    { field: "status", headerName: t('unified_management.status'), flex: 1 },
+    { field: "holding", headerName: t('unified_management.holding'), flex: 0.8 },
     {
       field: "actions",
-      headerName: "Actions",
+      headerName: t('unified_management.actions'),
       flex: 1.2,
       sortable: false,
       renderCell: (params) => (
@@ -411,7 +413,7 @@ function UnifiedShelvesPalletsManagement() {
             color="error" 
             onClick={() => handleDeletePallet(params.row.pallet_id)}
             disabled={!isAdmin}
-            title={!isAdmin ? 'Admin only' : 'Delete pallet'}
+            title={!isAdmin ? t('unified_management.admin_only') : t('unified_management.delete_pallet')}
           >
             <Delete />
           </IconButton>
@@ -455,14 +457,14 @@ function UnifiedShelvesPalletsManagement() {
               fontWeight: "bold",
             }}
           >
-            Unified Shelves and Pallets Management
+            {t('unified_management.title')}
           </Typography>
 
           <Tabs value={tabValue} onChange={handleTabChange} centered>
-            <Tab label="Shelves Management" />
-            <Tab label="Pallets Management" />
-            <Tab label="Create Shelf" />
-            <Tab label="Create Pallet" />
+            <Tab label={t('unified_management.shelves_management')} />
+            <Tab label={t('unified_management.pallets_management')} />
+            <Tab label={t('unified_management.create_shelf')} />
+            <Tab label={t('unified_management.create_pallet')} />
           </Tabs>
 
           {tabValue === 0 && (
@@ -472,7 +474,7 @@ function UnifiedShelvesPalletsManagement() {
                   <Grid item xs={12} sm={6} md={4}>
                     <TextField
                       select
-                      label="Select Location"
+                      label={t('unified_management.select_location')}
                       fullWidth
                       value={selectedLocation}
                       onChange={(e) => setSelectedLocation(e.target.value)}
@@ -487,7 +489,7 @@ function UnifiedShelvesPalletsManagement() {
 
                   <Grid item xs={12} sm={4} md={3}>
                     <Button fullWidth variant="contained" onClick={() => handleCreateShelf(selectedLocation)}>
-                      Quick Create Shelf
+                      {t('unified_management.quick_create_shelf')}
                     </Button>
                   </Grid>
                 </Grid>
@@ -513,7 +515,7 @@ function UnifiedShelvesPalletsManagement() {
 
                   <Grid item xs={12} sm={6} md={5}>
                     <TextField
-                      label="Search pallets (id)"
+                      label={t('unified_management.search_pallets')}
                       fullWidth
                       value={searchText}
                       onChange={(e) => setSearchText(e.target.value)}
@@ -523,7 +525,7 @@ function UnifiedShelvesPalletsManagement() {
                   <Grid item xs={12} sm={4} md={3}>
                     <TextField
                       select
-                      label="Select City"
+                      label={t('unified_management.select_city')}
                       fullWidth
                       value={selectedCity}
                       onChange={(e) => setSelectedCity(e.target.value)}
@@ -539,7 +541,7 @@ function UnifiedShelvesPalletsManagement() {
                   <Grid item xs={6} sm={3} md={2}>
 
                     <Button fullWidth variant="contained" onClick={handleCreatePallet}>
-                      Quick Create Pallet
+                      {t('unified_management.quick_create_pallet')}
                     </Button>
                   </Grid>
 
@@ -580,13 +582,13 @@ function UnifiedShelvesPalletsManagement() {
             <Box sx={{ p: 2 }}>
               <TextField
                 select
-                label="Shelf Location"
+                label={t('unified_management.shelf_location')}
                 variant="filled"
                 fullWidth
                 value={shelfLocation}
                 onChange={(e) => setShelfLocation(e.target.value)}
                 error={error && !shelfLocation}
-                helperText={error && !shelfLocation ? "Location is required" : ""}
+                helperText={error && !shelfLocation ? t('unified_management.location_required') : ""}
                 sx={{ mb: 2 }}
               >
                 {cities.map((city) => (
@@ -597,7 +599,7 @@ function UnifiedShelvesPalletsManagement() {
               </TextField>
 
               <TextField
-                label="Shelf Name (optional)"
+                label={t('unified_management.shelf_name_optional')}
                 variant="filled"
                 fullWidth
                 value={shelfName}
@@ -606,7 +608,7 @@ function UnifiedShelvesPalletsManagement() {
               />
 
               <Button fullWidth variant="contained" onClick={() => handleCreateShelf(shelfLocation, shelfName)}>
-                Generate Shelf
+                {t('unified_management.generate_shelf')}
               </Button>
             </Box>
           )}
@@ -615,13 +617,13 @@ function UnifiedShelvesPalletsManagement() {
             <Box sx={{ p: 2 }}>
               <TextField
                 select
-                label="Pallet Location"
+                label={t('unified_management.pallet_location')}
                 variant="filled"
                 fullWidth
                 value={palletLocation}
                 onChange={(e) => setPalletLocation(e.target.value)}
                 error={error && !palletLocation}
-                helperText={error && !palletLocation ? "Location is required" : ""}
+                helperText={error && !palletLocation ? t('unified_management.location_required') : ""}
                 sx={{ mb: 2 }}
               >
                 {cities.map((city) => (
@@ -633,7 +635,7 @@ function UnifiedShelvesPalletsManagement() {
 
               {/* NEW: optional pallet name input */}
               <TextField
-                label="Pallet Name (optional)"
+                label={t('unified_management.pallet_name_optional')}
                 variant="filled"
                 fullWidth
                 value={palletName}
@@ -642,7 +644,7 @@ function UnifiedShelvesPalletsManagement() {
               />
 
               <Button fullWidth variant="contained" onClick={handleCreateNewPallet}>
-                Generate Pallet
+                {t('unified_management.generate_pallet')}
               </Button>
             </Box>
           )}
@@ -651,7 +653,7 @@ function UnifiedShelvesPalletsManagement() {
 
       {/* QR Dialog */}
       <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
-        <DialogTitle>QR Code</DialogTitle>
+        <DialogTitle>{t('unified_management.qr_code')}</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" alignItems="center" gap={1} mt={1}>
             <img src={qrImage} alt="QR Code" style={{ width: 200 }} />
@@ -668,7 +670,7 @@ function UnifiedShelvesPalletsManagement() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
+          <Button onClick={() => setQrDialogOpen(false)}>{t('unified_management.close')}</Button>
           <Button 
             onClick={() => {
               if (tabValue === 0) handlePrintShelf(qrShelfName, selectedLocation);
@@ -679,23 +681,23 @@ function UnifiedShelvesPalletsManagement() {
             variant="contained" 
             startIcon={<Print />}
           >
-            Print
+            {t('unified_management.print')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Pallet and Box Contents Dialog */}
       <Dialog open={contentDialogOpen} onClose={() => setContentDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Contents on Shelf</DialogTitle>
+        <DialogTitle>{t('unified_management.contents_on_shelf')}</DialogTitle>
         <DialogContent dividers>
           {(palletContent || shelfDetails) ? (
             <>
               {palletContent ? (
                 <>
-                  <Typography variant="subtitle1"><strong>Pallet ID:</strong> {palletContent.pallet_id}</Typography>
-                  <Typography variant="subtitle1"><strong>Status:</strong> {palletContent.status}</Typography>
+                  <Typography variant="subtitle1"><strong>{t('unified_management.pallet_id_label')}</strong> {palletContent.pallet_id}</Typography>
+                  <Typography variant="subtitle1"><strong>{t('unified_management.status_label')}</strong> {palletContent.status}</Typography>
                   <Typography variant="subtitle1">
-                    <strong>Holding:</strong> {palletContent.holding} / {palletContent.capacity}
+                    <strong>{t('unified_management.holding_label')}</strong> {palletContent.holding} / {palletContent.capacity}
                   </Typography>
                 </>
               ) : null}
@@ -703,20 +705,20 @@ function UnifiedShelvesPalletsManagement() {
               {shelfDetails ? (
                 <>
                   <Typography variant="subtitle1">
-                    <strong>Shelf:</strong> {shelfDetails.shelf_name || shelfDetails.shelf_id}
+                    <strong>{t('unified_management.shelf_label')}</strong> {shelfDetails.shelf_name || shelfDetails.shelf_id}
                   </Typography>
                   <Typography variant="subtitle1">
-                    <strong>Location:</strong> {shelfDetails.location}
+                    <strong>{t('unified_management.location_label')}</strong> {shelfDetails.location}
                   </Typography>
                   <Typography variant="subtitle1">
-                    <strong>Holding:</strong> {boxesOnShelf.length}
+                    <strong>{t('unified_management.holding_label')}</strong> {boxesOnShelf.length}
                   </Typography>
                 </>
               ) : null}
 
-              <Typography variant="h6" sx={{ mt: 2 }}>Boxes:</Typography>
+              <Typography variant="h6" sx={{ mt: 2 }}>{t('unified_management.boxes_label')}</Typography>
               {boxesOnShelf.length === 0 ? (
-                <Typography>No boxes on this shelf.</Typography>
+                <Typography>{t('unified_management.no_boxes_shelf')}</Typography>
               ) : (
                 <List dense>
                   {(() => {
@@ -741,15 +743,15 @@ function UnifiedShelvesPalletsManagement() {
 
                     return Object.values(grouped).map((group, i) => {
                       const customerLabel = group.customer_name
-                        ? `Customer: ${group.customer_name}`
-                        : (group.customer_id ? `Customer ID: ${group.customer_id}` : 'Unknown Customer');
+                        ? `${t('unified_management.customer_label')} ${group.customer_name}`
+                        : (group.customer_id ? `${t('unified_management.customer_id_label')} ${group.customer_id}` : t('unified_management.unknown_customer'));
 
-                      const orderLabel = group.order_id ? `Order: ${group.order_id}` : null;
-                      const boxCountLabel = `${group.boxIds.length} box${group.boxIds.length !== 1 ? 'es' : ''}`;
-                      const totalBoxesLabel = group.boxes_count ? `Total: ${group.boxes_count}` : null;
-                      const pouchesLabel = group.actual_pouches ? `Pouches: ${group.actual_pouches}` : null;
-                      const cityLabel = group.city ? `City: ${group.city}` : null;
-                      const created = group.created_at ? `Created: ${new Date(group.created_at).toLocaleDateString()}` : null;
+                      const orderLabel = group.order_id ? `${t('unified_management.order_label')} ${group.order_id}` : null;
+                      const boxCountLabel = `${group.boxIds.length} ${group.boxIds.length !== 1 ? t('unified_management.boxes') : t('unified_management.box')}`;
+                      const totalBoxesLabel = group.boxes_count ? `${t('unified_management.total_label')} ${group.boxes_count}` : null;
+                      const pouchesLabel = group.actual_pouches ? `${t('unified_management.pouches_label')} ${group.actual_pouches}` : null;
+                      const cityLabel = group.city ? `${t('unified_management.city_label')} ${group.city}` : null;
+                      const created = group.created_at ? `${t('unified_management.created_label')} ${new Date(group.created_at).toLocaleDateString()}` : null;
 
                       const secondary = [orderLabel, boxCountLabel, totalBoxesLabel, pouchesLabel, cityLabel, created].filter(Boolean).join("  •  ");
 
@@ -767,35 +769,35 @@ function UnifiedShelvesPalletsManagement() {
               )}
             </>
           ) : (
-            <Typography>No pallet or shelf details found.</Typography>
+            <Typography>{t('unified_management.no_details_found')}</Typography>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setContentDialogOpen(false)}>Close</Button>
+          <Button onClick={() => setContentDialogOpen(false)}>{t('unified_management.close')}</Button>
         </DialogActions>
       </Dialog>
 
       {/* Boxes on pallet */}
       <Dialog open={boxDialogOpen} onClose={() => setBoxDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Contents on Pallet</DialogTitle>
+        <DialogTitle>{t('unified_management.contents_on_pallet')}</DialogTitle>
         <DialogContent dividers>
           {palletDetails && (
             <>
               <Typography variant="subtitle1">
-                <strong>Pallet:</strong> {palletDetails.pallet_name || palletDetails.pallet_id}
+                <strong>{t('unified_management.pallet_label')}</strong> {palletDetails.pallet_name || palletDetails.pallet_id}
               </Typography>
               <Typography variant="subtitle1">
-                <strong>Location:</strong> {palletDetails.location || 'N/A'}
+                <strong>{t('unified_management.location_label')}</strong> {palletDetails.location || 'N/A'}
               </Typography>
               <Typography variant="subtitle1">
-                <strong>Holding:</strong> {boxList.length}
+                <strong>{t('unified_management.holding_label')}</strong> {boxList.length}
               </Typography>
             </>
           )}
 
-          <Typography variant="h6" sx={{ mt: 2 }}>Boxes:</Typography>
+          <Typography variant="h6" sx={{ mt: 2 }}>{t('unified_management.boxes_label')}</Typography>
           {boxList.length === 0 ? (
-            <Typography>No boxes on this pallet.</Typography>
+            <Typography>{t('unified_management.no_boxes_pallet')}</Typography>
           ) : (
             <>
               <List dense>
@@ -818,12 +820,12 @@ function UnifiedShelvesPalletsManagement() {
 
                   return Object.values(grouped).map((group, i) => {
                     const customerLabel = group.customer_name
-                      ? `Customer: ${group.customer_name}`
-                      : (group.customer_id ? `Customer ID: ${group.customer_id}` : 'Unknown Customer');
+                      ? `${t('unified_management.customer_label')} ${group.customer_name}`
+                      : (group.customer_id ? `${t('unified_management.customer_id_label')} ${group.customer_id}` : t('unified_management.unknown_customer'));
 
-                    const orderLabel = group.order_id ? `Order: ${group.order_id}` : null;
-                    const boxCountLabel = `${group.boxIds.length} box${group.boxIds.length !== 1 ? 'es' : ''}`;
-                    const created = group.created_at ? `Created: ${new Date(group.created_at).toLocaleDateString()}` : null;
+                    const orderLabel = group.order_id ? `${t('unified_management.order_label')} ${group.order_id}` : null;
+                    const boxCountLabel = `${group.boxIds.length} ${group.boxIds.length !== 1 ? t('unified_management.boxes') : t('unified_management.box')}`;
+                    const created = group.created_at ? `${t('unified_management.created_label')} ${new Date(group.created_at).toLocaleDateString()}` : null;
 
                     const secondary = [orderLabel, boxCountLabel, created].filter(Boolean).join("  •  ");
 
@@ -842,7 +844,7 @@ function UnifiedShelvesPalletsManagement() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBoxDialogOpen(false)}>Close</Button>
+          <Button onClick={() => setBoxDialogOpen(false)}>{t('unified_management.close')}</Button>
         </DialogActions>
       </Dialog>
 

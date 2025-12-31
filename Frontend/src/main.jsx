@@ -2,6 +2,7 @@ import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
 import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "./i18n"; // Initialize i18n
 
 /** Layout & components */
 import DashboardLayout from "./components/DashboardLayout.jsx";
