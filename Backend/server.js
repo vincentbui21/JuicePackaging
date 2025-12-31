@@ -636,7 +636,7 @@ app.delete('/force-delete-order', async (req, res) => {
 });
 
 
-app.put('/customer', async (req, res) => {
+app.put('/customer', async (req, res) => { //right here
   const { customer_id, customerInfoChange = {}, orderInfoChange = {} } = req.body;
 
   if (!customer_id) {
@@ -697,7 +697,7 @@ const markDoneHandler = async (req, res) => {
 app.post('/orders/:order_id/done', markDoneHandler);
 app.post('/orders/:order_id/mark-done', markDoneHandler); 
 
-  app.put('/orders/:order_id', async (req, res) => {
+  app.put('/orders/:order_id', async (req, res) => { //right here
     const { order_id } = req.params;
     const { weight_kg, estimated_pouches, estimated_boxes, actual_pouches, actual_boxes, status, name } = req.body;
   
@@ -1253,8 +1253,9 @@ app.get('/shelves/:shelf_id/contents', async (req, res) => {
           b.created_at
         FROM Boxes b
         LEFT JOIN Customers c ON c.customer_id = b.customer_id
-        LEFT JOIN Orders o ON o.customer_id = b.customer_id AND o.status IN ('Ready for pickup', 'processing complete')
-        WHERE b.shelf_id = ? OR b.pallet_id = ?
+        LEFT JOIN Orders o ON o.customer_id = b.customer_id
+        WHERE (b.shelf_id = ? OR b.pallet_id = ?)
+          AND o.status = 'Ready for pickup'
         ORDER BY b.created_at DESC`,
         [shelf_id, pallet.length > 0 ? pallet[0].pallet_id : null]
       );

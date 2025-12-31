@@ -212,7 +212,8 @@ async function getCustomers(customerName, page, limit) {
                 const dataQuery = `
                     SELECT 
                         c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
-                        o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id, o.boxes_count, o.pouches_count, o.actual_pouches
+                        o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id, o.boxes_count, o.pouches_count, o.actual_pouches,
+                        COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name)) AS shelf_name
                     FROM Customers AS c
                     LEFT JOIN (
                         SELECT 
@@ -220,7 +221,24 @@ async function getCustomers(customerName, page, limit) {
                             ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY created_at DESC, order_id DESC) as rn
                         FROM Orders
                     ) AS o ON c.customer_id = o.customer_id AND o.rn = 1
+                    
+                    /* Link boxes that belong to the order */
+                    LEFT JOIN Boxes b
+                      ON SUBSTRING(b.box_id, 5, 36) = o.order_id
+                    
+                    /* Normal flow: boxes -> pallet -> shelf */
+                    LEFT JOIN Pallets p
+                      ON p.pallet_id = b.pallet_id
+                    LEFT JOIN Shelves sp
+                      ON sp.shelf_id = p.shelf_id
+                    
+                    /* Kuopio flow: boxes -> shelf directly */
+                    LEFT JOIN Shelves sb
+                      ON sb.shelf_id = b.shelf_id
+                    
                     ${where}
+                    GROUP BY c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
+                             o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id, o.boxes_count, o.pouches_count, o.actual_pouches
                     ORDER BY c.created_at DESC
                     LIMIT ? OFFSET ?
                 `;        const [rows] = await connection.query(
@@ -878,28 +896,37 @@ async function updateOrderInfo(order_id, data = {}) {
         const customer_id = order.customer_id;
 
         const [existingBoxes] = await conn.query("SELECT box_id FROM Boxes WHERE box_id LIKE ?", [`BOX_${order_id}_%`]);
-        if (newBoxCount < existingBoxes.length) {
-            const [placedBoxes] = await conn.query("SELECT COUNT(*) as count FROM Boxes WHERE box_id LIKE ? AND (pallet_id IS NOT NULL OR shelf_id IS NOT NULL)", [`BOX_${order_id}_%`]);
-            if (placedBoxes[0].count > 0) {
-                 throw new Error('Cannot reduce box count because one or more boxes for this order are already placed on a pallet or shelf.');
-            }
-        }
+        const existingCount = existingBoxes.length;
         
-        await conn.query("DELETE FROM Boxes WHERE box_id LIKE ?", [`BOX_${order_id}_%`]);
-
-        if (newBoxCount > 0) {
-            const boxRows = [];
-            const now = new Date();
-            for (let i = 1; i <= newBoxCount; i++) {
-                boxRows.push([`BOX_${order_id}_${i}`, customer_id, now]);
+        // Only modify boxes if the count has actually changed
+        if (newBoxCount !== existingCount) {
+            if (newBoxCount < existingCount) {
+                // Reducing box count - check if any boxes are placed
+                const [placedBoxes] = await conn.query("SELECT COUNT(*) as count FROM Boxes WHERE box_id LIKE ? AND (pallet_id IS NOT NULL OR shelf_id IS NOT NULL)", [`BOX_${order_id}_%`]);
+                if (placedBoxes[0].count > 0) {
+                     throw new Error('Cannot reduce box count because one or more boxes for this order are already placed on a pallet or shelf.');
+                }
             }
-            if (boxRows.length > 0) {
-                await conn.query(
-                    `INSERT INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
-                    [boxRows]
-                );
+            
+            // Delete all existing boxes
+            await conn.query("DELETE FROM Boxes WHERE box_id LIKE ?", [`BOX_${order_id}_%`]);
+
+            // Create new boxes
+            if (newBoxCount > 0) {
+                const boxRows = [];
+                const now = new Date();
+                for (let i = 1; i <= newBoxCount; i++) {
+                    boxRows.push([`BOX_${order_id}_${i}`, customer_id, now]);
+                }
+                if (boxRows.length > 0) {
+                    await conn.query(
+                        `INSERT INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
+                        [boxRows]
+                    );
+                }
             }
         }
+        // If counts are equal, do nothing - preserve existing boxes with their shelf/pallet associations
     }
 
     await conn.commit();
@@ -969,7 +996,18 @@ async function updateOrderInfo(order_id, data = {}) {
       
       async function getPalletsByLocation(location) {
         const [rows] = await pool.query(
-          `SELECT * FROM Pallets WHERE location = ? ORDER BY created_at DESC`,
+          `SELECT 
+            p.*,
+            COUNT(DISTINCT CASE 
+              WHEN o.status = 'Ready for pickup' THEN b.box_id 
+              ELSE NULL 
+            END) AS holding
+          FROM Pallets p
+          LEFT JOIN Boxes b ON b.pallet_id = p.pallet_id
+          LEFT JOIN Orders o ON b.customer_id = o.customer_id
+          WHERE p.location = ?
+          GROUP BY p.pallet_id
+          ORDER BY p.created_at DESC`,
           [location]
         );
         return rows;
@@ -1260,11 +1298,15 @@ async function getShelvesByLocation(location) {
   const [rows] = await pool.query(
     `SELECT 
       s.*,
-      COUNT(DISTINCT b.box_id) AS holding
+      COUNT(DISTINCT CASE 
+        WHEN o.status = 'Ready for pickup' THEN b.box_id 
+        ELSE NULL 
+      END) AS holding
     FROM Shelves s
     LEFT JOIN Boxes b ON (b.shelf_id = s.shelf_id OR b.pallet_id IN (
       SELECT pallet_id FROM Pallets WHERE shelf_id = s.shelf_id
     ))
+    LEFT JOIN Orders o ON b.customer_id = o.customer_id
     WHERE s.location = ?
     GROUP BY s.shelf_id`,
     [location]

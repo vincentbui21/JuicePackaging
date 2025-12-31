@@ -273,12 +273,21 @@ function SmsStatusChip({ customerId, refreshKey }) {
         };
 
         const orderInfoChange = {
+            ...selectedRow, // Preserve all original fields
             weight: editedFields.weight_kg,
             crate: editedFields.crate_count,
             cost: editedFields.total_cost,
             Status: editedFields.status,
             Notes: editedFields.notes,
         };
+        
+        // Remove customer-specific fields from orderInfoChange to avoid conflicts
+        delete orderInfoChange.name;
+        delete orderInfoChange.email;
+        delete orderInfoChange.phone;
+        delete orderInfoChange.city;
+        delete orderInfoChange.customer_id;
+
 
         await api.put('/customer', {
             customer_id: selectedRow.customer_id,
