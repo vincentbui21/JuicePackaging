@@ -1,0 +1,65 @@
+{
+  "header": {
+    "title": "Oy Mehustaja Finland Ab",
+    "subtitle": "Asiakasportaali",
+    "phone": "Puh",
+    "email": "Sähköposti"
+  },
+  "tabs": {
+    "book_reservation": "Varaa aika",
+    "track_order": "Seuraa tilausta"
+  },
+  "booking": {
+    "title": "Varaa mehustusaika",
+    "subtitle": "Täytä alla oleva lomake varataksesi ajan mehun noutoa varten.",
+    "price_info": "Hinta: 8,00 € / 3 litran pakkaus (sis. alv 25,5%)",
+    "name": "Nimi",
+    "phone": "Puhelinnumero",
+    "email": "Sähköposti (Vapaaehtoinen)",
+    "apple_weight": "Arvioitu omenamäärä (kg)",
+    "date_time": "Haluttu päivä ja aika",
+    "message": "Viesti (Vapaaehtoinen)",
+    "submit": "Lähetä varaus",
+    "name_required": "Syötä nimesi",
+    "phone_required": "Syötä puhelinnumerosi",
+    "weight_required": "Syötä arvioitu omenamäärä",
+    "datetime_required": "Valitse päivä ja aika",
+    "timeslot_unavailable": "Tämä aika ei ole saatavilla. Valitse toinen aika.",
+    "timeslot_helper": "Aikavälit on oltava vähintään 30 minuuttia toisistaan"
+  },
+  "tracking": {
+    "title": "Seuraa tilaustasi",
+    "subtitle": "Syötä tilausnumerosi tai seurantakoodisi nähdäksesi tilauksesi tila.",
+    "input_label": "Tilausnumero tai seurantakoodi",
+    "search_button": "Hae tilaus",
+    "status_title": "Tilauksen tila",
+    "status_subtitle": "Syötä seurantanumerosi yllä nähdäksesi tilauksen tiedot",
+    "step_received": "Tilaus vastaanotettu",
+    "step_received_desc": "Tilauksesi on vahvistettu ja käsittelyssä",
+    "step_processing": "Mehustuksessa",
+    "step_processing_desc": "Omenat puristetaan ja pastöroidaan",
+    "step_ready": "Valmis noudettavaksi",
+    "step_ready_desc": "Saat tekstiviestin kun mehu on valmis",
+    "step_completed": "Noudettu",
+    "step_completed_desc": "Tilaus on valmistunut ja noudettu"
+  },
+  "info_cards": {
+    "location_title": "Mehustamo",
+    "contact_title": "Yhteystiedot",
+    "pricing_title": "Hinta",
+    "location_address": "Saamaislahdentie 14",
+    "location_city": "70460 Kuopio",
+    "location_hours": "MA 08-17, TI-PE 09-17",
+    "contact_phone": "Puh: 020 7699920",
+    "contact_email": "Email: info@mehustaja.fi",
+    "pricing_price": "8,00 € / 3 litran pakkaus",
+    "pricing_vat": "(sis. alv 25,5%)",
+    "pricing_shelf_life": "Mehu säilyy ~1 vuosi"
+  },
+  "footer": {
+    "company_name": "Oy Mehustaja Finland Ab",
+    "tagline": "Mehua omista omenoista",
+    "address": "Saamaislahdentie 14, 70460 Kuopio",
+    "copyright": "© 2026 Oy Mehustaja Finland Ab. Kaikki oikeudet pidätetään."
+  }
+}

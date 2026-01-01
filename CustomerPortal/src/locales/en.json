@@ -1,0 +1,65 @@
+{
+  "header": {
+    "title": "Oy Mehustaja Finland Ab",
+    "subtitle": "Customer Portal",
+    "phone": "Phone",
+    "email": "Email"
+  },
+  "tabs": {
+    "book_reservation": "Book Reservation",
+    "track_order": "Track Order"
+  },
+  "booking": {
+    "title": "Book a Reservation",
+    "subtitle": "Fill out the form below to book your juice pickup appointment.",
+    "price_info": "Price: €8.00 / 3-liter package (incl. VAT 25.5%)",
+    "name": "Full Name",
+    "phone": "Phone Number",
+    "email": "Email (Optional)",
+    "apple_weight": "Estimated Apple Weight (kg)",
+    "date_time": "Preferred Date & Time",
+    "message": "Message (Optional)",
+    "submit": "Submit Reservation",
+    "name_required": "Please enter your full name",
+    "phone_required": "Please enter your phone number",
+    "weight_required": "Please enter estimated apple weight",
+    "datetime_required": "Please select a date and time",
+    "timeslot_unavailable": "This time slot is unavailable. Please select a different time.",
+    "timeslot_helper": "Time slots must be at least 30 minutes apart"
+  },
+  "tracking": {
+    "title": "Track Your Order",
+    "subtitle": "Enter your order number or tracking code to view your order status.",
+    "input_label": "Tracking Number or Order ID",
+    "search_button": "Track Order",
+    "status_title": "Order Status",
+    "status_subtitle": "Enter your tracking number above to view order details",
+    "step_received": "Order Received",
+    "step_received_desc": "Your order has been confirmed and is being processed",
+    "step_processing": "Processing",
+    "step_processing_desc": "Apples are being pressed and pasteurized",
+    "step_ready": "Ready for Pickup",
+    "step_ready_desc": "You will receive a text message when the juice is ready",
+    "step_completed": "Completed",
+    "step_completed_desc": "Order has been completed and picked up"
+  },
+  "info_cards": {
+    "location_title": "Location",
+    "contact_title": "Contact",
+    "pricing_title": "Pricing",
+    "location_address": "Saamaislahdentie 14",
+    "location_city": "70460 Kuopio",
+    "location_hours": "MON 08-17, TUE-FRI 09-17",
+    "contact_phone": "Phone: 020 7699920",
+    "contact_email": "Email: info@mehustaja.fi",
+    "pricing_price": "€8.00 / 3-liter package",
+    "pricing_vat": "(incl. VAT 25.5%)",
+    "pricing_shelf_life": "Shelf life ~1 year"
+  },
+  "footer": {
+    "company_name": "Oy Mehustaja Finland Ab",
+    "tagline": "Premium juice from your own apples",
+    "address": "Saamaislahdentie 14, 70460 Kuopio",
+    "copyright": "© 2026 Oy Mehustaja Finland Ab. All rights reserved."
+  }
+}
