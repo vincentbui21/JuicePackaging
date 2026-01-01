@@ -9,13 +9,14 @@ import {
 } from '@mui/material';
 import {
   Edit, Delete, QrCode, Send, Print, Trolley, Inventory, Settings,
-  MoreVert as MoreVertIcon,
+  MoreVert as MoreVertIcon, Percent,
 } from '@mui/icons-material';
 import api from '../services/axios';
 import generateQRCode from '../services/qrcodGenerator';
 import printImage from '../services/send_to_printer';
 import DrawerComponent from '../components/drawer';
 import QRCodeDialog from '../components/qrcodeDialog';
+import ConfirmationDialog from '../components/ConfirmationDialog';
 
 const isReadyForPickup = (s) => String(s || '').toLowerCase() === 'ready for pickup';
 
@@ -99,6 +100,15 @@ function SmsStatusChip({ customerId, refreshKey }) {
 
     // Snackbar
     const [snackbarMsg, setSnackbarMsg] = useState('');
+
+    // Discount dialog states
+    const [discountDialogOpen, setDiscountDialogOpen] = useState(false);
+    const [availableDiscounts, setAvailableDiscounts] = useState([]);
+    const [discountSearch, setDiscountSearch] = useState('');
+    const [selectedDiscount, setSelectedDiscount] = useState(null);
+    const [originalPrice, setOriginalPrice] = useState(0);
+    const [discountMismatchDialogOpen, setDiscountMismatchDialogOpen] = useState(false);
+    const [pendingDiscount, setPendingDiscount] = useState(null);
 
     // Refresh key for SMS
     const [smsRefreshTick, setSmsRefreshTick] = useState(0);
@@ -237,6 +247,20 @@ function SmsStatusChip({ customerId, refreshKey }) {
         }
     }, [allowedCities]);
 
+    const fetchAvailableDiscounts = async () => {
+        try {
+            const res = await api.get('/api/discounts');
+            if (res.data.ok) {
+                // Only show active (unused) discounts
+                const active = res.data.discounts.filter(d => !d.is_used);
+                setAvailableDiscounts(active);
+            }
+        } catch (err) {
+            console.error('Failed to fetch discounts', err);
+            setAvailableDiscounts([]);
+        }
+    };
+
     useEffect(() => {
         fetchData();
 
@@ -308,6 +332,18 @@ function SmsStatusChip({ customerId, refreshKey }) {
             });
         }
 
+        // Mark discount as used only after successfully saving
+        if (editedFields.applied_discount_id) {
+            const userPermissions = JSON.parse(localStorage.getItem('userPermissions') || '{}');
+            await api.post(`/api/discounts/${editedFields.applied_discount_id}/use`, {
+                used_by_customer_id: selectedRow.customer_id,
+                used_by_name: editedFields.name,
+                used_by_phone: editedFields.phone,
+                applied_by_employee_id: userPermissions.id,
+                applied_by_employee_name: userPermissions.name || userPermissions.id
+            });
+        }
+
         setSnackbarMsg(t('unified_mgmt.updated_successfully'));
         fetchData();
         } catch (err) {
@@ -338,6 +374,73 @@ function SmsStatusChip({ customerId, refreshKey }) {
 
     const handleCancelDelete = () => {
         setDeleteConfirmDialog({ open: false, row: null });
+    };
+
+    // Discount Dialog Handlers
+    const handleOpenDiscountDialog = () => {
+        setOriginalPrice(parseFloat(editedFields.total_cost) || 0);
+        fetchAvailableDiscounts();
+        setDiscountDialogOpen(true);
+    };
+
+    const handleCloseDiscountDialog = () => {
+        setDiscountDialogOpen(false);
+        setDiscountSearch('');
+        setSelectedDiscount(null);
+    };
+
+    // Check if strings are similar (case-insensitive, ignores extra spaces)
+    const isSimilar = (str1, str2) => {
+        if (!str1 || !str2) return false;
+        const normalize = (s) => s.toLowerCase().trim().replace(/\s+/g, ' ');
+        return normalize(str1) === normalize(str2);
+    };
+
+    const handleApplyDiscount = () => {
+        if (!selectedDiscount) return;
+        
+        // Check if name or phone match
+        const nameMatches = isSimilar(editedFields.name, selectedDiscount.name);
+        const phoneMatches = isSimilar(editedFields.phone, selectedDiscount.phone);
+        
+        // If neither matches, show warning dialog
+        if (!nameMatches && !phoneMatches) {
+            setPendingDiscount(selectedDiscount);
+            setDiscountMismatchDialogOpen(true);
+            return;
+        }
+        
+        // Apply discount directly if match found
+        applyDiscountToOrder(selectedDiscount);
+    };
+
+    const applyDiscountToOrder = (discount) => {
+        const discountAmount = (originalPrice * discount.discount_percentage) / 100;
+        const newPrice = originalPrice - discountAmount;
+        
+        // Store the discount ID, percentage, and update the price (don't mark as used yet)
+        setEditedFields(prev => ({
+            ...prev,
+            total_cost: newPrice.toFixed(2),
+            applied_discount_id: discount.discount_id,
+            applied_discount_percentage: discount.discount_percentage
+        }));
+        
+        setSnackbarMsg(t('unified_mgmt.discount_applied'));
+        handleCloseDiscountDialog();
+        setDiscountMismatchDialogOpen(false);
+        setPendingDiscount(null);
+    };
+
+    const handleConfirmMismatchDiscount = () => {
+        if (pendingDiscount) {
+            applyDiscountToOrder(pendingDiscount);
+        }
+    };
+
+    const handleCancelMismatchDiscount = () => {
+        setDiscountMismatchDialogOpen(false);
+        setPendingDiscount(null);
     };
 
     // QR for crates
@@ -755,12 +858,30 @@ function SmsStatusChip({ customerId, refreshKey }) {
                 label={t('unified_mgmt.cost')}
                 type="number"
                 value={editedFields.total_cost}
-                onChange={(e) =>
-                    setEditedFields((p) => ({ ...p, total_cost: e.target.value }))
-                }
                 fullWidth
                 size={isMobile ? 'small' : 'medium'}
-                InputProps={{ readOnly: !canEditCustomers }}
+                InputProps={{ 
+                    readOnly: true,
+                    startAdornment: editedFields.applied_discount_percentage ? (
+                        <Chip
+                            icon={<Percent fontSize="small" />}
+                            label={`${editedFields.applied_discount_percentage}%`}
+                            size="small"
+                            color="success"
+                            sx={{ mr: 1 }}
+                        />
+                    ) : null,
+                    endAdornment: canEditCustomers && editedFields.status?.toLowerCase() !== 'picked up' ? (
+                        <Button 
+                            size="small" 
+                            onClick={handleOpenDiscountDialog}
+                            sx={{ ml: 1 }}
+                        >
+                            {t('unified_mgmt.apply_discount')}
+                        </Button>
+                    ) : null
+                }}
+                helperText={editedFields.status?.toLowerCase() === 'picked up' ? t('unified_mgmt.discount_not_available_picked_up') : ''}
                 />
                 <TextField
                 select
@@ -922,6 +1043,131 @@ function SmsStatusChip({ customerId, refreshKey }) {
             </Button>
             </DialogActions>
         </Dialog>
+
+        {/* Discount Application Dialog */}
+        <Dialog 
+            open={discountDialogOpen} 
+            onClose={handleCloseDiscountDialog}
+            maxWidth="md"
+            fullWidth
+        >
+            <DialogTitle>{t('unified_mgmt.select_discount')}</DialogTitle>
+            <DialogContent>
+                <Box sx={{ pt: 2 }}>
+                    <TextField
+                        label={t('unified_mgmt.search_discounts')}
+                        placeholder={t('unified_mgmt.search_by_code_or_name')}
+                        value={discountSearch}
+                        onChange={(e) => setDiscountSearch(e.target.value)}
+                        fullWidth
+                        size="small"
+                        sx={{ mb: 2 }}
+                    />
+                    
+                    <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
+                        {availableDiscounts
+                            .filter(d => {
+                                const search = discountSearch.toLowerCase();
+                                return d.discount_code?.toLowerCase().includes(search) ||
+                                       d.name?.toLowerCase().includes(search) ||
+                                       d.phone?.toLowerCase().includes(search);
+                            })
+                            .map((discount) => (
+                                <Card 
+                                    key={discount.discount_id}
+                                    sx={{ 
+                                        mb: 1, 
+                                        cursor: 'pointer',
+                                        border: selectedDiscount?.discount_id === discount.discount_id ? 2 : 1,
+                                        borderColor: selectedDiscount?.discount_id === discount.discount_id ? 'primary.main' : 'divider',
+                                        '&:hover': { bgcolor: 'action.hover' }
+                                    }}
+                                    onClick={() => setSelectedDiscount(discount)}
+                                >
+                                    <CardContent>
+                                        <Stack direction="row" spacing={2} alignItems="center">
+                                            <Chip 
+                                                label={discount.discount_code} 
+                                                color="primary" 
+                                                sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}
+                                            />
+                                            <Box sx={{ flexGrow: 1 }}>
+                                                <Typography variant="body1" fontWeight="bold">
+                                                    {discount.name}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {discount.phone} {discount.city && `• ${discount.city}`}
+                                                </Typography>
+                                                {discount.notes && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {discount.notes}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                            <Chip 
+                                                label={`${discount.discount_percentage}% OFF`}
+                                                color="success"
+                                                size="small"
+                                            />
+                                        </Stack>
+                                    </CardContent>
+                                </Card>
+                            ))
+                        }
+                        {availableDiscounts.length === 0 && (
+                            <Typography variant="body2" color="text.secondary" textAlign="center" py={4}>
+                                {t('unified_mgmt.no_discounts_available')}
+                            </Typography>
+                        )}
+                    </Box>
+
+                    {selectedDiscount && (
+                        <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                            <Typography variant="subtitle2" gutterBottom>
+                                {t('unified_mgmt.discount_preview')}
+                            </Typography>
+                            <Stack direction="row" justifyContent="space-between" spacing={2}>
+                                <Typography variant="body2">
+                                    {t('unified_mgmt.original_price')}: <strong>€{originalPrice.toFixed(2)}</strong>
+                                </Typography>
+                                <Typography variant="body2">
+                                    {t('unified_mgmt.discount')}: <strong>-{selectedDiscount.discount_percentage}%</strong>
+                                </Typography>
+                                <Typography variant="body2" color="success.main">
+                                    {t('unified_mgmt.new_price')}: <strong>€{(originalPrice * (1 - selectedDiscount.discount_percentage / 100)).toFixed(2)}</strong>
+                                </Typography>
+                            </Stack>
+                        </Box>
+                    )}
+                </Box>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleCloseDiscountDialog}>{t('unified_mgmt.cancel')}</Button>
+                <Button 
+                    onClick={handleApplyDiscount} 
+                    variant="contained"
+                    disabled={!selectedDiscount}
+                >
+                    {t('unified_mgmt.apply')}
+                </Button>
+            </DialogActions>
+        </Dialog>
+
+        {/* Discount Mismatch Warning Dialog */}
+        <ConfirmationDialog
+            open={discountMismatchDialogOpen}
+            onClose={handleCancelMismatchDiscount}
+            onConfirm={handleConfirmMismatchDiscount}
+            title={t('unified_mgmt.discount_mismatch_title')}
+            message={pendingDiscount ? t('unified_mgmt.discount_mismatch_message', {
+                discountName: pendingDiscount.name,
+                discountPhone: pendingDiscount.phone,
+                customerName: editedFields.name,
+                customerPhone: editedFields.phone
+            }) : ''}
+            confirmText={t('unified_mgmt.apply_anyway')}
+            cancelText={t('unified_mgmt.cancel')}
+        />
 
         {/* Snackbar */}
         <Snackbar

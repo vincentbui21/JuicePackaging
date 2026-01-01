@@ -6,7 +6,7 @@ import {
 } from "@mui/material";
 import {
   Home, Users, Package, Droplets, Boxes, Archive, MapPin,
-  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut, BarChart3, Settings
+  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut, BarChart3, Settings, Percent
 } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import companyLogo from "../assets/company_logo.png";
@@ -42,6 +42,7 @@ export default function AppSidebar({
   const management = [
     { label: t('sidebar.shelves_pallets'), to: "/shelves-pallets-management", icon: <Grid3X3 size={18} /> },
     { label: t('sidebar.unified_management'), to: "/unified-management", icon: <UserCog size={18} /> },
+    { label: t('sidebar.discount_management'), to: "/discount-management", icon: <Percent size={18} /> },
     { label: t('sidebar.delete_bin'), to: "/delete-bin", icon: <Archive size={18} /> },
   ];
 

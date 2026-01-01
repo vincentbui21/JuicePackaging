@@ -192,7 +192,7 @@ function SettingPage() {
   const [accountDialog, setAccountDialog] = useState({ open: false, mode: 'create', account: null });
   const [newAccount, setNewAccount] = useState({
     id: '', password: '', full_name: '', email: '', role: 'employee',
-    can_edit_customers: false, can_force_delete: false, can_view_reports: false,
+    can_edit_customers: false, can_force_delete: false, can_view_reports: false, can_manage_discounts: false,
     allowed_cities: []
   });
   const [changePasswordDialog, setChangePasswordDialog] = useState({ open: false, accountId: '', accountName: '', newPassword: '' });
@@ -226,7 +226,7 @@ function SettingPage() {
       setAccountDialog({ open: false, mode: 'create', account: null });
       setNewAccount({
         id: '', password: '', full_name: '', email: '', role: 'employee',
-        can_edit_customers: false, can_force_delete: false, can_view_reports: false,
+        can_edit_customers: false, can_force_delete: false, can_view_reports: false, can_manage_discounts: false,
         allowed_cities: []
       });
       fetchAccounts();
@@ -286,7 +286,14 @@ function SettingPage() {
   };
 
   const openEditDialog = (account) => {
-    setAccountDialog({ open: true, mode: 'edit', account: { ...account } });
+    setAccountDialog({ 
+      open: true, 
+      mode: 'edit', 
+      account: { 
+        ...account,
+        can_manage_discounts: account.can_manage_discounts || 0
+      } 
+    });
   };
 
   const openCreateDialog = () => {
@@ -661,6 +668,7 @@ function SettingPage() {
                             <Typography variant="body2">✓ {t('settings.edit_customers')}: {acc.can_edit_customers ? t('settings.yes') : t('settings.no')}</Typography>
                             <Typography variant="body2">✓ {t('settings.force_delete')}: {acc.can_force_delete ? t('settings.yes') : t('settings.no')}</Typography>
                             <Typography variant="body2">✓ {t('settings.view_reports')}: {acc.can_view_reports ? t('settings.yes') : t('settings.no')}</Typography>
+                            <Typography variant="body2">✓ {t('settings.manage_discounts')}: {acc.can_manage_discounts ? t('settings.yes') : t('settings.no')}</Typography>
                           </Box>
                         </Grid>
                         <Grid item xs={12} sm={6}>
@@ -995,6 +1003,15 @@ function SettingPage() {
                     }
                     label={t('settings.perm_view_reports')}
                   />
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={newAccount.can_manage_discounts}
+                        onChange={(e) => setNewAccount({ ...newAccount, can_manage_discounts: e.target.checked })}
+                      />
+                    }
+                    label={t('settings.perm_manage_discounts')}
+                  />
                 </FormGroup>
                 <Divider />
                 <FormControl fullWidth>
@@ -1093,6 +1110,15 @@ function SettingPage() {
                         />
                       }
                       label={t('settings.perm_view_reports')}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={accountDialog.account.can_manage_discounts}
+                          onChange={(e) => setAccountDialog({ ...accountDialog, account: { ...accountDialog.account, can_manage_discounts: e.target.checked } })}
+                        />
+                      }
+                      label={t('settings.perm_manage_discounts')}
                     />
                   </FormGroup>
                   <Divider />

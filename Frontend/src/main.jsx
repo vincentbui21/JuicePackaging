@@ -29,6 +29,7 @@ import PalletToShelfHandlePage from "./pages/PalletToShelfHandlePage.jsx";
 import PickupPage from "./pages/PickupPage.jsx";
 import SettingPage from "./pages/settingPage.jsx";
 import AdminReports from "./pages/AdminReports.jsx";
+import DiscountManagement from "./pages/DiscountManagement.jsx";
 
 import DeleteBinPage from "./pages/DeleteBinPage.jsx";
 
@@ -73,6 +74,9 @@ const router = createBrowserRouter([
   // Management
   { path: "/customer-management", element: (
     <ProtectedRoute>{wrap(CustomerInfoManagement, { icon: UserCog, title: "Customer Management" })}</ProtectedRoute>
+  )},
+  { path: "/discount-management", element: (
+    <ProtectedRoute>{wrap(DiscountManagement, { icon: Cog, title: "Discount Management", subtitle: "Manage customer discounts for next season" })}</ProtectedRoute>
   )},
   { path: "/delete-bin", element: (
     <ProtectedRoute>{wrap(DeleteBinPage, { icon: UserCog, title: "Delete Bin" })}</ProtectedRoute>

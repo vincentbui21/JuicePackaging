@@ -22,6 +22,7 @@ CREATE TABLE `Accounts` (
     `can_edit_customers` tinyint(1) NOT NULL DEFAULT 1,
     `can_force_delete` tinyint(1) NOT NULL DEFAULT 0,
     `can_view_reports` tinyint(1) NOT NULL DEFAULT 0,
+    `can_manage_discounts` tinyint(1) NOT NULL DEFAULT 0,
     `allowed_cities` json DEFAULT NULL,
     `is_active` tinyint(1) NOT NULL DEFAULT 1,
     `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -30,8 +31,8 @@ CREATE TABLE `Accounts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert initial admin account
-INSERT INTO `Accounts` (`id`, `password`, `role`, `full_name`, `email`, `can_edit_customers`, `can_force_delete`, `can_view_reports`, `allowed_cities`, `is_active`)
-VALUES ('admin', 'newMehustaja@2025', 'admin', 'System Administrator', NULL, 1, 1, 1, '[]', 1);
+INSERT INTO `Accounts` (`id`, `password`, `role`, `full_name`, `email`, `can_edit_customers`, `can_force_delete`, `can_view_reports`, `can_manage_discounts`, `allowed_cities`, `is_active`)
+VALUES ('admin', 'newMehustaja@2025', 'admin', 'System Administrator', NULL, 1, 1, 1, 1, '[]', 1);
 
 -- Customers table
 DROP TABLE IF EXISTS `Customers`;
@@ -234,4 +235,35 @@ CREATE TABLE IF NOT EXISTS `CostCenters` (
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`center_id`),
   UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Discounts table
+DROP TABLE IF EXISTS `Discounts`;
+CREATE TABLE `Discounts` (
+  `discount_id` varchar(36) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `phone` varchar(50) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `city` varchar(255) DEFAULT NULL,
+  `discount_code` varchar(50) NOT NULL,
+  `discount_percentage` decimal(5,2) NOT NULL,
+  `notes` text DEFAULT NULL,
+  `is_used` tinyint(1) NOT NULL DEFAULT 0,
+  `used_at` datetime DEFAULT NULL,
+  `used_by_customer_id` varchar(36) DEFAULT NULL,
+  `used_by_name` varchar(255) DEFAULT NULL,
+  `used_by_phone` varchar(50) DEFAULT NULL,
+  `applied_by_employee_id` varchar(50) DEFAULT NULL,
+  `applied_by_employee_name` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`discount_id`),
+  UNIQUE KEY `discount_code` (`discount_code`),
+  KEY `idx_discounts_code` (`discount_code`),
+  KEY `idx_discounts_phone` (`phone`),
+  KEY `idx_discounts_used_by` (`used_by_customer_id`),
+  KEY `idx_discounts_applied_by` (`applied_by_employee_id`),
+  CONSTRAINT `fk_discounts_created_by` FOREIGN KEY (`created_by`) REFERENCES `Accounts` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_discounts_used_by` FOREIGN KEY (`used_by_customer_id`) REFERENCES `Customers` (`customer_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_discounts_applied_by` FOREIGN KEY (`applied_by_employee_id`) REFERENCES `Accounts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

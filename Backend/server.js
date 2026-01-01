@@ -207,7 +207,7 @@ app.get('/accounts', async (req, res) => {
     try {
         const [accounts] = await pool.query(
             `SELECT id, role, full_name, email, can_edit_customers, can_force_delete, 
-             can_view_reports, allowed_cities, is_active, created_at, updated_at 
+             can_view_reports, can_manage_discounts, allowed_cities, is_active, created_at, updated_at 
              FROM Accounts 
              ORDER BY role DESC, full_name ASC`
         );
@@ -228,7 +228,7 @@ app.get('/accounts', async (req, res) => {
 // Create new account (admin only)
 app.post('/accounts', async (req, res) => {
     try {
-        const { id, password, full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, allowed_cities } = req.body;
+        const { id, password, full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, can_manage_discounts, allowed_cities } = req.body;
         
         if (!id || !password) {
             return res.status(400).json({ error: 'ID and password are required' });
@@ -244,10 +244,11 @@ app.post('/accounts', async (req, res) => {
         
         await pool.query(
             `INSERT INTO Accounts 
-            (id, password, role, full_name, email, can_edit_customers, can_force_delete, can_view_reports, allowed_cities, is_active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            (id, password, role, full_name, email, can_edit_customers, can_force_delete, can_view_reports, can_manage_discounts, allowed_cities, is_active) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [id, password, role || 'employee', full_name || null, email || null, 
-             can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, allowedCitiesJson]
+             can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, 
+             can_manage_discounts ? 1 : 0, allowedCitiesJson]
         );
         
         res.status(201).json({ ok: true, message: 'Account created successfully' });
@@ -261,18 +262,18 @@ app.post('/accounts', async (req, res) => {
 app.put('/accounts/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, allowed_cities, is_active } = req.body;
+        const { full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, can_manage_discounts, allowed_cities, is_active } = req.body;
         
         const allowedCitiesJson = Array.isArray(allowed_cities) ? JSON.stringify(allowed_cities) : '[]';
         
         await pool.query(
             `UPDATE Accounts 
             SET full_name = ?, email = ?, role = ?, can_edit_customers = ?, 
-                can_force_delete = ?, can_view_reports = ?, allowed_cities = ?, is_active = ?
+                can_force_delete = ?, can_view_reports = ?, can_manage_discounts = ?, allowed_cities = ?, is_active = ?
             WHERE id = ?`,
             [full_name || null, email || null, role || 'employee', 
              can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, 
-             allowedCitiesJson, is_active ? 1 : 0, id]
+             can_manage_discounts ? 1 : 0, allowedCitiesJson, is_active ? 1 : 0, id]
         );
         
         res.json({ ok: true, message: 'Account updated successfully' });
@@ -326,7 +327,7 @@ app.get('/accounts/me/:id', async (req, res) => {
         const { id } = req.params;
         const [accounts] = await pool.query(
             `SELECT id, role, full_name, email, can_edit_customers, can_force_delete, 
-             can_view_reports, allowed_cities, is_active 
+             can_view_reports, can_manage_discounts, allowed_cities, is_active 
              FROM Accounts 
              WHERE id = ? LIMIT 1`,
             [id]
@@ -2331,6 +2332,222 @@ app.put("/sms-templates", async (req, res) => {
     res.status(500).json({ ok: false, error: "sms_templates_write_failed" });
   }
 });
+
+// ============== DISCOUNT MANAGEMENT ENDPOINTS ==============
+
+// GET all discounts
+app.get('/api/discounts', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT discount_id, name, phone, email, city, discount_code, 
+              discount_percentage, notes, is_used, used_at, created_at, created_by,
+              used_by_customer_id, used_by_name, used_by_phone,
+              applied_by_employee_id, applied_by_employee_name
+       FROM Discounts
+       ORDER BY created_at DESC`
+    );
+    res.json({ ok: true, discounts: rows });
+  } catch (err) {
+    console.error('GET /api/discounts failed:', err);
+    res.status(500).json({ ok: false, error: 'fetch_discounts_failed' });
+  }
+});
+
+// GET single discount by ID
+app.get('/api/discounts/:discountId', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [req.params.discountId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'discount_not_found' });
+    }
+    res.json({ ok: true, discount: rows[0] });
+  } catch (err) {
+    console.error('GET /api/discounts/:id failed:', err);
+    res.status(500).json({ ok: false, error: 'fetch_discount_failed' });
+  }
+});
+
+// POST create new discount
+app.post('/api/discounts', async (req, res) => {
+  try {
+    const { name, phone, email, city, discount_percentage, notes, created_by } = req.body;
+    
+    if (!name || !discount_percentage) {
+      return res.status(400).json({ ok: false, error: 'name_and_percentage_required' });
+    }
+
+    const discountId = uuid.generateUUID();
+    // Generate a 6-character unique code (alphanumeric)
+    const generateShortCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluding similar chars
+      let code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return code;
+    };
+    
+    // Keep trying until we get a unique code
+    let discountCode;
+    let attempts = 0;
+    while (attempts < 10) {
+      discountCode = generateShortCode();
+      const [existing] = await pool.query(
+        'SELECT discount_code FROM Discounts WHERE discount_code = ?',
+        [discountCode]
+      );
+      if (existing.length === 0) break;
+      attempts++;
+    }
+    if (attempts >= 10) {
+      return res.status(500).json({ ok: false, error: 'failed_generate_unique_code' });
+    }
+
+    await pool.query(
+      `INSERT INTO Discounts 
+       (discount_id, name, phone, email, city, discount_code, discount_percentage, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [discountId, name, phone || null, email || null, city || null, discountCode, discount_percentage, notes || null, created_by || null]
+    );
+
+    const [newDiscount] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [discountId]
+    );
+
+    res.json({ ok: true, discount: newDiscount[0] });
+  } catch (err) {
+    console.error('POST /api/discounts failed:', err);
+    res.status(500).json({ ok: false, error: 'create_discount_failed' });
+  }
+});
+
+// PUT update discount
+app.put('/api/discounts/:discountId', async (req, res) => {
+  try {
+    const { discountId } = req.params;
+    const { name, phone, email, city, discount_percentage, notes, is_used, clear_used_at } = req.body;
+
+    // Build dynamic query based on whether we're updating status
+    let query;
+    let params;
+
+    if (is_used !== undefined) {
+      // Status is being updated
+      if (is_used === 0 && clear_used_at) {
+        // Changing to active - clear used_at
+        query = `UPDATE Discounts 
+                 SET name = ?, phone = ?, email = ?, city = ?, 
+                     discount_percentage = ?, notes = ?, is_used = ?, used_at = NULL
+                 WHERE discount_id = ?`;
+        params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, is_used, discountId];
+      } else if (is_used === 1) {
+        // Changing to used - set used_at to NOW
+        query = `UPDATE Discounts 
+                 SET name = ?, phone = ?, email = ?, city = ?, 
+                     discount_percentage = ?, notes = ?, is_used = ?, used_at = NOW()
+                 WHERE discount_id = ?`;
+        params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, is_used, discountId];
+      } else {
+        // Normal update with status but no special handling
+        query = `UPDATE Discounts 
+                 SET name = ?, phone = ?, email = ?, city = ?, 
+                     discount_percentage = ?, notes = ?, is_used = ?
+                 WHERE discount_id = ?`;
+        params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, is_used, discountId];
+      }
+    } else {
+      // Normal update without status change
+      query = `UPDATE Discounts 
+               SET name = ?, phone = ?, email = ?, city = ?, 
+                   discount_percentage = ?, notes = ?
+               WHERE discount_id = ?`;
+      params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, discountId];
+    }
+
+    await pool.query(query, params);
+
+    const [updated] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [discountId]
+    );
+
+    res.json({ ok: true, discount: updated[0] });
+  } catch (err) {
+    console.error('PUT /api/discounts/:id failed:', err);
+    res.status(500).json({ ok: false, error: 'update_discount_failed' });
+  }
+});
+
+// DELETE discount
+app.delete('/api/discounts/:discountId', async (req, res) => {
+  try {
+    await pool.query(
+      `DELETE FROM Discounts WHERE discount_id = ?`,
+      [req.params.discountId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/discounts/:id failed:', err);
+    res.status(500).json({ ok: false, error: 'delete_discount_failed' });
+  }
+});
+
+// POST mark discount as used
+app.post('/api/discounts/:discountId/use', async (req, res) => {
+  try {
+    const { used_by_customer_id, used_by_name, used_by_phone, applied_by_employee_id, applied_by_employee_name } = req.body;
+    
+    await pool.query(
+      `UPDATE Discounts 
+       SET is_used = 1, used_at = NOW(),
+           used_by_customer_id = ?, used_by_name = ?, used_by_phone = ?,
+           applied_by_employee_id = ?, applied_by_employee_name = ?
+       WHERE discount_id = ?`,
+      [used_by_customer_id || null, used_by_name || null, used_by_phone || null, 
+       applied_by_employee_id || null, applied_by_employee_name || null, req.params.discountId]
+    );
+
+    const [updated] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [req.params.discountId]
+    );
+
+    res.json({ ok: true, discount: updated[0] });
+  } catch (err) {
+    console.error('POST /api/discounts/:id/use failed:', err);
+    res.status(500).json({ ok: false, error: 'mark_discount_used_failed' });
+  }
+});
+
+// GET search discount by code
+app.get('/api/discounts/search/by-code', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ ok: false, error: 'code_required' });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_code = ?`,
+      [code]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'discount_not_found' });
+    }
+
+    res.json({ ok: true, discount: rows[0] });
+  } catch (err) {
+    console.error('GET /api/discounts/search/by-code failed:', err);
+    res.status(500).json({ ok: false, error: 'search_discount_failed' });
+  }
+});
+
+// ============== END DISCOUNT MANAGEMENT ==============
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
