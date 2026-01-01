@@ -113,6 +113,12 @@ function SmsStatusChip({ customerId, refreshKey }) {
     // Refresh key for SMS
     const [smsRefreshTick, setSmsRefreshTick] = useState(0);
 
+    // Progress dialog states
+    const [progressDialogOpen, setProgressDialogOpen] = useState(false);
+    const [progressDialogRow, setProgressDialogRow] = useState(null);
+    const [statusHistory, setStatusHistory] = useState([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+
     // Column visibility - load from localStorage or use defaults
     const getInitialColumnVisibility = () => {
         try {
@@ -579,6 +585,42 @@ function SmsStatusChip({ customerId, refreshKey }) {
         handleMenuClose();
     };
 
+    // Handle row click to open progress dialog
+    const handleRowClick = (params, event) => {
+        // Don't open dialog if clicking on actions button or any button/interactive element
+        const target = event.target;
+        const isButton = target.closest('button') || target.closest('[role="button"]');
+        if (isButton) {
+            return;
+        }
+        setProgressDialogRow(params.row);
+        setProgressDialogOpen(true);
+        
+        // Fetch status history
+        fetchStatusHistory(params.row.customer_id);
+    };
+
+    const fetchStatusHistory = async (customerId) => {
+        try {
+            setLoadingHistory(true);
+            const { data } = await api.get(`/customers/${customerId}/status-history`);
+            setStatusHistory(data);
+        } catch (error) {
+            console.error('Failed to fetch status history:', error);
+            setStatusHistory([]);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    const formatDateTime = (dateString) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = date.toLocaleDateString('en-GB');
+        return `${time} ${dateStr}`;
+    };
+
     const columns = [
         {
         field: 'actions',
@@ -748,8 +790,14 @@ function SmsStatusChip({ customerId, refreshKey }) {
                             }}
                             loading={loading}
                             columnVisibilityModel={columnVisibility}
+                            onRowClick={handleRowClick}
                             onColumnVisibilityModelChange={setColumnVisibility}
-                            sx={{ minWidth: 0 }}
+                            sx={{
+                                minWidth: 0,
+                                '& .MuiDataGrid-row': {
+                                    cursor: 'pointer',
+                                },
+                            }}
                         />
         </Box>
 
@@ -1168,6 +1216,199 @@ function SmsStatusChip({ customerId, refreshKey }) {
             confirmText={t('unified_mgmt.apply_anyway')}
             cancelText={t('unified_mgmt.cancel')}
         />
+
+        {/* Progress Dialog */}
+        <Dialog
+            open={progressDialogOpen}
+            onClose={() => setProgressDialogOpen(false)}
+            maxWidth="md"
+            fullWidth
+            fullScreen={isMobile}
+        >
+            <DialogTitle>
+                {t('unified_mgmt.progress_title')}
+            </DialogTitle>
+            <DialogContent dividers>
+                {progressDialogRow && (
+                    <Stack spacing={3}>
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                {t('unified_mgmt.order_information')}
+                            </Typography>
+                            <Card variant="outlined">
+                                <CardContent>
+                                    <Stack spacing={2}>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.order_id')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {progressDialogRow.order_id}
+                                            </Typography>
+                                        </Box>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.name')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {progressDialogRow.name}
+                                            </Typography>
+                                        </Box>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.status')}
+                                            </Typography>
+                                            <Chip 
+                                                label={progressDialogRow.status} 
+                                                color={isReadyForPickup(progressDialogRow.status) ? 'success' : 'default'}
+                                                size="small"
+                                            />
+                                        </Box>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.weight_kg')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {progressDialogRow.weight_kg} kg
+                                            </Typography>
+                                        </Box>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.crates')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {progressDialogRow.crate_count}
+                                            </Typography>
+                                        </Box>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Box>
+
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                {t('unified_mgmt.processing_progress')}
+                            </Typography>
+                            <Card variant="outlined">
+                                <CardContent>
+                                    <Stack spacing={2}>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.pouches')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {progressDialogRow.estimated_pouches || 0}
+                                            </Typography>
+                                        </Box>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.boxes')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {progressDialogRow.estimated_boxes || 0}
+                                            </Typography>
+                                        </Box>
+                                        <Box display="flex" justifyContent="space-between">
+                                            <Typography variant="body2" color="text.secondary">
+                                                {t('unified_mgmt.cost')}
+                                            </Typography>
+                                            <Typography variant="body2" fontWeight="bold" color="primary">
+                                                €{progressDialogRow.total_cost}
+                                            </Typography>
+                                        </Box>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Box>
+
+                        <Box>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                {t('unified_mgmt.status_timeline')}
+                            </Typography>
+                            <Card variant="outlined">
+                                <CardContent>
+                                    {loadingHistory ? (
+                                        <Box display="flex" justifyContent="center" p={2}>
+                                            <CircularProgress size={24} />
+                                        </Box>
+                                    ) : statusHistory.length > 0 ? (
+                                        <Stack spacing={2}>
+                                            {statusHistory.map((item, index) => (
+                                                <Box 
+                                                    key={item.id} 
+                                                    display="flex" 
+                                                    alignItems="center"
+                                                    sx={{
+                                                        position: 'relative',
+                                                        pl: 3,
+                                                        '&::before': index < statusHistory.length - 1 ? {
+                                                            content: '""',
+                                                            position: 'absolute',
+                                                            left: '7px',
+                                                            top: '24px',
+                                                            bottom: '-16px',
+                                                            width: '2px',
+                                                            bgcolor: 'divider',
+                                                        } : {},
+                                                    }}
+                                                >
+                                                    <Box
+                                                        sx={{
+                                                            position: 'absolute',
+                                                            left: 0,
+                                                            width: 16,
+                                                            height: 16,
+                                                            borderRadius: '50%',
+                                                            bgcolor: isReadyForPickup(item.status) ? 'success.main' : 
+                                                                     item.status === 'Picked up' ? 'primary.main' : 
+                                                                     'action.active',
+                                                            border: '3px solid',
+                                                            borderColor: 'background.paper',
+                                                        }}
+                                                    />
+                                                    <Box flex={1}>
+                                                        <Typography variant="body2" fontWeight="bold">
+                                                            {item.status}
+                                                        </Typography>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            {formatDateTime(item.changed_at)}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            ))}
+                                        </Stack>
+                                    ) : (
+                                        <Typography variant="body2" color="text.secondary" textAlign="center">
+                                            {t('unified_mgmt.no_status_history')}
+                                        </Typography>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Box>
+
+                        {progressDialogRow.notes && (
+                            <Box>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                    {t('unified_mgmt.notes')}
+                                </Typography>
+                                <Card variant="outlined">
+                                    <CardContent>
+                                        <Typography variant="body2">
+                                            {progressDialogRow.notes}
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Box>
+                        )}
+                    </Stack>
+                )}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setProgressDialogOpen(false)}>
+                    {t('unified_mgmt.close')}
+                </Button>
+            </DialogActions>
+        </Dialog>
 
         {/* Snackbar */}
         <Snackbar

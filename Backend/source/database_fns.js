@@ -30,8 +30,8 @@ async function update_new_customer_data(customer_data, order_data) {
         `;
 
         const insertOrderQuery = `
-            INSERT INTO Orders (order_id, customer_id,status, weight_kg, crate_count, total_cost, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO Orders (order_id, customer_id, status, weight_kg, crate_count, total_cost, pouches_count, actual_pouches, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const insertCrateData = `
@@ -42,6 +42,10 @@ async function update_new_customer_data(customer_data, order_data) {
         const customerID = generateUUID()
         const orderID = generateUUID()
         let crateID = []
+        
+        // Calculate estimated pouches from weight
+        const weight = Number(parseFloat(order_data.total_apple_weight).toFixed(2));
+        const estimatedPouches = Math.floor((weight * 0.65) / 3);
 
         await connection.query(insertCustomerQuery, [
             customerID,
@@ -56,12 +60,20 @@ async function update_new_customer_data(customer_data, order_data) {
             orderID,
             customerID,   
             "Created", // Status
-            Number(parseFloat(order_data.total_apple_weight).toFixed(2)), //total_apple_weight
+            weight, //total_apple_weight
             parseInt(order_data.No_of_Crates),
-            logic.caculated_price(order_data.price), 
+            logic.caculated_price(order_data.price),
+            estimatedPouches, // pouches_count
+            estimatedPouches, // actual_pouches - same as estimated initially
             order_data.Notes,
             logic.formatDateToSQL(customer_data.entryDate)       
         ]);
+
+        // Record initial status in history
+        await connection.query(
+            'INSERT INTO order_status_history (order_id, customer_id, status, changed_at) VALUES (?, ?, ?, NOW())',
+            [orderID, customerID, "Created"]
+        );
 
         for(let i = 1; i<=order_data.No_of_Crates; i++){
 
@@ -152,6 +164,27 @@ async function update_crates_status(crateIds, newStatus) {
         const params = [newStatus, ...crateIds];
 
         await connection.query(updateQuery, params);
+        
+        // Track status change in history if status is 'In Progress'
+        if (newStatus === 'In Progress') {
+            // Get customer_id and order_id for each crate
+            const [crates] = await connection.query(
+                `SELECT DISTINCT c.customer_id, o.order_id 
+                 FROM Crates c 
+                 JOIN Orders o ON c.customer_id = o.customer_id 
+                 WHERE c.crate_id IN (${placeholders})`,
+                crateIds
+            );
+            
+            // Insert status history for each unique order
+            for (const crate of crates) {
+                await connection.query(
+                    'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+                    [crate.order_id, crate.customer_id, 'In Progress']
+                );
+            }
+        }
+        
         await connection.commit();
         connection.release();
 
@@ -168,6 +201,18 @@ async function update_order_status(customer_id, new_status) {
     const connection = await pool.getConnection();
 
     try {
+        await connection.beginTransaction();
+        
+        // Get the order_id for this customer
+        const [[order]] = await connection.query(
+            'SELECT order_id FROM Orders WHERE customer_id = ?',
+            [customer_id]
+        );
+        
+        if (!order) {
+            throw new Error('Order not found for customer');
+        }
+        
         const updateQuery = 
         `UPDATE Orders
         SET status = ?
@@ -175,6 +220,12 @@ async function update_order_status(customer_id, new_status) {
         ;`
 
         await connection.query(updateQuery, [new_status, customer_id]);
+        
+        // Track status change in history
+        await connection.query(
+            'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+            [order.order_id, customer_id, new_status]
+        );
 
         await connection.commit();
         connection.release();
@@ -435,6 +486,12 @@ async function updateCustomerData(customer_id, customerInfoChange, orderInfoChan
         const orderFields = [];
         const orderValues = [];
 
+        // Fetch latest order first, before we use it
+        const [[latestOrder]] = await connection.query(
+            'SELECT order_id FROM Orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 1',
+            [customer_id]
+        );
+
         if (orderInfoChange.Date) {
             orderFields.push('created_at = ?');
             orderValues.push(logic.formatDateToSQL(orderInfoChange.Date));
@@ -458,16 +515,19 @@ async function updateCustomerData(customer_id, customerInfoChange, orderInfoChan
         if (orderInfoChange.Status) {
             orderFields.push('status = ?');
             orderValues.push(orderInfoChange.Status);
+            
+            // Record status change in history table
+            if (latestOrder) {
+                await connection.query(
+                    'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+                    [latestOrder.order_id, customer_id, orderInfoChange.Status]
+                );
+            }
         }
         if (orderInfoChange.Notes !== undefined) {
             orderFields.push('notes = ?');
             orderValues.push(orderInfoChange.Notes);
         }
-
-        const [[latestOrder]] = await connection.query(
-            'SELECT order_id FROM Orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 1',
-            [customer_id]
-        );
 
         if (orderFields.length > 0) {
             if (!latestOrder) throw new Error("Customer has no orders to update.");
@@ -779,17 +839,44 @@ async function updatePalletCapacity(pallete_id, newCapacity) {
     }
 }
 async function markOrderAsReady(order_id) {
-  const [res] = await pool.query(
-    `
-    UPDATE Orders
-       SET status   = 'Ready for pickup',
-           ready_at = COALESCE(ready_at, NOW())
-     WHERE order_id = ?
-       AND (status IS NULL OR status <> 'Picked up')
-    `,
-    [order_id]
-  );
-  return res.affectedRows || 0;
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    
+    const [res] = await conn.query(
+      `
+      UPDATE Orders
+         SET status   = 'Ready for pickup',
+             ready_at = COALESCE(ready_at, NOW())
+       WHERE order_id = ?
+         AND (status IS NULL OR status <> 'Picked up')
+      `,
+      [order_id]
+    );
+    
+    // Track status change in history
+    if (res.affectedRows > 0) {
+      const [[order]] = await conn.query(
+        'SELECT customer_id FROM Orders WHERE order_id = ?',
+        [order_id]
+      );
+      
+      if (order) {
+        await conn.query(
+          'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+          [order_id, order.customer_id, 'Ready for pickup']
+        );
+      }
+    }
+    
+    await conn.commit();
+    return res.affectedRows || 0;
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 }
 
   async function markOrderAsDone(order_id, comment = "") {
@@ -837,7 +924,13 @@ async function markOrderAsReady(order_id) {
     // Status update
     await conn.query(
       `UPDATE Orders SET status = ? WHERE order_id = ?`,
-      ["processing complete", order_id]
+      ["Processing complete", order_id]
+    );
+    
+    // Track status change in history
+    await conn.query(
+      'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+      [order_id, o.customer_id, 'Processing complete']
     );
 
     await conn.commit();
@@ -1184,10 +1277,35 @@ async function updatePalletHolding(pallet_id, connOrPool = pool) {
       
       
       async function markOrderAsPickedUp(order_id) {
-        await pool.query(
-          `UPDATE Orders SET status = 'Picked up' WHERE order_id = ?`,
-          [order_id]
-        );
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          
+          await conn.query(
+            `UPDATE Orders SET status = 'Picked up' WHERE order_id = ?`,
+            [order_id]
+          );
+          
+          // Track status change in history
+          const [[order]] = await conn.query(
+            'SELECT customer_id FROM Orders WHERE order_id = ?',
+            [order_id]
+          );
+          
+          if (order) {
+            await conn.query(
+              'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+              [order_id, order.customer_id, 'Picked up']
+            );
+          }
+          
+          await conn.commit();
+        } catch (error) {
+          await conn.rollback();
+          throw error;
+        } finally {
+          conn.release();
+        }
       }
 
 
@@ -1728,6 +1846,22 @@ async function markOrdersOnPalletReady(palletId) {
       ids
     );
     updatedByOrderId = res.affectedRows || 0;
+    
+    // Track status change in history for each order
+    if (updatedByOrderId > 0) {
+      for (const order_id of ids) {
+        const [[order]] = await pool.query(
+          'SELECT customer_id FROM Orders WHERE order_id = ?',
+          [order_id]
+        );
+        if (order) {
+          await pool.query(
+            'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+            [order_id, order.customer_id, 'Ready for pickup']
+          );
+        }
+      }
+    }
   }
 
   // 2) Fallback: link via customer_id if none matched the BOX_ pattern
@@ -1963,6 +2097,22 @@ async function markOrdersFromBoxesReady(boxIds) {
       `UPDATE Orders SET status = 'Ready for pickup' WHERE order_id IN (${placeholders})`,
       orderIds
     );
+    
+    // Track status change in history for each order
+    if (res.affectedRows > 0) {
+      for (const order_id of orderIds) {
+        const [[order]] = await pool.query(
+          'SELECT customer_id FROM Orders WHERE order_id = ?',
+          [order_id]
+        );
+        if (order) {
+          await pool.query(
+            'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+            [order_id, order.customer_id, 'Ready for pickup']
+          );
+        }
+      }
+    }
 
     return { updated: res.affectedRows || 0, orderIds };
   } catch (e) {
@@ -3245,6 +3395,31 @@ async function deleteLiability(liabilityId) {
   await pool.query("DELETE FROM Liabilities WHERE liability_id = ?", [liabilityId]);
 }
 
+async function getOrderStatusHistory(customer_id) {
+    const connection = await pool.getConnection();
+    
+    try {
+        const query = `
+            SELECT 
+                osh.id,
+                osh.order_id,
+                osh.status,
+                osh.changed_at
+            FROM order_status_history osh
+            WHERE osh.customer_id = ?
+            ORDER BY osh.changed_at ASC
+        `;
+        
+        const [rows] = await connection.query(query, [customer_id]);
+        return rows;
+    } catch (error) {
+        console.error('Error fetching order status history:', error);
+        throw error;
+    } finally {
+        connection.release();
+    }
+}
+
 module.exports = {
     updateAdminPassword,
     addCities,
@@ -3350,6 +3525,7 @@ assignBoxesToPallet,
     createLiability,
     updateLiability,
     deleteLiability,
+    getOrderStatusHistory,
 }
 
 module.exports.pool = pool;

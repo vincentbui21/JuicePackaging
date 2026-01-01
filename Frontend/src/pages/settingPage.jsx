@@ -1,5 +1,5 @@
-import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment, TablePagination, Autocomplete } from "@mui/material";
-import { Add, Delete, Edit, Lock, Visibility, VisibilityOff } from "@mui/icons-material";
+import { Typography, Box, Paper, Stack, TextField, Button, Snackbar, Alert, Tabs, Tab, List, ListItem, ListItemText, IconButton, Grid, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, FormGroup, Select, MenuItem, InputLabel, FormControl, Chip, OutlinedInput, InputAdornment, TablePagination, Autocomplete, Switch } from "@mui/material";
+import { Add, Delete, Edit, Lock, Visibility, VisibilityOff, Warning, LockOpen } from "@mui/icons-material";
 import DrawerComponent from "../components/drawer";
 import { useState, useEffect } from "react";
 import api from '../services/axios';
@@ -38,6 +38,15 @@ function SettingPage() {
   const [newCity, setNewCity] = useState("");
   const [citiesLoading, setCitiesLoading] = useState(false);
   const [deleteErrorDialog, setDeleteErrorDialog] = useState({ open: false, cityName: "", customerCount: 0, boxCount: 0 });
+
+  /* ───────────────── Advanced Admin Features ───────────────── */
+  const [deleteAllDataDialog, setDeleteAllDataDialog] = useState(false);
+  const [accountsLocked, setAccountsLocked] = useState(false);
+  const [lockedCount, setLockedCount] = useState(0);
+  const [unlockOptionsDialog, setUnlockOptionsDialog] = useState(false);
+  const [employeeAccounts, setEmployeeAccounts] = useState([]);
+  const [selectedAccounts, setSelectedAccounts] = useState([]);
+  const [loadingAdvanced, setLoadingAdvanced] = useState(false);
 
   const fetchCities = async () => {
     setCitiesLoading(true);
@@ -328,6 +337,7 @@ function SettingPage() {
       fetchCities().then(() => loadSmsTemplates());
     }
     if (tabValue === 4) fetchActivities();
+    if (tabValue === 5) fetchLockStatus();
   }, [tabValue]);
 
   const handleConfirm = ({ id, password }) => {
@@ -363,6 +373,139 @@ function SettingPage() {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+  };
+
+  /* ───────────────── Advanced Admin Functions ───────────────── */
+  const fetchLockStatus = async () => {
+    try {
+      const res = await api.get('/admin/lock-status');
+      if (res.data.ok) {
+        setAccountsLocked(res.data.allLocked);
+        setLockedCount(res.data.lockedCount);
+      }
+    } catch (err) {
+      console.error('Failed to fetch lock status:', err);
+    }
+  };
+
+  const handleDeleteAllData = async () => {
+    setDeleteAllDataDialog(false);
+    setLoadingAdvanced(true);
+    try {
+      const res = await api.post('/admin/delete-all-customer-data');
+      if (res.data.ok) {
+        setSnackbarMsg(t('settings.delete_all_success'));
+        setOpenSnackbar(true);
+      }
+    } catch (err) {
+      console.error('Failed to delete all data:', err);
+      setSnackbarMsg(t('settings.delete_all_failed'));
+      setOpenSnackbar(true);
+    } finally {
+      setLoadingAdvanced(false);
+    }
+  };
+
+  const handleLockToggle = async (event) => {
+    const shouldLock = event.target.checked;
+    
+    if (shouldLock) {
+      // Lock all accounts
+      setLoadingAdvanced(true);
+      try {
+        const res = await api.post('/admin/lock-all-employees');
+        if (res.data.ok) {
+          setAccountsLocked(true);
+          setSnackbarMsg(t('settings.lock_all_success'));
+          setOpenSnackbar(true);
+          fetchLockStatus();
+        }
+      } catch (err) {
+        console.error('Failed to lock accounts:', err);
+        setSnackbarMsg(t('settings.lock_all_failed'));
+        setOpenSnackbar(true);
+      } finally {
+        setLoadingAdvanced(false);
+      }
+    } else {
+      // Show unlock options dialog
+      setUnlockOptionsDialog(true);
+    }
+  };
+
+  const handleUnlockAll = async () => {
+    setUnlockOptionsDialog(false);
+    setLoadingAdvanced(true);
+    try {
+      const res = await api.post('/admin/unlock-all-employees');
+      if (res.data.ok) {
+        setAccountsLocked(false);
+        setSnackbarMsg(t('settings.unlock_all_success'));
+        setOpenSnackbar(true);
+        fetchLockStatus();
+      }
+    } catch (err) {
+      console.error('Failed to unlock all accounts:', err);
+      setSnackbarMsg(t('settings.unlock_all_failed'));
+      setOpenSnackbar(true);
+    } finally {
+      setLoadingAdvanced(false);
+    }
+  };
+
+  const handleUnlockSome = async () => {
+    setUnlockOptionsDialog(false);
+    setLoadingAdvanced(true);
+    try {
+      const res = await api.get('/admin/employee-accounts');
+      if (res.data.ok) {
+        setEmployeeAccounts(res.data.accounts);
+        setSelectedAccounts([]);
+        // Open selection dialog (we'll add this next)
+        setLoadingAdvanced(false);
+      }
+    } catch (err) {
+      console.error('Failed to fetch employee accounts:', err);
+      setSnackbarMsg(t('settings.fetch_accounts_failed'));
+      setOpenSnackbar(true);
+      setLoadingAdvanced(false);
+    }
+  };
+
+  const handleUnlockSelected = async () => {
+    if (selectedAccounts.length === 0) {
+      setSnackbarMsg(t('settings.select_accounts_error'));
+      setOpenSnackbar(true);
+      return;
+    }
+    
+    setLoadingAdvanced(true);
+    try {
+      const res = await api.post('/admin/unlock-specific-employees', {
+        accountIds: selectedAccounts
+      });
+      if (res.data.ok) {
+        setEmployeeAccounts([]);
+        setSelectedAccounts([]);
+        setSnackbarMsg(t('settings.unlock_selected_success'));
+        setOpenSnackbar(true);
+        fetchLockStatus();
+      }
+    } catch (err) {
+      console.error('Failed to unlock selected accounts:', err);
+      setSnackbarMsg(t('settings.unlock_selected_failed'));
+      setOpenSnackbar(true);
+    } finally {
+      setLoadingAdvanced(false);
+    }
+  };
+
+  const toggleAccountSelection = (accountId) => {
+    setSelectedAccounts(prev => 
+      prev.includes(accountId) 
+        ? prev.filter(id => id !== accountId)
+        : [...prev, accountId]
+    );
   };
 
   return (
@@ -413,6 +556,7 @@ function SettingPage() {
             <Tab label={t('settings.tab_accounts')} />
             <Tab label={t('settings.tab_sms')} />
             <Tab label={t('settings.tab_activity')} />
+            <Tab label={t('settings.tab_advance')} />
           </Tabs>
 
           {/* Tab 0: Default Values */}
@@ -858,6 +1002,78 @@ function SettingPage() {
               )}
             </Box>
           )}
+
+          {/* Tab 5: Advanced Admin Settings */}
+          {tabValue === 5 && (
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2, color: 'error.main' }}>
+                {t('settings.advance_title')}
+              </Typography>
+
+              <Alert severity="warning" sx={{ mb: 3 }}>
+                {t('settings.advance_warning')}
+              </Alert>
+
+              <Stack spacing={3}>
+                {/* Delete All Customer Data */}
+                <Paper sx={{ p: 3, border: '2px solid', borderColor: 'error.main' }}>
+                  <Stack spacing={2}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Warning color="error" />
+                      <Typography variant="h6" color="error">
+                        {t('settings.delete_all_title')}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('settings.delete_all_description')}
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      color="error"
+                      startIcon={<Delete />}
+                      onClick={() => setDeleteAllDataDialog(true)}
+                      disabled={loadingAdvanced}
+                    >
+                      {t('settings.delete_all_button')}
+                    </Button>
+                  </Stack>
+                </Paper>
+
+                {/* Lock/Unlock All Employees */}
+                <Paper sx={{ p: 3, border: '2px solid', borderColor: accountsLocked ? 'warning.main' : 'primary.main' }}>
+                  <Stack spacing={2}>
+                    <Box display="flex" alignItems="center" justifyContent="space-between">
+                      <Box display="flex" alignItems="center" gap={1}>
+                        {accountsLocked ? <Lock color="warning" /> : <LockOpen color="primary" />}
+                        <Typography variant="h6">
+                          {t('settings.lock_accounts_title')}
+                        </Typography>
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={accountsLocked}
+                            onChange={handleLockToggle}
+                            disabled={loadingAdvanced}
+                            color="warning"
+                          />
+                        }
+                        label={accountsLocked ? t('settings.locked') : t('settings.unlocked')}
+                      />
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('settings.lock_accounts_description')}
+                    </Typography>
+                    {lockedCount > 0 && (
+                      <Alert severity="warning">
+                        {t('settings.locked_count', { count: lockedCount })}
+                      </Alert>
+                    )}
+                  </Stack>
+                </Paper>
+              </Stack>
+            </Box>
+          )}
         </Paper>
       </Box>
 
@@ -1199,6 +1415,131 @@ function SettingPage() {
           </Button>
           <Button variant="contained" onClick={handleChangePassword}>
             {t('settings.change_password_button')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete All Data Confirmation Dialog */}
+      <Dialog
+        open={deleteAllDataDialog}
+        onClose={() => setDeleteAllDataDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Warning />
+          {t('settings.delete_all_confirm_title')}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2}>
+            <Alert severity="error">
+              {t('settings.delete_all_confirm_warning')}
+            </Alert>
+            <Typography variant="body1">
+              {t('settings.delete_all_confirm_message')}
+            </Typography>
+            <Typography variant="body2" component="ul" sx={{ pl: 2 }}>
+              <li>{t('settings.table_customers')}</li>
+              <li>{t('settings.table_orders')}</li>
+              <li>{t('settings.table_crates')}</li>
+              <li>{t('settings.table_boxes')}</li>
+              <li>{t('settings.table_order_history')}</li>
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteAllDataDialog(false)}>
+            {t('settings.cancel')}
+          </Button>
+          <Button variant="contained" color="error" onClick={handleDeleteAllData}>
+            {t('settings.confirm_delete_all')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unlock Options Dialog */}
+      <Dialog
+        open={unlockOptionsDialog}
+        onClose={() => setUnlockOptionsDialog(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t('settings.unlock_options_title')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            {t('settings.unlock_options_message')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnlockOptionsDialog(false)}>
+            {t('settings.cancel')}
+          </Button>
+          <Button variant="outlined" onClick={handleUnlockSome}>
+            {t('settings.unlock_some')}
+          </Button>
+          <Button variant="contained" onClick={handleUnlockAll}>
+            {t('settings.unlock_all')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Select Accounts to Unlock Dialog */}
+      <Dialog
+        open={employeeAccounts.length > 0}
+        onClose={() => {
+          setEmployeeAccounts([]);
+          setSelectedAccounts([]);
+          setAccountsLocked(true); // Revert switch back
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{t('settings.select_accounts_title')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            {t('settings.select_accounts_message')}
+          </Typography>
+          <List sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+            {employeeAccounts.map((account, index) => (
+              <Box key={account.id}>
+                <ListItem
+                  button
+                  onClick={() => toggleAccountSelection(account.id)}
+                  disabled={account.is_active === 1}
+                >
+                  <Checkbox
+                    checked={selectedAccounts.includes(account.id)}
+                    disabled={account.is_active === 1}
+                  />
+                  <ListItemText
+                    primary={account.full_name || account.id}
+                    secondary={
+                      account.is_active === 1 
+                        ? t('settings.already_active') 
+                        : account.email || account.id
+                    }
+                  />
+                  {account.is_active === 0 && <Lock color="warning" fontSize="small" />}
+                </ListItem>
+                {index < employeeAccounts.length - 1 && <Divider />}
+              </Box>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setEmployeeAccounts([]);
+            setSelectedAccounts([]);
+            setAccountsLocked(true); // Revert switch back
+          }}>
+            {t('settings.cancel')}
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleUnlockSelected}
+            disabled={selectedAccounts.length === 0}
+          >
+            {t('settings.unlock_selected', { count: selectedAccounts.length })}
           </Button>
         </DialogActions>
       </Dialog>

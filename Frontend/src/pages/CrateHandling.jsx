@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import backgroundomena from "../assets/backgroundomena.jpg"
-import { Paper, Box, Stack, Typography, Button, Container } from '@mui/material';
+import { Paper, Box, Stack, Typography, Button, Container, Snackbar, Alert } from '@mui/material';
 import QRScanner from '../components/qrcamscanner';
 import CustomerInfoCard from '../components/customerinfoshowcard';
 import CrateInfoCard from '../components/CrateInfoCard';
@@ -26,6 +26,9 @@ function CrateHandling() {
     const [FetchedcrateInfo, setFetchedCrateInfo] = useState([])
     const [scannedCratesID, setScannedCratesID] = useState([])
     const [disabledSubmitButton, setDisableSubmitButton] = useState(true)
+    
+    // Snackbar state
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
     
     useEffect(() => {
         if (!scanResult) return;
@@ -91,17 +94,32 @@ function CrateHandling() {
         })
         .then(response => {
             console.log(response.data);
-        })
-        .then(()=>{
-            api.put('/crates', {
+            return api.put('/crates', {
                 crate_id : scannedCratesID,
                 status: "Processing"
-            })
+            });
         })
-        .finally(
-            Delete_all_data()
-        )
+        .then(() => {
+            setSnackbar({
+                open: true,
+                message: t('crate_management.submit_success'),
+                severity: 'success'
+            });
+            Delete_all_data();
+        })
+        .catch(error => {
+            console.error('Submit failed:', error);
+            setSnackbar({
+                open: true,
+                message: t('crate_management.submit_failed'),
+                severity: 'error'
+            });
+        });
     }
+
+    const handleCloseSnackbar = () => {
+        setSnackbar({ ...snackbar, open: false });
+    };
 
     return (
         <>
@@ -138,6 +156,21 @@ function CrateHandling() {
                         </Stack>
 
                         <Stack spacing={2} direction="row">
+            <Snackbar 
+                open={snackbar.open} 
+                autoHideDuration={3000} 
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert 
+                    onClose={handleCloseSnackbar} 
+                    severity={snackbar.severity} 
+                    sx={{ width: '100%' }}
+                    variant="filled"
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
                             {scannedCratesID.length > 0 && (
                                 <Button color="error" variant="contained" onClick={Delete_all_data}>
                                     {t('crate_management.cancel_button')}

@@ -2312,6 +2312,17 @@ app.post('/customers/:customerId/sms-status', async (req, res) => {
   }
 });
 
+// Get order status history for a customer
+app.get('/customers/:customerId/status-history', async (req, res) => {
+  try {
+    const history = await database.getOrderStatusHistory(req.params.customerId);
+    return res.json(history);
+  } catch (err) {
+    console.error('status-history failed:', err);
+    return res.status(500).json({ error: 'status_history_failed' });
+  }
+});
+
 app.get("/sms-templates", async (req, res) => {
   try {
     const current = SMS_TEMPLATES_CACHE || await loadSmsTemplates();
@@ -2548,6 +2559,106 @@ app.get('/api/discounts/search/by-code', async (req, res) => {
 });
 
 // ============== END DISCOUNT MANAGEMENT ==============
+
+// ============== ADVANCED ADMIN OPERATIONS ==============
+
+// Delete all customer data (EXTREMELY DANGEROUS)
+app.post('/admin/delete-all-customer-data', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // Delete in order to respect foreign key constraints
+    await connection.query('DELETE FROM order_status_history');
+    await connection.query('DELETE FROM Orders');
+    await connection.query('DELETE FROM Crates');
+    await connection.query('DELETE FROM Boxes');
+    await connection.query('DELETE FROM Customers');
+    
+    await connection.commit();
+    res.json({ ok: true, message: 'All customer data deleted successfully' });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error deleting all customer data:', err);
+    res.status(500).json({ error: 'Failed to delete customer data' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Lock all employee accounts
+app.post('/admin/lock-all-employees', async (req, res) => {
+  try {
+    await pool.query('UPDATE Accounts SET is_active = 0 WHERE role = ?', ['employee']);
+    res.json({ ok: true, message: 'All employee accounts locked' });
+  } catch (err) {
+    console.error('Error locking employee accounts:', err);
+    res.status(500).json({ error: 'Failed to lock employee accounts' });
+  }
+});
+
+// Unlock all employee accounts
+app.post('/admin/unlock-all-employees', async (req, res) => {
+  try {
+    await pool.query('UPDATE Accounts SET is_active = 1 WHERE role = ?', ['employee']);
+    res.json({ ok: true, message: 'All employee accounts unlocked' });
+  } catch (err) {
+    console.error('Error unlocking employee accounts:', err);
+    res.status(500).json({ error: 'Failed to unlock employee accounts' });
+  }
+});
+
+// Unlock specific employee accounts
+app.post('/admin/unlock-specific-employees', async (req, res) => {
+  try {
+    const { accountIds } = req.body;
+    if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
+      return res.status(400).json({ error: 'Account IDs array is required' });
+    }
+    
+    const placeholders = accountIds.map(() => '?').join(',');
+    await pool.query(
+      `UPDATE Accounts SET is_active = 1 WHERE id IN (${placeholders}) AND role = ?`,
+      [...accountIds, 'employee']
+    );
+    
+    res.json({ ok: true, message: 'Selected employee accounts unlocked' });
+  } catch (err) {
+    console.error('Error unlocking specific employee accounts:', err);
+    res.status(500).json({ error: 'Failed to unlock specific employee accounts' });
+  }
+});
+
+// Get all employee accounts (for unlock selection)
+app.get('/admin/employee-accounts', async (req, res) => {
+  try {
+    const [accounts] = await pool.query(
+      'SELECT id, full_name, email, is_active FROM Accounts WHERE role = ? ORDER BY full_name ASC',
+      ['employee']
+    );
+    res.json({ ok: true, accounts });
+  } catch (err) {
+    console.error('Error fetching employee accounts:', err);
+    res.status(500).json({ error: 'Failed to fetch employee accounts' });
+  }
+});
+
+// Get lock status (check if any employees are locked)
+app.get('/admin/lock-status', async (req, res) => {
+  try {
+    const [result] = await pool.query(
+      'SELECT COUNT(*) as locked_count FROM Accounts WHERE role = ? AND is_active = 0',
+      ['employee']
+    );
+    const allLocked = result[0].locked_count > 0;
+    res.json({ ok: true, allLocked, lockedCount: result[0].locked_count });
+  } catch (err) {
+    console.error('Error fetching lock status:', err);
+    res.status(500).json({ error: 'Failed to fetch lock status' });
+  }
+});
+
+// ============== END ADVANCED ADMIN OPERATIONS ==============
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
