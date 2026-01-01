@@ -33,8 +33,7 @@ const QRScanner = ({ onResult }) => {
             borderRadius: "15px",
             width: "min(300px, 80%)",
             height: "auto",
-            padding: "5px",
-            backgroundColor: "#ffffff"
+            padding: "5px"
         }}>
             <video ref={videoRef} style={{ width: "90%", maxHeight: "90%", borderRadius: "10px"}} />
         </Paper>

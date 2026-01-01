@@ -1,9 +1,11 @@
 import { Stack, Box, Typography, Chip } from "@mui/material";
 import { Apple, CheckCircle } from "lucide-react";
 import SystemStatusBadge from "../components/SystemStatusBadge";
+import { useTranslation } from "react-i18next";
 
 
 export default function HeroHeader() {
+  const { t } = useTranslation();
   return (
     <Box
       sx={{
@@ -33,10 +35,10 @@ export default function HeroHeader() {
           </Box>
           <Box>
             <Typography variant="h5" fontWeight={800}>
-              Processing Dashboard
+              {t('dashboard.title')}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Monitor your apple juice processing operations in real-time
+              {t('dashboard.subtitle')}
             </Typography>
           </Box>
         </Stack>

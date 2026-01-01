@@ -1,36 +1,19 @@
 // src/components/AppSidebar.jsx
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Drawer, Toolbar, List, ListItemButton, ListItemIcon, ListItemText,
   Box, Typography, Divider, Stack, IconButton, Avatar, Tooltip
 } from "@mui/material";
 import {
   Home, Users, Package, Droplets, Boxes, Archive, MapPin,
-  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut
+  UserCog, Grid3X3, Layers, Plus, ChevronLeft, ChevronRight, LogOut, BarChart3, Settings, Percent
 } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import companyLogo from "../assets/company_logo.png";
+import { useTranslation } from 'react-i18next';
 
 const EXPANDED_WIDTH = 260;
 const COLLAPSED_WIDTH = 100;
-
-const operations = [
-  { label: "Dashboard", to: "/dashboard", icon: <Home size={18} /> },
-  { label: "Customer Info Entry", to: "/customer-info-entry", icon: <Users size={18} /> },
-  { label: "Crate Management", to: "/crate-handling", icon: <Package size={18} /> },
-  { label: "Juice Processing", to: "/juice-processing", icon: <Droplets size={18} /> },
-  { label: "Load Boxes → Pallet", to: "/load-boxes-to-pallet", icon: <Boxes size={18} /> },
-  { label: "Load Pallet → Shelf", to: "/load-pallet-to-shelf", icon: <Archive size={18} /> },
-  { label: "Pickup Coordination", to: "/pickup", icon: <MapPin size={18} /> },
-];
-
-const management = [
-  // { label: "Customer Management", to: "/customer-management", icon: <UserCog size={18} /> },
-  { label: "Shelves & Pallets Management", to: "/shelves-pallets-management", icon: <Grid3X3 size={18} /> },
-  // { label: "Juice Processing Management", to: "/juice-processing-management", icon: <Droplets size={18} /> },
-  { label: "Unified Management", to: "/unified-management", icon: <UserCog size={18} /> },
-  { label: "Delete Bin", to: "/delete-bin", icon: <Archive size={18} /> },
-];
 
 export default function AppSidebar({
   mobileOpen,
@@ -38,14 +21,59 @@ export default function AppSidebar({
   collapsed = false,
   onToggleCollapsed,
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const isActive = useMemo(() => (p) => pathname === p, [pathname]);
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
+  const [canViewReports, setCanViewReports] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const operations = [
+    { label: t('sidebar.dashboard'), to: "/dashboard", icon: <Home size={18} /> },
+    { label: t('sidebar.customer_info_entry'), to: "/customer-info-entry", icon: <Users size={18} /> },
+    { label: t('sidebar.crate_management'), to: "/crate-handling", icon: <Package size={18} /> },
+    { label: t('sidebar.juice_processing'), to: "/juice-processing", icon: <Droplets size={18} /> },
+    { label: t('sidebar.load_boxes_pallet'), to: "/load-boxes-to-pallet", icon: <Boxes size={18} /> },
+    { label: t('sidebar.load_pallet_shelf'), to: "/load-pallet-to-shelf", icon: <Archive size={18} /> },
+    { label: t('sidebar.pickup_coordination'), to: "/pickup", icon: <MapPin size={18} /> },
+  ];
+
+  const management = [
+    { label: t('sidebar.shelves_pallets'), to: "/shelves-pallets-management", icon: <Grid3X3 size={18} /> },
+    { label: t('sidebar.unified_management'), to: "/unified-management", icon: <UserCog size={18} /> },
+    { label: t('sidebar.discount_management'), to: "/discount-management", icon: <Percent size={18} /> },
+    { label: t('sidebar.delete_bin'), to: "/delete-bin", icon: <Archive size={18} /> },
+  ];
+
+  const createNew = [
+    { label: t('sidebar.create_pallet'), to: "/create-pallet", icon: <Plus size={18} /> },
+    { label: t('sidebar.create_shelf'), to: "/create-shelve", icon: <Plus size={18} /> },
+  ];
+
+  const adminItems = [
+    { label: t('sidebar.admin_reports'), to: "/admin/reports", icon: <BarChart3 size={18} /> },
+    { label: t('sidebar.settings'), to: "/setting", icon: <Settings size={18} /> },
+  ];
+
+  useEffect(() => {
+    try {
+      const permissionsStr = localStorage.getItem("userPermissions");
+      if (permissionsStr) {
+        const permissions = JSON.parse(permissionsStr);
+        setCanViewReports(permissions.can_view_reports === 1 || permissions.role === 'admin');
+        setIsAdmin(permissions.role === 'admin');
+      }
+    } catch (err) {
+      console.error("Failed to parse user permissions:", err);
+    }
+  }, []);
 
   const handleLogout = () => {
     try {
       localStorage.removeItem("token");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userPermissions");
       localStorage.removeItem("role");
       sessionStorage.clear();
     } catch {}
@@ -142,7 +170,7 @@ export default function AppSidebar({
 
           {/* Only the collapse/expand arrow on the right */}
           <Box sx={{ ml: "auto" }}>
-            <IconButton aria-label="collapse sidebar" size="small" onClick={onToggleCollapsed}>
+            <IconButton aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')} size="small" onClick={onToggleCollapsed}>
               {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </IconButton>
           </Box>
@@ -152,8 +180,19 @@ export default function AppSidebar({
       <Divider />
 
       <Box sx={{ overflowY: "auto", overflowX: "hidden", pb: 1, flexGrow: 1 }}>
-        <Section title="Operations" items={operations} />
-        <Section title="Management" items={management} />
+        <Section title={t('sidebar.operations')} items={operations} />
+        <Section title={t('sidebar.management')} items={management} />
+        {/* <Section title="Create New" items={createNew} /> */}
+        {(canViewReports || isAdmin) && (
+          <Section 
+            title={t('sidebar.admin')} 
+            items={adminItems.filter(item => {
+              if (item.to === "/admin/reports") return canViewReports;
+              if (item.to === "/setting") return isAdmin;
+              return false;
+            })} 
+          />
+        )}
       </Box>
 
       <Divider />
@@ -174,7 +213,7 @@ export default function AppSidebar({
           </ListItemIcon>
           {!collapsed && (
             <ListItemText
-              primary="Logout"
+              primary={t('sidebar.logout')}
               primaryTypographyProps={{ fontSize: 14, fontWeight: 600, color: "error.main", noWrap: true }}
             />
           )}
@@ -198,7 +237,7 @@ export default function AppSidebar({
             boxSizing: "border-box",
             borderRight: "1px solid",
             borderColor: "divider",
-            backgroundColor: "#fafdf9",
+            backgroundColor: "background.paper",
             overflowX: "hidden",
           },
         }}
@@ -218,7 +257,7 @@ export default function AppSidebar({
             boxSizing: "border-box",
             borderRight: "1px solid",
             borderColor: "divider",
-            backgroundColor: "#fafdf9",
+            backgroundColor: "background.paper",
             transition: "width 200ms ease",
             overflowX: "hidden", // prevent horizontal scroll
           },

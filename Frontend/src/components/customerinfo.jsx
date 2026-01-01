@@ -71,7 +71,7 @@ function CustomerInfo({data, setdata}) {
                     </Grid>
 
                     <Grid item size={8} display="flex" alignItems="center" >
-                        <TextField name = {"address"} value={data.address} required variant='filled' label="Enter full address"
+                        <TextField name = {"address"} value={data.address} variant='filled' label="Enter full address"
                         onChange={handleCustomerInfoUpdate}
                         sx={
                             {

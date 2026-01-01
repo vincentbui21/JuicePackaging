@@ -32,7 +32,7 @@ app.set('io', io);
 app.use(cors({
   origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires'],
   credentials: true
 }));
 
@@ -200,6 +200,155 @@ function emitActivity(type, message, extra = {}) {
 // ---------- Routes ----------
 app.use("/auth", authRouter);
 
+// ========== Account Management Endpoints ==========
+
+// Get all accounts (admin only)
+app.get('/accounts', async (req, res) => {
+    try {
+        const [accounts] = await pool.query(
+            `SELECT id, role, full_name, email, can_edit_customers, can_force_delete, 
+             can_view_reports, can_manage_discounts, allowed_cities, is_active, created_at, updated_at 
+             FROM Accounts 
+             ORDER BY role DESC, full_name ASC`
+        );
+        
+        // Parse JSON allowed_cities for each account
+        const parsedAccounts = accounts.map(acc => ({
+            ...acc,
+            allowed_cities: acc.allowed_cities ? JSON.parse(acc.allowed_cities) : []
+        }));
+        
+        res.json({ ok: true, accounts: parsedAccounts });
+    } catch (err) {
+        console.error('Error fetching accounts:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Create new account (admin only)
+app.post('/accounts', async (req, res) => {
+    try {
+        const { id, password, full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, can_manage_discounts, allowed_cities } = req.body;
+        
+        if (!id || !password) {
+            return res.status(400).json({ error: 'ID and password are required' });
+        }
+        
+        // Check if account already exists
+        const [existing] = await pool.query('SELECT id FROM Accounts WHERE id = ?', [id]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'Account ID already exists' });
+        }
+        
+        const allowedCitiesJson = Array.isArray(allowed_cities) ? JSON.stringify(allowed_cities) : '[]';
+        
+        await pool.query(
+            `INSERT INTO Accounts 
+            (id, password, role, full_name, email, can_edit_customers, can_force_delete, can_view_reports, can_manage_discounts, allowed_cities, is_active) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [id, password, role || 'employee', full_name || null, email || null, 
+             can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, 
+             can_manage_discounts ? 1 : 0, allowedCitiesJson]
+        );
+        
+        res.status(201).json({ ok: true, message: 'Account created successfully' });
+    } catch (err) {
+        console.error('Error creating account:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update account (admin only)
+app.put('/accounts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { full_name, email, role, can_edit_customers, can_force_delete, can_view_reports, can_manage_discounts, allowed_cities, is_active } = req.body;
+        
+        const allowedCitiesJson = Array.isArray(allowed_cities) ? JSON.stringify(allowed_cities) : '[]';
+        
+        await pool.query(
+            `UPDATE Accounts 
+            SET full_name = ?, email = ?, role = ?, can_edit_customers = ?, 
+                can_force_delete = ?, can_view_reports = ?, can_manage_discounts = ?, allowed_cities = ?, is_active = ?
+            WHERE id = ?`,
+            [full_name || null, email || null, role || 'employee', 
+             can_edit_customers ? 1 : 0, can_force_delete ? 1 : 0, can_view_reports ? 1 : 0, 
+             can_manage_discounts ? 1 : 0, allowedCitiesJson, is_active ? 1 : 0, id]
+        );
+        
+        res.json({ ok: true, message: 'Account updated successfully' });
+    } catch (err) {
+        console.error('Error updating account:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Change password
+app.put('/accounts/:id/password', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { newPassword } = req.body;
+        
+        if (!newPassword) {
+            return res.status(400).json({ error: 'New password is required' });
+        }
+        
+        await pool.query('UPDATE Accounts SET password = ? WHERE id = ?', [newPassword, id]);
+        
+        res.json({ ok: true, message: 'Password updated successfully' });
+    } catch (err) {
+        console.error('Error updating password:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete account (admin only)
+app.delete('/accounts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Prevent deleting the main admin account
+        if (id === 'admin') {
+            return res.status(400).json({ error: 'Cannot delete the main admin account' });
+        }
+        
+        await pool.query('DELETE FROM Accounts WHERE id = ?', [id]);
+        
+        res.json({ ok: true, message: 'Account deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting account:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get current user's account info (permissions)
+app.get('/accounts/me/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [accounts] = await pool.query(
+            `SELECT id, role, full_name, email, can_edit_customers, can_force_delete, 
+             can_view_reports, can_manage_discounts, allowed_cities, is_active 
+             FROM Accounts 
+             WHERE id = ? LIMIT 1`,
+            [id]
+        );
+        
+        if (accounts.length === 0) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+        
+        const account = accounts[0];
+        account.allowed_cities = account.allowed_cities ? JSON.parse(account.allowed_cities) : [];
+        
+        res.json({ ok: true, account });
+    } catch (err) {
+        console.error('Error fetching account info:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ==================================================
+
 app.get('/ping', (req, res) => {
   res.json({ msg: 'pong' });
 });
@@ -213,6 +362,14 @@ app.get('/ping', (req, res) => {
 function buildPickupSMSText(locationRaw) {
   const l = String(locationRaw || "").trim().toLowerCase();
   const source = SMS_TEMPLATES_CACHE || DEFAULT_SMS_TEMPLATES;
+  
+  // Debug logging to diagnose template matching issues
+  if (l && !source[l]) {
+    console.log(`[SMS Template Warning] No template found for city: "${l}" (original: "${locationRaw}")`);
+    console.log(`[SMS Template] Available templates:`, Object.keys(source));
+    console.log(`[SMS Template] Using default template instead`);
+  }
+  
   return source[l] || source.default;
 }
 
@@ -350,18 +507,30 @@ app.put('/crates', async (req, res) => {
 
 
 app.get('/orders', async (req, res) => {
-  const { status } = req.query;
+  const { status, page, limit } = req.query;
 
   if (!status) {
     return res.status(400).json({ error: 'Missing status query param' });
   }
 
   try {
+    if (page != null || limit != null) {
+      const pageNum = Number(page) || 1;
+      const limitNum = Number(limit) || 20;
+      const data = await database.getOrdersByStatusPaged(status, pageNum, limitNum);
+      return res.status(200).json({
+        rows: data.rows || [],
+        total: Number(data.total || 0),
+        page: pageNum,
+        limit: limitNum,
+      });
+    }
+
     const orders = await database.getOrdersByStatus(status);
-    res.status(200).json(orders);
+    return res.status(200).json(orders);
   } catch (error) {
     console.error('Failed to fetch orders by status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -403,6 +572,16 @@ app.get('/deleted-customers', async (req, res) => {
     }
 });
 
+app.get('/deleted-orders', async (req, res) => {
+  try {
+    const result = await database.get_deleted_orders();
+    res.status(200).json(result || []);
+  } catch (error) {
+    console.error('Failed to get deleted orders:', error);
+    res.status(500).json({ message: 'Failed to get deleted orders.' });
+  }
+});
+
 app.post('/restore-customer', async (req, res) => {
     const { customer_id } = req.body;
     if (!customer_id) {
@@ -414,6 +593,20 @@ app.post('/restore-customer', async (req, res) => {
     } else {
         res.status(500).json({ message: 'Failed to restore customer.' });
     }
+});
+
+app.post('/restore-order', async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) {
+    return res.status(400).json({ message: 'Missing order_id in request body.' });
+  }
+  try {
+    await database.restore_order(order_id);
+    res.status(200).json({ message: 'Order restored successfully.' });
+  } catch (error) {
+    console.error('Error restoring order:', error);
+    res.status(500).json({ message: 'Failed to restore order.' });
+  }
 });
 
 app.delete('/force-delete-customer', async (req, res) => {
@@ -429,8 +622,22 @@ app.delete('/force-delete-customer', async (req, res) => {
     }
 });
 
+app.delete('/force-delete-order', async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) {
+    return res.status(400).json({ message: 'Missing order_id in request body.' });
+  }
+  try {
+    await database.force_delete_order(order_id);
+    res.status(200).json({ message: 'Order permanently deleted.' });
+  } catch (error) {
+    console.error('Error permanently deleting order:', error);
+    res.status(500).json({ message: 'Failed to permanently delete order.' });
+  }
+});
 
-app.put('/customer', async (req, res) => {
+
+app.put('/customer', async (req, res) => { //right here
   const { customer_id, customerInfoChange = {}, orderInfoChange = {} } = req.body;
 
   if (!customer_id) {
@@ -491,15 +698,19 @@ const markDoneHandler = async (req, res) => {
 app.post('/orders/:order_id/done', markDoneHandler);
 app.post('/orders/:order_id/mark-done', markDoneHandler); 
 
-  app.put('/orders/:order_id', async (req, res) => {
+  app.put('/orders/:order_id', async (req, res) => { //right here
     const { order_id } = req.params;
-    const { weight_kg, estimated_pouches, estimated_boxes } = req.body;
+    const { weight_kg, estimated_pouches, estimated_boxes, actual_pouches, actual_boxes, status, name } = req.body;
   
     try {
       await database.updateOrderInfo(order_id, {
+        name,
+        status,
         weight_kg,
         estimated_pouches,
-        estimated_boxes
+        estimated_boxes,
+        actual_pouches,
+        actual_boxes,
       });
       // Notify all clients that orders have been updated
       emitActivity('processing', `Order ${order_id} info updated`, { order_id });
@@ -514,8 +725,8 @@ app.post('/orders/:order_id/mark-done', markDoneHandler);
   app.delete("/orders/:order_id", async (req, res) => {
     try {
       const { order_id } = req.params;
-      await database.deleteOrder(order_id); 
-      res.status(200).send({ message: "Order deleted" });
+      await database.deleteOrder(order_id);
+      res.status(200).send({ message: "Order moved to delete bin" });
     } catch (err) {
       console.error("Failed to delete order:", err);
       res.status(500).send("Server error");
@@ -958,23 +1169,102 @@ app.get('/cities', async (req, res) => {
     }
 });
 
+app.post('/cities', async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: 'City name is required' });
+        }
+        await database.addCities([name.trim()]);
+        res.status(201).json({ ok: true, message: 'City added successfully' });
+    } catch (err) {
+        console.error('Error adding city:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.delete('/cities', async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'City name is required' });
+        }
+        
+        // Check if any customers are using this city
+        const [customers] = await pool.query(
+            'SELECT COUNT(*) as count FROM Customers WHERE city = ? AND customer_id NOT IN (SELECT customer_id FROM Orders WHERE is_deleted = 1)',
+            [name]
+        );
+        
+        // Check if any boxes are using this city (both directly and through customer relationship)
+        const [boxes] = await pool.query(
+            `SELECT COUNT(DISTINCT b.box_id) as count 
+             FROM Boxes b 
+             LEFT JOIN Customers c ON b.customer_id = c.customer_id 
+             WHERE b.city = ? OR c.city = ?`,
+            [name, name]
+        );
+        
+        const customerCount = customers[0].count;
+        const boxCount = boxes[0].count;
+        
+        if (customerCount > 0 || boxCount > 0) {
+            return res.status(400).json({ 
+                error: `Cannot delete city "${name}". It is currently used by ${customerCount} customer(s) and ${boxCount} box(es).`,
+                inUse: true,
+                customerCount,
+                boxCount
+            });
+        }
+        
+        await database.deleteCity(name);
+        res.status(200).json({ ok: true, message: 'City deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting city:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 app.get('/shelves/:shelf_id/contents', async (req, res) => {
     const { shelf_id } = req.params;
     try {
+      // Get shelf details
+      const [shelfRows] = await database.pool.query(
+        'SELECT * FROM Shelves WHERE shelf_id = ? LIMIT 1',
+        [shelf_id]
+      );
+      const shelf = shelfRows.length > 0 ? shelfRows[0] : null;
+
+      // Check for pallets on this shelf
       const [pallet] = await database.pool.query(
         'SELECT * FROM Pallets WHERE shelf_id = ? LIMIT 1',
         [shelf_id]
       );
   
-      if (!pallet.length) return res.status(404).json({ error: "No pallet on this shelf" });
-  
+      // Get boxes either from pallet or directly on shelf
       const [boxes] = await database.pool.query(
-        'SELECT * FROM Boxes WHERE pallet_id = ?',
-        [pallet[0].pallet_id]
+        `SELECT 
+          b.box_id,
+          b.customer_id,
+          c.name AS customer_name,
+          o.order_id,
+          o.boxes_count,
+          o.actual_pouches,
+          o.pouches_count,
+          b.created_at
+        FROM Boxes b
+        LEFT JOIN Customers c ON c.customer_id = b.customer_id
+        LEFT JOIN Orders o ON o.customer_id = b.customer_id
+        WHERE (b.shelf_id = ? OR b.pallet_id = ?)
+          AND o.status = 'Ready for pickup'
+        ORDER BY b.created_at DESC`,
+        [shelf_id, pallet.length > 0 ? pallet[0].pallet_id : null]
       );
   
       res.status(200).json({
-        pallet: pallet[0],
+        ok: true,
+        shelf: shelf,
+        pallet: pallet.length > 0 ? pallet[0] : null,
         boxes
       });
     } catch (err) {
@@ -1113,6 +1403,636 @@ app.get('/dashboard/daily-totals', async (req, res) => {
   } catch (err) {
     console.error('daily-totals error:', err);
     res.status(500).json({ error: 'Failed to fetch daily totals' });
+  }
+});
+
+// Get today's production metrics (pouches, kg processed, kg taken in) with 6am-6am logic
+// Endpoint: /dashboard/today-metrics
+app.get('/dashboard/today-metrics', async (req, res) => {
+  try {
+    const today = await database.getTodayMetrics();
+    const yesterday = await database.getYesterdayMetrics();
+    
+    // Calculate percentage changes
+    const pctChange = (curr, prev) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Number((((curr - prev) / prev) * 100).toFixed(1));
+    };
+    
+    res.json({
+      today,
+      yesterday,
+      changes: {
+        pouches_pct: pctChange(today.pouches_made, yesterday.pouches_made),
+        kg_processed_pct: pctChange(today.kg_processed, yesterday.kg_processed),
+        kg_taken_in_pct: pctChange(today.kg_taken_in, yesterday.kg_taken_in),
+      }
+    });
+  } catch (err) {
+    console.error('today-metrics error:', err);
+    res.status(500).json({ error: 'Failed to fetch today metrics' });
+  }
+});
+
+// Get historical metrics for charting (daily, weekly, monthly, yearly)
+app.get('/dashboard/historical-metrics', async (req, res) => {
+  try {
+    const { period = 'daily', days = 30 } = req.query;
+    const data = await database.getHistoricalMetrics(period, days);
+    res.json(data);
+  } catch (err) {
+    console.error('historical-metrics error:', err);
+    res.status(500).json({ error: 'Failed to fetch historical metrics' });
+  }
+});
+
+// Admin reports: production + finance rows (order-level)
+app.get('/admin/reports', async (req, res) => {
+  try {
+    let { start, end, cities } = req.query;
+    const cityList = typeof cities === "string"
+      ? cities.split(",").map((c) => c.trim()).filter(Boolean)
+      : [];
+
+    const today = new Date();
+    const toDateStr = (d) => d.toISOString().slice(0, 10);
+
+    if (!end) {
+      end = toDateStr(today);
+    }
+    if (!start) {
+      const from = new Date(today);
+      from.setDate(today.getDate() - 30);
+      start = toDateStr(from);
+    }
+
+    const rows = await database.getAdminReportRows({
+      startDate: start,
+      endDate: end,
+      cities: cityList,
+    });
+
+    res.json({ rows, range: { start, end }, cities: cityList });
+  } catch (err) {
+    console.error('admin reports error:', err);
+    res.status(500).json({ error: 'Failed to fetch admin reports' });
+  }
+});
+
+// Cost centers (direct + overhead)
+app.get('/cost-centers', async (req, res) => {
+  try {
+    const centers = await database.getCostCenters();
+    res.json(centers || []);
+  } catch (err) {
+    console.error('cost centers error:', err);
+    res.status(500).json({ error: 'Failed to fetch cost centers' });
+  }
+});
+
+app.post('/cost-centers', async (req, res) => {
+  try {
+    const { name, category = "direct" } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Cost center name is required' });
+    }
+    if (!["direct", "overhead"].includes(category)) {
+      return res.status(400).json({ error: 'Invalid cost center category' });
+    }
+    const center = await database.createCostCenter({ name: trimmedName, category });
+    res.status(201).json(center);
+  } catch (err) {
+    console.error('create cost center error:', err);
+    res.status(500).json({ error: 'Failed to create cost center' });
+  }
+});
+
+app.put('/cost-centers/:centerId', async (req, res) => {
+  try {
+    const centerId = Number(req.params.centerId);
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Invalid cost center id' });
+    }
+    const { name, category } = req.body || {};
+    const payload = {};
+    if (name != null) {
+      const trimmedName = String(name || "").trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: 'Cost center name is required' });
+      }
+      payload.name = trimmedName;
+    }
+    if (category != null) {
+      if (!["direct", "overhead"].includes(category)) {
+        return res.status(400).json({ error: 'Invalid cost center category' });
+      }
+      payload.category = category;
+    }
+    if (!Object.keys(payload).length) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    const center = await database.updateCostCenter(centerId, payload);
+    res.json(center);
+  } catch (err) {
+    console.error('update cost center error:', err);
+    res.status(500).json({ error: 'Failed to update cost center' });
+  }
+});
+
+app.delete('/cost-centers/:centerId', async (req, res) => {
+  try {
+    const centerId = Number(req.params.centerId);
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Invalid cost center id' });
+    }
+    await database.deleteCostCenter(centerId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete cost center error:', err);
+    res.status(500).json({ error: 'Failed to delete cost center' });
+  }
+});
+
+// Cost entries
+app.get('/cost-entries', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const entries = await database.getCostEntries({ startDate: start, endDate: end });
+    res.json(entries || []);
+  } catch (err) {
+    console.error('cost entries error:', err);
+    res.status(500).json({ error: 'Failed to fetch cost entries' });
+  }
+});
+
+app.post('/cost-entries', async (req, res) => {
+  try {
+    const { center_id, amount, incurred_date, notes } = req.body || {};
+    const centerId = Number(center_id);
+    const amountNum = Number(amount);
+    const dateStr = String(incurred_date || "").trim();
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Cost center is required' });
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Incurred date is required' });
+    }
+    const entry = await database.createCostEntry({
+      centerId,
+      amount: Number(amountNum.toFixed(2)),
+      incurredDate: dateStr,
+      notes,
+    });
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error('create cost entry error:', err);
+    res.status(500).json({ error: 'Failed to create cost entry' });
+  }
+});
+
+app.put('/cost-entries/:entryId', async (req, res) => {
+  try {
+    const entryId = Number(req.params.entryId);
+    if (!Number.isFinite(entryId)) {
+      return res.status(400).json({ error: 'Invalid cost entry id' });
+    }
+    const { center_id, amount, incurred_date, notes } = req.body || {};
+    const centerId = Number(center_id);
+    const amountNum = Number(amount);
+    const dateStr = String(incurred_date || "").trim();
+    if (!Number.isFinite(centerId)) {
+      return res.status(400).json({ error: 'Cost center is required' });
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Incurred date is required' });
+    }
+    const entry = await database.updateCostEntry(entryId, {
+      centerId,
+      amount: Number(amountNum.toFixed(2)),
+      incurredDate: dateStr,
+      notes,
+    });
+    res.json(entry);
+  } catch (err) {
+    console.error('update cost entry error:', err);
+    res.status(500).json({ error: 'Failed to update cost entry' });
+  }
+});
+
+app.delete('/cost-entries/:entryId', async (req, res) => {
+  try {
+    const entryId = Number(req.params.entryId);
+    if (!Number.isFinite(entryId)) {
+      return res.status(400).json({ error: 'Invalid cost entry id' });
+    }
+    await database.deleteCostEntry(entryId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete cost entry error:', err);
+    res.status(500).json({ error: 'Failed to delete cost entry' });
+  }
+});
+
+// Inventory items
+app.get('/inventory-items', async (req, res) => {
+  try {
+    const items = await database.getInventoryItems();
+    res.json(items || []);
+  } catch (err) {
+    console.error('inventory items error:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory items' });
+  }
+});
+
+app.post('/inventory-items', async (req, res) => {
+  try {
+    const { name, sku, unit, category, cost_center_id } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Item name is required' });
+    }
+    const costCenterId = cost_center_id != null && cost_center_id !== ""
+      ? Number(cost_center_id)
+      : null;
+    if (cost_center_id != null && cost_center_id !== "" && !Number.isFinite(costCenterId)) {
+      return res.status(400).json({ error: 'Invalid cost center id' });
+    }
+    const item = await database.createInventoryItem({
+      name: trimmedName,
+      sku,
+      unit: unit || "unit",
+      category,
+      costCenterId,
+    });
+    res.status(201).json(item);
+  } catch (err) {
+    console.error('create inventory item error:', err);
+    res.status(500).json({ error: 'Failed to create inventory item' });
+  }
+});
+
+app.put('/inventory-items/:itemId', async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
+    const { name, sku, unit, category, cost_center_id } = req.body || {};
+    const payload = {};
+    if (name != null) {
+      const trimmedName = String(name || "").trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: 'Item name is required' });
+      }
+      payload.name = trimmedName;
+    }
+    if (sku !== undefined) payload.sku = sku;
+    if (unit != null) payload.unit = unit;
+    if (category !== undefined) payload.category = category;
+    if (cost_center_id !== undefined) {
+      if (cost_center_id === null || cost_center_id === "") {
+        payload.costCenterId = null;
+      } else {
+        const costCenterId = Number(cost_center_id);
+        if (!Number.isFinite(costCenterId)) {
+          return res.status(400).json({ error: 'Invalid cost center id' });
+        }
+        payload.costCenterId = costCenterId;
+      }
+    }
+    if (!Object.keys(payload).length) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    const item = await database.updateInventoryItem(itemId, payload);
+    res.json(item);
+  } catch (err) {
+    console.error('update inventory item error:', err);
+    res.status(500).json({ error: 'Failed to update inventory item' });
+  }
+});
+
+app.delete('/inventory-items/:itemId', async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
+    const deleted = await database.deleteInventoryItem(itemId);
+    if (!deleted) {
+      return res.status(409).json({ error: 'Cannot delete item with transactions' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete inventory item error:', err);
+    res.status(500).json({ error: 'Failed to delete inventory item' });
+  }
+});
+
+// Inventory transactions
+app.get('/inventory-transactions', async (req, res) => {
+  try {
+    const { start, end, item_id } = req.query;
+    const itemId = item_id != null && item_id !== "" ? Number(item_id) : undefined;
+    if (item_id != null && item_id !== "" && !Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
+    const txs = await database.getInventoryTransactions({
+      startDate: start,
+      endDate: end,
+      itemId,
+    });
+    res.json(txs || []);
+  } catch (err) {
+    console.error('inventory transactions error:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory transactions' });
+  }
+});
+
+app.post('/inventory-transactions', async (req, res) => {
+  try {
+    const { item_id, tx_type, quantity, unit_cost, tx_date, notes, sync_cost } = req.body || {};
+    const itemId = Number(item_id);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Item is required' });
+    }
+    const txType = String(tx_type || "").trim();
+    if (!["purchase", "usage", "adjustment"].includes(txType)) {
+      return res.status(400).json({ error: 'Invalid transaction type' });
+    }
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty === 0) {
+      return res.status(400).json({ error: 'Quantity must be non-zero' });
+    }
+    if (txType !== "adjustment" && qty < 0) {
+      return res.status(400).json({ error: 'Quantity must be positive' });
+    }
+    const dateStr = String(tx_date || "").trim();
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Transaction date is required' });
+    }
+    const tx = await database.createInventoryTransaction({
+      itemId,
+      txType,
+      quantity: qty,
+      unitCost: unit_cost,
+      txDate: dateStr,
+      notes,
+      syncCost: sync_cost !== false,
+    });
+    res.status(201).json(tx);
+  } catch (err) {
+    console.error('create inventory transaction error:', err);
+    res.status(500).json({ error: 'Failed to create inventory transaction' });
+  }
+});
+
+app.put('/inventory-transactions/:txId', async (req, res) => {
+  try {
+    const txId = Number(req.params.txId);
+    if (!Number.isFinite(txId)) {
+      return res.status(400).json({ error: 'Invalid transaction id' });
+    }
+    const { item_id, tx_type, quantity, unit_cost, tx_date, notes, sync_cost } = req.body || {};
+    const itemId = Number(item_id);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ error: 'Item is required' });
+    }
+    const txType = String(tx_type || "").trim();
+    if (!["purchase", "usage", "adjustment"].includes(txType)) {
+      return res.status(400).json({ error: 'Invalid transaction type' });
+    }
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty === 0) {
+      return res.status(400).json({ error: 'Quantity must be non-zero' });
+    }
+    if (txType !== "adjustment" && qty < 0) {
+      return res.status(400).json({ error: 'Quantity must be positive' });
+    }
+    const dateStr = String(tx_date || "").trim();
+    if (!dateStr) {
+      return res.status(400).json({ error: 'Transaction date is required' });
+    }
+    const tx = await database.updateInventoryTransaction(txId, {
+      itemId,
+      txType,
+      quantity: qty,
+      unitCost: unit_cost,
+      txDate: dateStr,
+      notes,
+      syncCost: sync_cost !== false,
+    });
+    res.json(tx);
+  } catch (err) {
+    console.error('update inventory transaction error:', err);
+    res.status(500).json({ error: 'Failed to update inventory transaction' });
+  }
+});
+
+app.delete('/inventory-transactions/:txId', async (req, res) => {
+  try {
+    const txId = Number(req.params.txId);
+    if (!Number.isFinite(txId)) {
+      return res.status(400).json({ error: 'Invalid transaction id' });
+    }
+    await database.deleteInventoryTransaction(txId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete inventory transaction error:', err);
+    res.status(500).json({ error: 'Failed to delete inventory transaction' });
+  }
+});
+
+app.get('/inventory-summary', async (req, res) => {
+  try {
+    const asOfDate = req.query.as_of || req.query.asOf || req.query.asOfDate;
+    const summary = await database.getInventorySummary({ asOfDate });
+    res.json(summary || []);
+  } catch (err) {
+    console.error('inventory summary error:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory summary' });
+  }
+});
+
+// Fixed assets
+app.get('/assets', async (req, res) => {
+  try {
+    const asOfDate = req.query.as_of || req.query.asOf || req.query.asOfDate;
+    const assets = await database.getAssets({ asOfDate });
+    res.json(assets || []);
+  } catch (err) {
+    console.error('assets error:', err);
+    res.status(500).json({ error: 'Failed to fetch assets' });
+  }
+});
+
+app.post('/assets', async (req, res) => {
+  try {
+    const { name, category, value, acquired_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Asset name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Asset value must be greater than 0' });
+    }
+    const acquiredDate = String(acquired_date || "").trim();
+    if (!acquiredDate) {
+      return res.status(400).json({ error: 'Acquired date is required' });
+    }
+    const asset = await database.createAsset({
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      acquiredDate,
+      notes,
+    });
+    res.status(201).json(asset);
+  } catch (err) {
+    console.error('create asset error:', err);
+    res.status(500).json({ error: 'Failed to create asset' });
+  }
+});
+
+app.put('/assets/:assetId', async (req, res) => {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isFinite(assetId)) {
+      return res.status(400).json({ error: 'Invalid asset id' });
+    }
+    const { name, category, value, acquired_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Asset name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Asset value must be greater than 0' });
+    }
+    const acquiredDate = String(acquired_date || "").trim();
+    if (!acquiredDate) {
+      return res.status(400).json({ error: 'Acquired date is required' });
+    }
+    const asset = await database.updateAsset(assetId, {
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      acquiredDate,
+      notes,
+    });
+    res.json(asset);
+  } catch (err) {
+    console.error('update asset error:', err);
+    res.status(500).json({ error: 'Failed to update asset' });
+  }
+});
+
+app.delete('/assets/:assetId', async (req, res) => {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isFinite(assetId)) {
+      return res.status(400).json({ error: 'Invalid asset id' });
+    }
+    await database.deleteAsset(assetId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete asset error:', err);
+    res.status(500).json({ error: 'Failed to delete asset' });
+  }
+});
+
+// Liabilities
+app.get('/liabilities', async (req, res) => {
+  try {
+    const asOfDate = req.query.as_of || req.query.asOf || req.query.asOfDate;
+    const liabilities = await database.getLiabilities({ asOfDate });
+    res.json(liabilities || []);
+  } catch (err) {
+    console.error('liabilities error:', err);
+    res.status(500).json({ error: 'Failed to fetch liabilities' });
+  }
+});
+
+app.post('/liabilities', async (req, res) => {
+  try {
+    const { name, category, value, as_of_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Liability name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Liability value must be greater than 0' });
+    }
+    const asOfDate = String(as_of_date || "").trim();
+    if (!asOfDate) {
+      return res.status(400).json({ error: 'As-of date is required' });
+    }
+    const liability = await database.createLiability({
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      asOfDate,
+      notes,
+    });
+    res.status(201).json(liability);
+  } catch (err) {
+    console.error('create liability error:', err);
+    res.status(500).json({ error: 'Failed to create liability' });
+  }
+});
+
+app.put('/liabilities/:liabilityId', async (req, res) => {
+  try {
+    const liabilityId = Number(req.params.liabilityId);
+    if (!Number.isFinite(liabilityId)) {
+      return res.status(400).json({ error: 'Invalid liability id' });
+    }
+    const { name, category, value, as_of_date, notes } = req.body || {};
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Liability name is required' });
+    }
+    const valueNum = Number(value);
+    if (!Number.isFinite(valueNum) || valueNum <= 0) {
+      return res.status(400).json({ error: 'Liability value must be greater than 0' });
+    }
+    const asOfDate = String(as_of_date || "").trim();
+    if (!asOfDate) {
+      return res.status(400).json({ error: 'As-of date is required' });
+    }
+    const liability = await database.updateLiability(liabilityId, {
+      name: trimmedName,
+      category,
+      value: Number(valueNum.toFixed(2)),
+      asOfDate,
+      notes,
+    });
+    res.json(liability);
+  } catch (err) {
+    console.error('update liability error:', err);
+    res.status(500).json({ error: 'Failed to update liability' });
+  }
+});
+
+app.delete('/liabilities/:liabilityId', async (req, res) => {
+  try {
+    const liabilityId = Number(req.params.liabilityId);
+    if (!Number.isFinite(liabilityId)) {
+      return res.status(400).json({ error: 'Invalid liability id' });
+    }
+    await database.deleteLiability(liabilityId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete liability error:', err);
+    res.status(500).json({ error: 'Failed to delete liability' });
   }
 });
 
@@ -1392,6 +2312,17 @@ app.post('/customers/:customerId/sms-status', async (req, res) => {
   }
 });
 
+// Get order status history for a customer
+app.get('/customers/:customerId/status-history', async (req, res) => {
+  try {
+    const history = await database.getOrderStatusHistory(req.params.customerId);
+    return res.json(history);
+  } catch (err) {
+    console.error('status-history failed:', err);
+    return res.status(500).json({ error: 'status_history_failed' });
+  }
+});
+
 app.get("/sms-templates", async (req, res) => {
   try {
     const current = SMS_TEMPLATES_CACHE || await loadSmsTemplates();
@@ -1412,6 +2343,322 @@ app.put("/sms-templates", async (req, res) => {
     res.status(500).json({ ok: false, error: "sms_templates_write_failed" });
   }
 });
+
+// ============== DISCOUNT MANAGEMENT ENDPOINTS ==============
+
+// GET all discounts
+app.get('/api/discounts', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT discount_id, name, phone, email, city, discount_code, 
+              discount_percentage, notes, is_used, used_at, created_at, created_by,
+              used_by_customer_id, used_by_name, used_by_phone,
+              applied_by_employee_id, applied_by_employee_name
+       FROM Discounts
+       ORDER BY created_at DESC`
+    );
+    res.json({ ok: true, discounts: rows });
+  } catch (err) {
+    console.error('GET /api/discounts failed:', err);
+    res.status(500).json({ ok: false, error: 'fetch_discounts_failed' });
+  }
+});
+
+// GET single discount by ID
+app.get('/api/discounts/:discountId', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [req.params.discountId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'discount_not_found' });
+    }
+    res.json({ ok: true, discount: rows[0] });
+  } catch (err) {
+    console.error('GET /api/discounts/:id failed:', err);
+    res.status(500).json({ ok: false, error: 'fetch_discount_failed' });
+  }
+});
+
+// POST create new discount
+app.post('/api/discounts', async (req, res) => {
+  try {
+    const { name, phone, email, city, discount_percentage, notes, created_by } = req.body;
+    
+    if (!name || !discount_percentage) {
+      return res.status(400).json({ ok: false, error: 'name_and_percentage_required' });
+    }
+
+    const discountId = uuid.generateUUID();
+    // Generate a 6-character unique code (alphanumeric)
+    const generateShortCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluding similar chars
+      let code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return code;
+    };
+    
+    // Keep trying until we get a unique code
+    let discountCode;
+    let attempts = 0;
+    while (attempts < 10) {
+      discountCode = generateShortCode();
+      const [existing] = await pool.query(
+        'SELECT discount_code FROM Discounts WHERE discount_code = ?',
+        [discountCode]
+      );
+      if (existing.length === 0) break;
+      attempts++;
+    }
+    if (attempts >= 10) {
+      return res.status(500).json({ ok: false, error: 'failed_generate_unique_code' });
+    }
+
+    await pool.query(
+      `INSERT INTO Discounts 
+       (discount_id, name, phone, email, city, discount_code, discount_percentage, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [discountId, name, phone || null, email || null, city || null, discountCode, discount_percentage, notes || null, created_by || null]
+    );
+
+    const [newDiscount] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [discountId]
+    );
+
+    res.json({ ok: true, discount: newDiscount[0] });
+  } catch (err) {
+    console.error('POST /api/discounts failed:', err);
+    res.status(500).json({ ok: false, error: 'create_discount_failed' });
+  }
+});
+
+// PUT update discount
+app.put('/api/discounts/:discountId', async (req, res) => {
+  try {
+    const { discountId } = req.params;
+    const { name, phone, email, city, discount_percentage, notes, is_used, clear_used_at } = req.body;
+
+    // Build dynamic query based on whether we're updating status
+    let query;
+    let params;
+
+    if (is_used !== undefined) {
+      // Status is being updated
+      if (is_used === 0 && clear_used_at) {
+        // Changing to active - clear used_at
+        query = `UPDATE Discounts 
+                 SET name = ?, phone = ?, email = ?, city = ?, 
+                     discount_percentage = ?, notes = ?, is_used = ?, used_at = NULL
+                 WHERE discount_id = ?`;
+        params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, is_used, discountId];
+      } else if (is_used === 1) {
+        // Changing to used - set used_at to NOW
+        query = `UPDATE Discounts 
+                 SET name = ?, phone = ?, email = ?, city = ?, 
+                     discount_percentage = ?, notes = ?, is_used = ?, used_at = NOW()
+                 WHERE discount_id = ?`;
+        params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, is_used, discountId];
+      } else {
+        // Normal update with status but no special handling
+        query = `UPDATE Discounts 
+                 SET name = ?, phone = ?, email = ?, city = ?, 
+                     discount_percentage = ?, notes = ?, is_used = ?
+                 WHERE discount_id = ?`;
+        params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, is_used, discountId];
+      }
+    } else {
+      // Normal update without status change
+      query = `UPDATE Discounts 
+               SET name = ?, phone = ?, email = ?, city = ?, 
+                   discount_percentage = ?, notes = ?
+               WHERE discount_id = ?`;
+      params = [name, phone || null, email || null, city || null, discount_percentage, notes || null, discountId];
+    }
+
+    await pool.query(query, params);
+
+    const [updated] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [discountId]
+    );
+
+    res.json({ ok: true, discount: updated[0] });
+  } catch (err) {
+    console.error('PUT /api/discounts/:id failed:', err);
+    res.status(500).json({ ok: false, error: 'update_discount_failed' });
+  }
+});
+
+// DELETE discount
+app.delete('/api/discounts/:discountId', async (req, res) => {
+  try {
+    await pool.query(
+      `DELETE FROM Discounts WHERE discount_id = ?`,
+      [req.params.discountId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/discounts/:id failed:', err);
+    res.status(500).json({ ok: false, error: 'delete_discount_failed' });
+  }
+});
+
+// POST mark discount as used
+app.post('/api/discounts/:discountId/use', async (req, res) => {
+  try {
+    const { used_by_customer_id, used_by_name, used_by_phone, applied_by_employee_id, applied_by_employee_name } = req.body;
+    
+    await pool.query(
+      `UPDATE Discounts 
+       SET is_used = 1, used_at = NOW(),
+           used_by_customer_id = ?, used_by_name = ?, used_by_phone = ?,
+           applied_by_employee_id = ?, applied_by_employee_name = ?
+       WHERE discount_id = ?`,
+      [used_by_customer_id || null, used_by_name || null, used_by_phone || null, 
+       applied_by_employee_id || null, applied_by_employee_name || null, req.params.discountId]
+    );
+
+    const [updated] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_id = ?`,
+      [req.params.discountId]
+    );
+
+    res.json({ ok: true, discount: updated[0] });
+  } catch (err) {
+    console.error('POST /api/discounts/:id/use failed:', err);
+    res.status(500).json({ ok: false, error: 'mark_discount_used_failed' });
+  }
+});
+
+// GET search discount by code
+app.get('/api/discounts/search/by-code', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ ok: false, error: 'code_required' });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT * FROM Discounts WHERE discount_code = ?`,
+      [code]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'discount_not_found' });
+    }
+
+    res.json({ ok: true, discount: rows[0] });
+  } catch (err) {
+    console.error('GET /api/discounts/search/by-code failed:', err);
+    res.status(500).json({ ok: false, error: 'search_discount_failed' });
+  }
+});
+
+// ============== END DISCOUNT MANAGEMENT ==============
+
+// ============== ADVANCED ADMIN OPERATIONS ==============
+
+// Delete all customer data (EXTREMELY DANGEROUS)
+app.post('/admin/delete-all-customer-data', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // Delete in order to respect foreign key constraints
+    await connection.query('DELETE FROM order_status_history');
+    await connection.query('DELETE FROM Orders');
+    await connection.query('DELETE FROM Crates');
+    await connection.query('DELETE FROM Boxes');
+    await connection.query('DELETE FROM Customers');
+    
+    await connection.commit();
+    res.json({ ok: true, message: 'All customer data deleted successfully' });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error deleting all customer data:', err);
+    res.status(500).json({ error: 'Failed to delete customer data' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Lock all employee accounts
+app.post('/admin/lock-all-employees', async (req, res) => {
+  try {
+    await pool.query('UPDATE Accounts SET is_active = 0 WHERE role = ?', ['employee']);
+    res.json({ ok: true, message: 'All employee accounts locked' });
+  } catch (err) {
+    console.error('Error locking employee accounts:', err);
+    res.status(500).json({ error: 'Failed to lock employee accounts' });
+  }
+});
+
+// Unlock all employee accounts
+app.post('/admin/unlock-all-employees', async (req, res) => {
+  try {
+    await pool.query('UPDATE Accounts SET is_active = 1 WHERE role = ?', ['employee']);
+    res.json({ ok: true, message: 'All employee accounts unlocked' });
+  } catch (err) {
+    console.error('Error unlocking employee accounts:', err);
+    res.status(500).json({ error: 'Failed to unlock employee accounts' });
+  }
+});
+
+// Unlock specific employee accounts
+app.post('/admin/unlock-specific-employees', async (req, res) => {
+  try {
+    const { accountIds } = req.body;
+    if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
+      return res.status(400).json({ error: 'Account IDs array is required' });
+    }
+    
+    const placeholders = accountIds.map(() => '?').join(',');
+    await pool.query(
+      `UPDATE Accounts SET is_active = 1 WHERE id IN (${placeholders}) AND role = ?`,
+      [...accountIds, 'employee']
+    );
+    
+    res.json({ ok: true, message: 'Selected employee accounts unlocked' });
+  } catch (err) {
+    console.error('Error unlocking specific employee accounts:', err);
+    res.status(500).json({ error: 'Failed to unlock specific employee accounts' });
+  }
+});
+
+// Get all employee accounts (for unlock selection)
+app.get('/admin/employee-accounts', async (req, res) => {
+  try {
+    const [accounts] = await pool.query(
+      'SELECT id, full_name, email, is_active FROM Accounts WHERE role = ? ORDER BY full_name ASC',
+      ['employee']
+    );
+    res.json({ ok: true, accounts });
+  } catch (err) {
+    console.error('Error fetching employee accounts:', err);
+    res.status(500).json({ error: 'Failed to fetch employee accounts' });
+  }
+});
+
+// Get lock status (check if any employees are locked)
+app.get('/admin/lock-status', async (req, res) => {
+  try {
+    const [result] = await pool.query(
+      'SELECT COUNT(*) as locked_count FROM Accounts WHERE role = ? AND is_active = 0',
+      ['employee']
+    );
+    const allLocked = result[0].locked_count > 0;
+    res.json({ ok: true, allLocked, lockedCount: result[0].locked_count });
+  } catch (err) {
+    console.error('Error fetching lock status:', err);
+    res.status(500).json({ error: 'Failed to fetch lock status' });
+  }
+});
+
+// ============== END ADVANCED ADMIN OPERATIONS ==============
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {

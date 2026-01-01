@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import backgroundomena from "../assets/backgroundomena.jpg"
-import { Paper, Box, Stack, Typography, Button, Container } from '@mui/material';
+import { Paper, Box, Stack, Typography, Button, Container, Snackbar, Alert } from '@mui/material';
 import QRScanner from '../components/qrcamscanner';
 import CustomerInfoCard from '../components/customerinfoshowcard';
 import CrateInfoCard from '../components/CrateInfoCard';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
+import { useTranslation } from 'react-i18next';
 
 function CrateHandling() {
+    const { t } = useTranslation();
 
     const InitialCustomerInfo = {
         name: "",
@@ -24,6 +26,9 @@ function CrateHandling() {
     const [FetchedcrateInfo, setFetchedCrateInfo] = useState([])
     const [scannedCratesID, setScannedCratesID] = useState([])
     const [disabledSubmitButton, setDisableSubmitButton] = useState(true)
+    
+    // Snackbar state
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
     
     useEffect(() => {
         if (!scanResult) return;
@@ -89,17 +94,32 @@ function CrateHandling() {
         })
         .then(response => {
             console.log(response.data);
-        })
-        .then(()=>{
-            api.put('/crates', {
+            return api.put('/crates', {
                 crate_id : scannedCratesID,
                 status: "Processing"
-            })
+            });
         })
-        .finally(
-            Delete_all_data()
-        )
+        .then(() => {
+            setSnackbar({
+                open: true,
+                message: t('crate_management.submit_success'),
+                severity: 'success'
+            });
+            Delete_all_data();
+        })
+        .catch(error => {
+            console.error('Submit failed:', error);
+            setSnackbar({
+                open: true,
+                message: t('crate_management.submit_failed'),
+                severity: 'error'
+            });
+        });
     }
+
+    const handleCloseSnackbar = () => {
+        setSnackbar({ ...snackbar, open: false });
+    };
 
     return (
         <>
@@ -115,7 +135,7 @@ function CrateHandling() {
                         flexDirection: "column"
                         }}>
                     <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
-                        Crate Management System
+                        {t('crate_management.title')}
                     </Typography>
 
                     <Stack spacing={3} alignItems="center">
@@ -123,8 +143,8 @@ function CrateHandling() {
 
                         {Boolean(customerInfo.order_id) && (
                       <Typography variant="body2" color="text.secondary">
-                        Scanned <strong>{scannedCratesID.length}</strong> of{" "}
-                                <strong>{parseInt(customerInfo.crate_count || 0, 10)}</strong> crates
+                        {t('crate_management.scanned_info')} <strong>{scannedCratesID.length}</strong> {t('crate_management.of')}{" "}
+                                <strong>{parseInt(customerInfo.crate_count || 0, 10)}</strong> {t('crate_management.crates')}
                      </Typography>
                         )}
                         <CustomerInfoCard customerInfo={customerInfo} />
@@ -136,17 +156,30 @@ function CrateHandling() {
                         </Stack>
 
                         <Stack spacing={2} direction="row">
+            <Snackbar 
+                open={snackbar.open} 
+                autoHideDuration={3000} 
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert 
+                    onClose={handleCloseSnackbar} 
+                    severity={snackbar.severity} 
+                    sx={{ width: '100%' }}
+                    variant="filled"
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
                             {scannedCratesID.length > 0 && (
                                 <Button color="error" variant="contained" onClick={Delete_all_data}>
-                                    Cancel
+                                    {t('crate_management.cancel_button')}
                                 </Button>
                             )}
                             {!disabledSubmitButton && (
-                                <Button color="success" variant="contained" onClick={handleSubmitButton} sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}>
-                                    Submit
+                                <Button color="primary" variant="contained" onClick={handleSubmitButton}>
+                                    {t('crate_management.submit_button')}
                                 </Button>
-
-                                
                             )}
                         </Stack>
                     </Stack>

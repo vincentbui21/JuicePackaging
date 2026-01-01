@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'; // Import useEffect
+import { useTranslation } from 'react-i18next';
 import { TextField, InputAdornment, IconButton } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -21,6 +22,7 @@ function useDebounce(value, delay) {
 }
 
 const SearchBar = ({ onSearch }) => {
+    const { t } = useTranslation();
     const [searchTerm, setSearchTerm] = useState('');
     const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms debounce delay
 
@@ -49,7 +51,7 @@ const SearchBar = ({ onSearch }) => {
         <TextField
             fullWidth
             variant="outlined"
-            placeholder="Search by customer name or phone number..."
+            placeholder={t('search_bar.placeholder')}
             value={searchTerm}
             onChange={handleSearchChange}
             // onKeyPress={handleKeyPress} // Removed onKeyPress

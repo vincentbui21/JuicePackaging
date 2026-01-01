@@ -6,8 +6,10 @@ import QRCodeDialog from '../components/qrcodeDialog';
 import { useState } from 'react';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
+import { useTranslation } from 'react-i18next';
 
 function CustomerInfoEntry() {
+  const { t } = useTranslation();
   const initialCustomerData = {
     full_name: "",
     address: "",
@@ -45,7 +47,8 @@ function CustomerInfoEntry() {
       customerdata.city === "" ||
       customerdata.phone_number === "" ||
       customerdata.entryDate === "" ||
-      orderdata.total_apple_weight === ""
+      orderdata.total_apple_weight === "" ||
+      orderdata.No_of_Crates === ""
     ) {
       set_Openreminder(true);
       return;
@@ -71,7 +74,7 @@ function CustomerInfoEntry() {
 
       <Box
         sx={{
-          backgroundColor: "#fffff",
+          backgroundColor: "background.default",
           minHeight: "100vh",
           paddingTop: 4,
           paddingBottom: 4,
@@ -84,12 +87,11 @@ function CustomerInfoEntry() {
           sx={{
             width: "min(90%, 800px)",
             padding: 4,
-            backgroundColor: "#ffffff",
             borderRadius: 2
           }}
         >
           <Typography variant="h4" sx={{ textAlign: "center", marginBottom: 3, fontWeight: 'bold' }}>
-            Customer Information Entry
+            {t('customer_info_entry.title')}
           </Typography>
 
           <CustomerInfo data={customerdata} setdata={setCustomerData} />
@@ -107,9 +109,9 @@ function CustomerInfoEntry() {
               variant="contained"
               size="large"
               onClick={handleSubmit}
-              sx={{ backgroundColor: '#d6d0b1', color: 'black', '&:hover': { backgroundColor: '#c5bfa3' } }}
+              color="primary"
             >
-              Submit New Order
+              {t('customer_info_entry.submit_button')}
             </Button>
           </Box>
         </Paper>

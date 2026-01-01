@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Container,
@@ -26,6 +27,7 @@ import SmsConfirmDialog from "../components/SmsConfirmDialog";
 import api from "../services/axios";
 
 export default function PalletToShelfHandlePage() {
+  const { t } = useTranslation();
   const InitialOrderInfo = {
     order_id: "",
     name: "",
@@ -97,7 +99,7 @@ export default function PalletToShelfHandlePage() {
       }
     } catch (err) {
       console.error("Failed to load pallet context", err);
-      setSnackbarMsg("Failed to fetch pallet context");
+      setSnackbarMsg(t('pallet_to_shelf.failed_fetch_context'));
     }
   }
 
@@ -122,7 +124,7 @@ export default function PalletToShelfHandlePage() {
 
       if (id) {
         setPalletId(id);
-        setSnackbarMsg("Pallet linked");
+        setSnackbarMsg(t('pallet_to_shelf.pallet_linked'));
         setFetchedBoxList([]);
         setOrdersOnPallet([]);
         setOrderInfo((prev) => ({ ...prev, order_id: "" }));
@@ -134,7 +136,7 @@ export default function PalletToShelfHandlePage() {
       const id = raw.replace(/^SHELF[\s_:\-]*/i, "").trim();
       if (id) {
         setShelfId(id);
-        setSnackbarMsg("Shelf linked");
+        setSnackbarMsg(t('pallet_to_shelf.shelf_linked'));
       }
       return;
     }
@@ -165,7 +167,7 @@ export default function PalletToShelfHandlePage() {
               });
               setFetchedBoxList(Array.isArray(data.boxes) ? data.boxes : []);
             })
-            .catch(() => setSnackbarMsg("Failed to fetch order/boxes"));
+            .catch(() => setSnackbarMsg(t('pallet_to_shelf.failed_fetch_order')));
         }
       }
 
@@ -173,7 +175,7 @@ export default function PalletToShelfHandlePage() {
       return;
     }
 
-    setSnackbarMsg("Unrecognized QR");
+    setSnackbarMsg(t('pallet_to_shelf.unrecognized_qr'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanResult]);
 
@@ -216,12 +218,12 @@ export default function PalletToShelfHandlePage() {
       setScannedBoxes([]);
       setSnackbarMsg(
         sendSms
-          ? "Assigned & SMS sent (if available)"
-          : "Assigned (SMS skipped)"
+          ? t('pallet_to_shelf.assigned_sms')
+          : t('pallet_to_shelf.assigned_no_sms')
       );
     } catch (err) {
       console.error("Assign to shelf failed:", err);
-      setSnackbarMsg("Submit failed. See console for details.");
+      setSnackbarMsg(t('pallet_to_shelf.submit_failed'));
     } finally {
       setSubmitting(false);
     }
@@ -264,7 +266,7 @@ export default function PalletToShelfHandlePage() {
             variant="h4"
             sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}
           >
-            Pallet → Shelf Handling
+            {t('pallet_to_shelf.title')}
           </Typography>
 
           <Stack spacing={3} alignItems="center">
@@ -278,29 +280,29 @@ export default function PalletToShelfHandlePage() {
                 flexWrap="wrap"
               >
                 <Chip
-                  label={`Pallet: ${palletId ? short(palletId) : "—"}`}
+                  label={`${t('pallet_to_shelf.pallet')}: ${palletId ? short(palletId) : "—"}`}
                   color={palletId ? "success" : "default"}
                 />
                 <Chip
-                  label={`Shelf: ${shelfId ? shelfId : "—"}`}
+                  label={`${t('pallet_to_shelf.shelf')}: ${shelfId ? shelfId : "—"}`}
                   color={shelfId ? "success" : "default"}
                 />
                 <Chip
-                  label={`Orders on pallet: ${ordersOnPallet.length}`}
+                  label={`${t('pallet_to_shelf.orders_on_pallet')}: ${ordersOnPallet.length}`}
                   color={ordersOnPallet.length ? "success" : "default"}
                 />
                 <Chip
-                  label={`Boxes (fetched): ${fetchedBoxList.length}`}
+                  label={`${t('pallet_to_shelf.boxes_fetched')}: ${fetchedBoxList.length}`}
                   color={fetchedBoxList.length ? "success" : "default"}
                 />
-                <Chip label={`Scanned boxes here: ${scannedCount}`} />
+                <Chip label={`${t('pallet_to_shelf.scanned_boxes')}: ${scannedCount}`} />
               </Stack>
 
               {!!ordersOnPallet.length && (
                 <>
                   <Divider sx={{ my: 2 }} />
                   <Typography variant="subtitle2" gutterBottom>
-                    Orders on this pallet
+                    {t('pallet_to_shelf.orders_on_this_pallet')}
                   </Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                     {ordersOnPallet.map((o, i) => (
@@ -322,7 +324,7 @@ export default function PalletToShelfHandlePage() {
             {!!fetchedBoxList.length && (
               <Paper variant="outlined" sx={{ p: 2, width: "100%" }}>
                 <Typography variant="subtitle2" gutterBottom>
-                  Boxes on context ({fetchedBoxList.length})
+                  {t('pallet_to_shelf.boxes_on_context', { count: fetchedBoxList.length })}
                 </Typography>
                 <List dense>
                   {fetchedBoxList.slice(0, 8).map((b, idx) => (
@@ -330,7 +332,7 @@ export default function PalletToShelfHandlePage() {
                       <ListItemText
                         primary={String(b.box_id || b.id || b)}
                         secondary={
-                          b.order_id ? `Order: ${short(b.order_id)}` : undefined
+                          b.order_id ? `${t('pallet_to_shelf.order')}: ${short(b.order_id)}` : undefined
                         }
                       />
                     </ListItem>
@@ -338,7 +340,7 @@ export default function PalletToShelfHandlePage() {
                   {fetchedBoxList.length > 8 && (
                     <ListItem disableGutters>
                       <ListItemText
-                        primary={`…and ${fetchedBoxList.length - 8} more`}
+                        primary={t('pallet_to_shelf.and_more', { count: fetchedBoxList.length - 8 })}
                       />
                     </ListItem>
                   )}
@@ -352,22 +354,20 @@ export default function PalletToShelfHandlePage() {
                 onClick={handleClear}
                 disabled={submitting}
               >
-                Clear
+                {t('pallet_to_shelf.clear')}
               </Button>
               <Button
                 variant="contained"
                 onClick={handleOpenConfirm}
                 disabled={!canSubmit || submitting}
               >
-                Assign to Shelf
+                {t('pallet_to_shelf.assign_to_shelf')}
               </Button>
             </Stack>
 
             {!canSubmit && (
               <Typography variant="caption" color="text.secondary">
-                Tip: scan a <strong>PALLET</strong> and a <strong>SHELF</strong>{" "}
-                to enable the button. Scanning a <strong>BOX</strong> is
-                optional (only for showing order details).
+                {t('pallet_to_shelf.tip')}
               </Typography>
             )}
           </Stack>
@@ -390,34 +390,34 @@ export default function PalletToShelfHandlePage() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Review assignment</DialogTitle>
+        <DialogTitle>{t('pallet_to_shelf.review_assignment')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1}>
             <Typography variant="body2">
-              <strong>Pallet:</strong> {palletId || "—"}
+              <strong>{t('pallet_to_shelf.pallet')}:</strong> {palletId || "—"}
             </Typography>
             <Typography variant="body2">
-              <strong>Shelf:</strong> {shelfId || "—"}
+              <strong>{t('pallet_to_shelf.shelf')}:</strong> {shelfId || "—"}
             </Typography>
             <Typography variant="body2">
-              <strong>Orders on pallet:</strong> {ordersOnPallet.length}
+              <strong>{t('pallet_to_shelf.orders_on_pallet')}:</strong> {ordersOnPallet.length}
             </Typography>
             <Typography variant="body2">
-              <strong>Order (context):</strong> {orderInfo.order_id || "—"}
+              <strong>{t('pallet_to_shelf.order_context')}:</strong> {orderInfo.order_id || "—"}
             </Typography>
             <Typography variant="body2">
-              <strong>Customer:</strong> {orderInfo.name || "—"}{" "}
+              <strong>{t('pallet_to_shelf.customer')}:</strong> {orderInfo.name || "—"}{" "}
               {orderInfo.city ? `(${orderInfo.city})` : ""}
             </Typography>
             <Typography variant="body2">
-              <strong>Boxes (context):</strong> {fetchedBoxList.length}
+              <strong>{t('pallet_to_shelf.boxes_context')}:</strong> {fetchedBoxList.length}
             </Typography>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleConfirmCancel}>Back</Button>
+          <Button onClick={handleConfirmCancel}>{t('pallet_to_shelf.back')}</Button>
           <Button variant="contained" onClick={handleConfirmContinue}>
-            Continue
+            {t('pallet_to_shelf.continue')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -426,8 +426,8 @@ export default function PalletToShelfHandlePage() {
         open={smsOpen}
         onClose={() => setSmsOpen(false)}
         onChoice={handleSmsChoice}
-        title="Send pickup SMS now?"
-        message="If you choose 'Yes', customers will be notified immediately that their order is ready."
+        title={t('pallet_to_shelf.sms_dialog_title')}
+        message={t('pallet_to_shelf.sms_dialog_message')}
       />
     </>
   );

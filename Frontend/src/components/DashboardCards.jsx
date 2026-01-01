@@ -20,11 +20,12 @@ import {
   Divider,
   DialogActions,
 } from "@mui/material";
-import { Droplets, Package, Users, Activity, TrendingUp, BarChart3, Eye, Filter } from "lucide-react";
+import { Droplets, Package, Users, Activity, TrendingUp, BarChart3, Eye, Filter, Zap, Weight } from "lucide-react";
 import api from "../services/axios";
 import { socket } from "../lib/socket";
+import { useTranslation } from "react-i18next";
 
-const StatCard = ({ title, value, change, Icon, onView }) => (
+const StatCard = ({ title, value, change, Icon, onView, t }) => (
   <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
     <CardHeader
       title={
@@ -51,7 +52,7 @@ const StatCard = ({ title, value, change, Icon, onView }) => (
       <Typography variant="h4" fontWeight={800}>{value}</Typography>
       {change && (
         <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: "success.main", mt: 0.5 }}>
-          <TrendingUp size={14} /> <Typography variant="caption">{change} from yesterday</Typography>
+          <TrendingUp size={14} /> <Typography variant="caption">{change} {t ? t('dashboard.from_yesterday') : 'from yesterday'}</Typography>
         </Stack>
       )}
     </CardContent>
@@ -76,12 +77,18 @@ function StatBar({ label, value, max, color = "success.main" }) {
 }
 
 export default function DashboardCards() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState({
-    daily_production_liters: 0,
+    daily_production_kgs: 0,
     active_orders: 0,
     customers_served: 0,
     processing_efficiency: 0,
-    overview: { juice_liters: 0, crates_processed: 0, orders_fulfilled: 0 },
+    overview: { juice_kgs: 0, crates_processed: 0, orders_fulfilled: 0 },
+  });
+  const [metrics, setMetrics] = useState({
+    today: { pouches_made: 0, kg_processed: 0, kg_taken_in: 0 },
+    yesterday: { pouches_made: 0, kg_processed: 0, kg_taken_in: 0 },
+    changes: { pouches_pct: 0, kg_processed_pct: 0, kg_taken_in_pct: 0 },
   });
   const [recent, setRecent] = useState([]);
 
@@ -99,12 +106,18 @@ export default function DashboardCards() {
   const [endDate, setEndDate] = useState("");
 
   const load = async () => {
-    const [{ data: s }, { data: r }] = await Promise.all([
-      api.get("/dashboard/summary"),
-      api.get("/dashboard/activity?limit=5"),
-    ]);
-    setStats(s || stats);
-    setRecent(r || []);
+    try {
+      const [{ data: s }, { data: r }, { data: m }] = await Promise.all([
+        api.get("/dashboard/summary"),
+        api.get("/dashboard/activity?limit=5"),
+        api.get("/dashboard/today-metrics"),
+      ]);
+      setStats(s || stats);
+      setRecent(r || []);
+      setMetrics(m || metrics);
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    }
   };
 
   // Fetch all-time daily totals once (large days window)
@@ -233,35 +246,70 @@ export default function DashboardCards() {
       <Grid container spacing={2}>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
-            title="Daily Production"
-            value={`${stats.daily_production_liters}L`}
+            title={t('dashboard.daily_production')}
+            value={`${stats.daily_production_kgs}kg`}
             change={fmt(stats?.changes?.daily_production_pct)}
             Icon={Droplets}
             onView={() => setDailyOpen(true)}
+            t={t}
           />
         </Grid>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
-            title="Active Orders"
+            title={t('dashboard.pouches_made')}
+            value={metrics.today.pouches_made}
+            change={fmt(metrics?.changes?.pouches_pct)}
+            Icon={Package}
+            t={t}
+          />
+        </Grid>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title={t('dashboard.kg_processed')}
+            value={`${metrics.today.kg_processed}kg`}
+            change={fmt(metrics?.changes?.kg_processed_pct)}
+            Icon={Weight}
+            t={t}
+          />
+        </Grid>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title={t('dashboard.kg_taken_in')}
+            value={`${metrics.today.kg_taken_in}kg`}
+            change={fmt(metrics?.changes?.kg_taken_in_pct)}
+            Icon={Zap}
+            t={t}
+          />
+        </Grid>
+      </Grid>
+
+      {/* Second row - Original metrics */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title={t('dashboard.active_orders')}
             value={stats.active_orders}
             change={fmt(stats?.changes?.active_orders_pct)}
             Icon={Package}
+            t={t}
           />
         </Grid>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
-            title="Customers Served"
+            title={t('dashboard.customers_served')}
             value={stats.customers_served}
             change={fmt(stats?.changes?.customers_served_pct)}
             Icon={Users}
+            t={t}
           />
         </Grid>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
-            title="Processing Efficiency"
+            title={t('dashboard.processing_efficiency')}
             value={`${stats.processing_efficiency}%`}
             change={fmt(stats?.changes?.processing_efficiency_pct)}
             Icon={Activity}
+            t={t}
           />
         </Grid>
       </Grid>
@@ -274,7 +322,7 @@ export default function DashboardCards() {
               title={
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Activity size={18} color="#2e7d32" />
-                  <Typography variant="h6" fontWeight={800}>Recent Activity</Typography>
+                  <Typography variant="h6" fontWeight={800}>{t('dashboard.recent_activity')}</Typography>
                 </Stack>
               }
             />
@@ -304,7 +352,7 @@ export default function DashboardCards() {
                   </Stack>
                 ))}
                 {recent.length === 0 && (
-                  <Typography variant="body2" color="text.secondary">No recent activity.</Typography>
+                  <Typography variant="body2" color="text.secondary">{t('dashboard.no_recent_activity')}</Typography>
                 )}
               </Stack>
             </CardContent>
@@ -317,16 +365,16 @@ export default function DashboardCards() {
               title={
                 <Stack direction="row" spacing={1} alignItems="center">
                   <BarChart3 size={18} color="#2e7d32" />
-                  <Typography variant="h6" fontWeight={800}>Today’s Overview</Typography>
+                  <Typography variant="h6" fontWeight={800}>{t('dashboard.todays_overview')}</Typography>
                 </Stack>
               }
             />
             <CardContent>
-              <StatBar label="Juice Processed" value={stats.overview.juice_liters} max={3500} color="success.main" />
+              <StatBar label={t('dashboard.juice_kgs')} value={stats.overview.juice_kgs} max={3500} color="success.main" />
               <Box mt={2} />
-              <StatBar label="Crates Processed" value={stats.overview.crates_processed} max={500} color="#ef6c00" />
+              <StatBar label={t('dashboard.crates_processed')} value={stats.overview.crates_processed} max={500} color="#ef6c00" />
               <Box mt={2} />
-              <StatBar label="Orders Fulfilled" value={stats.overview.orders_fulfilled} max={30} color="primary.main" />
+              <StatBar label={t('dashboard.orders_fulfilled')} value={stats.overview.orders_fulfilled} max={30} color="primary.main" />
             </CardContent>
           </Card>
         </Grid>
@@ -339,7 +387,7 @@ export default function DashboardCards() {
             <Box>
               <Typography variant="subtitle1" fontWeight={800}>Daily Totals</Typography>
               <Typography variant="body2" color="text.secondary">
-                Date · Total litres · Total customers • {activeFilterLabel}
+                Date · Total Kgs · Total pouches • {activeFilterLabel}
               </Typography>
             </Box>
             <IconButton
@@ -381,12 +429,12 @@ export default function DashboardCards() {
                       </Typography>
                       <Stack direction="row" spacing={3}>
                         <Stack alignItems="flex-end">
-                          <Typography variant="caption" color="text.secondary">Total litres</Typography>
-                          <Typography variant="body1" fontWeight={700}>{d.total_liters}L</Typography>
+                          <Typography variant="caption" color="text.secondary">Total Kgs</Typography>
+                          <Typography variant="body1" fontWeight={700}>{d.total_kgs}kg</Typography>
                         </Stack>
                         <Stack alignItems="flex-end">
-                          <Typography variant="caption" color="text.secondary">Total customers</Typography>
-                          <Typography variant="body1" fontWeight={700}>{d.total_customers}</Typography>
+                          <Typography variant="caption" color="text.secondary">Total pouches</Typography>
+                          <Typography variant="body1" fontWeight={700}>{d.total_pouches}</Typography>
                         </Stack>
                       </Stack>
                     </Stack>

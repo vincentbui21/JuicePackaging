@@ -22,6 +22,7 @@ import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
 import printImage from "../services/send_to_printer";
+import PasswordModal from "../components/PasswordModal";
 
 function JuiceProcessingManagement() {
   const [orders, setOrders] = useState([]);
@@ -29,6 +30,8 @@ function JuiceProcessingManagement() {
   const [search, setSearch] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState(null);
 
   // Store generated codes: { [orderId]: { pouches, boxes, codes:[{index,url}] } }
   const [qrCodes, setQrCodes] = useState({});
@@ -60,7 +63,7 @@ function JuiceProcessingManagement() {
 
   const fetchOrders = async () => {
     try {
-      const res = await api.get("/orders?status=processing complete");
+      const res = await api.get("/orders?status=processing complete&is_deleted=0");
       const enriched = (res.data || []).map((order) => {
         const { estimatedPouches, estimatedBoxes } = computeFromWeight(order.weight_kg);
         return {
@@ -160,20 +163,39 @@ function JuiceProcessingManagement() {
     }
   };
 
-  const handleDeleteOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to delete this order?")) return;
+  const handleDeleteClick = (row) => {
+    setRowToDelete(row);
+    setPasswordModalOpen(true);
+  };
+
+  const handlePasswordCancel = () => {
+    setRowToDelete(null);
+    setPasswordModalOpen(false);
+  };
+
+  const handlePasswordConfirm = async ({ id, password }) => {
+    if (!rowToDelete) return;
+
     try {
-      await api.delete(`/orders/${orderId}`);
-      setOrders((prev) => prev.filter((o) => o.order_id !== orderId));
-      setQrCodes((prev) => {
-        const copy = { ...prev };
-        delete copy[orderId];
-        return copy;
-      });
-      setSnackbarMsg("Order deleted successfully");
+      await api.post('/auth/login', { id, password });
+
+      const customer_id = rowToDelete.customer_id;
+      if (!customer_id) {
+        setSnackbarMsg("Delete failed: Customer ID not found on the selected order.");
+        setPasswordModalOpen(false);
+        return;
+      }
+
+      await api.delete("/customer", { data: { customer_id: customer_id } });
+      
+      fetchOrders();
+      setSnackbarMsg("Customer moved to Delete Bin");
     } catch (err) {
-      console.error("Failed to delete order", err);
-      setSnackbarMsg("Failed to delete order");
+      console.error("Delete failed:", err);
+      setSnackbarMsg(err.response?.data?.error || "Delete failed. Check credentials or server error.");
+    } finally {
+      setRowToDelete(null);
+      setPasswordModalOpen(false);
     }
   };
 
@@ -254,7 +276,7 @@ function JuiceProcessingManagement() {
           >
             <Print fontSize="small" />
           </IconButton>
-          <IconButton color="error" onClick={() => handleDeleteOrder(params.row.order_id)} size="small">
+          <IconButton color="error" onClick={() => handleDeleteClick(params.row)} size="small">
             <Delete fontSize="small" />
           </IconButton>
         </Stack>
@@ -446,6 +468,12 @@ function JuiceProcessingManagement() {
         autoHideDuration={3000}
         onClose={() => setSnackbarMsg("")}
         message={snackbarMsg}
+      />
+
+      <PasswordModal
+        open={passwordModalOpen}
+        onClose={handlePasswordCancel}
+        onConfirm={handlePasswordConfirm}
       />
     </>
   );

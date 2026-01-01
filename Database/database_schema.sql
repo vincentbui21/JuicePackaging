@@ -16,12 +16,23 @@ DROP TABLE IF EXISTS `Accounts`;
 CREATE TABLE `Accounts` (
     `id` varchar(50) NOT NULL,
     `password` varchar(255) NOT NULL,
+    `role` enum('admin','employee') NOT NULL DEFAULT 'employee',
+    `full_name` varchar(255) DEFAULT NULL,
+    `email` varchar(255) DEFAULT NULL,
+    `can_edit_customers` tinyint(1) NOT NULL DEFAULT 1,
+    `can_force_delete` tinyint(1) NOT NULL DEFAULT 0,
+    `can_view_reports` tinyint(1) NOT NULL DEFAULT 0,
+    `can_manage_discounts` tinyint(1) NOT NULL DEFAULT 0,
+    `allowed_cities` json DEFAULT NULL,
+    `is_active` tinyint(1) NOT NULL DEFAULT 1,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert initial admin account
-INSERT INTO `Accounts` (`id`, `password`)
-VALUES ('admin', 'newMehustaja@2025');
+INSERT INTO `Accounts` (`id`, `password`, `role`, `full_name`, `email`, `can_edit_customers`, `can_force_delete`, `can_view_reports`, `can_manage_discounts`, `allowed_cities`, `is_active`)
+VALUES ('admin', 'newMehustaja@2025', 'admin', 'System Administrator', NULL, 1, 1, 1, 1, '[]', 1);
 
 -- Customers table
 DROP TABLE IF EXISTS `Customers`;
@@ -32,9 +43,14 @@ CREATE TABLE `Customers` (
     `phone` varchar(50) DEFAULT NULL,
     `email` varchar(255) DEFAULT NULL,
     `city` text DEFAULT NULL,
+    `crate_count` int(11) DEFAULT 0,
+    `additional_info` text DEFAULT NULL,
+    `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
+    `deleted_at` datetime DEFAULT NULL,
     `created_at` datetime NOT NULL DEFAULT current_timestamp(),
     PRIMARY KEY (`customer_id`),
-    KEY `idx_customers_created_at` (`created_at`)
+    KEY `idx_customers_created_at` (`created_at`),
+    KEY `idx_customers_is_deleted` (`is_deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Pallets table
@@ -68,7 +84,7 @@ CREATE TABLE `Boxes` (
 -- Crates table
 DROP TABLE IF EXISTS `Crates`;
 CREATE TABLE `Crates` (
-    `crate_id` varchar(36) NOT NULL,
+    `crate_id` varchar(64) NOT NULL,
     `customer_id` varchar(36) DEFAULT NULL,
     `status` varchar(50) DEFAULT NULL,
     `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -90,6 +106,9 @@ CREATE TABLE `Orders` (
     `boxes_count` int(11) NOT NULL DEFAULT 0,
     `total_cost` decimal(10,2) DEFAULT NULL,
     `pouches_count` int(11) DEFAULT NULL,
+    `actual_pouches` int(11) DEFAULT NULL,
+    `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
+    `deleted_at` datetime DEFAULT NULL,
     `notes` text DEFAULT NULL,
     `created_at` date DEFAULT NULL,
     `ready_at` datetime DEFAULT NULL,
@@ -97,6 +116,101 @@ CREATE TABLE `Orders` (
     UNIQUE KEY `unique_customer_id` (`customer_id`),
     KEY `idx_orders_ready_at` (`ready_at`),
     CONSTRAINT `Orders_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `Customers` (`customer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cost centers table
+DROP TABLE IF EXISTS `CostCenters`;
+CREATE TABLE `CostCenters` (
+    `center_id` int(11) NOT NULL AUTO_INCREMENT,
+    `name` varchar(255) NOT NULL,
+    `category` enum('direct','overhead') NOT NULL DEFAULT 'direct',
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`center_id`),
+    UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cost entries table
+DROP TABLE IF EXISTS `CostEntries`;
+CREATE TABLE `CostEntries` (
+    `entry_id` int(11) NOT NULL AUTO_INCREMENT,
+    `center_id` int(11) NOT NULL,
+    `amount` decimal(10,2) NOT NULL,
+    `incurred_date` date NOT NULL,
+    `notes` text DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`entry_id`),
+    KEY `idx_cost_entries_date` (`incurred_date`),
+    KEY `idx_cost_entries_center_id` (`center_id`),
+    CONSTRAINT `CostEntries_ibfk_1` FOREIGN KEY (`center_id`) REFERENCES `CostCenters` (`center_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Inventory items table
+DROP TABLE IF EXISTS `InventoryItems`;
+CREATE TABLE `InventoryItems` (
+    `item_id` int(11) NOT NULL AUTO_INCREMENT,
+    `name` varchar(255) NOT NULL,
+    `sku` varchar(100) DEFAULT NULL,
+    `unit` varchar(50) NOT NULL DEFAULT 'unit',
+    `category` varchar(100) DEFAULT NULL,
+    `cost_center_id` int(11) DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`item_id`),
+    UNIQUE KEY `name` (`name`),
+    KEY `idx_inventory_cost_center` (`cost_center_id`),
+    CONSTRAINT `InventoryItems_ibfk_1` FOREIGN KEY (`cost_center_id`) REFERENCES `CostCenters` (`center_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Inventory transactions table
+DROP TABLE IF EXISTS `InventoryTransactions`;
+CREATE TABLE `InventoryTransactions` (
+    `tx_id` int(11) NOT NULL AUTO_INCREMENT,
+    `item_id` int(11) NOT NULL,
+    `tx_type` enum('purchase','usage','adjustment') NOT NULL,
+    `quantity` decimal(10,2) NOT NULL,
+    `unit_cost` decimal(10,2) DEFAULT NULL,
+    `total_cost` decimal(10,2) DEFAULT NULL,
+    `cost_entry_id` int(11) DEFAULT NULL,
+    `tx_date` date NOT NULL,
+    `notes` text DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`tx_id`),
+    KEY `idx_inventory_tx_item` (`item_id`),
+    KEY `idx_inventory_tx_date` (`tx_date`),
+    KEY `idx_inventory_cost_entry` (`cost_entry_id`),
+    CONSTRAINT `InventoryTransactions_ibfk_1` FOREIGN KEY (`item_id`) REFERENCES `InventoryItems` (`item_id`) ON DELETE CASCADE,
+    CONSTRAINT `InventoryTransactions_ibfk_2` FOREIGN KEY (`cost_entry_id`) REFERENCES `CostEntries` (`entry_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Fixed assets table
+DROP TABLE IF EXISTS `FixedAssets`;
+CREATE TABLE `FixedAssets` (
+    `asset_id` int(11) NOT NULL AUTO_INCREMENT,
+    `name` varchar(255) NOT NULL,
+    `category` varchar(100) DEFAULT NULL,
+    `value` decimal(12,2) NOT NULL,
+    `acquired_date` date NOT NULL,
+    `notes` text DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`asset_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Liabilities table
+DROP TABLE IF EXISTS `Liabilities`;
+CREATE TABLE `Liabilities` (
+    `liability_id` int(11) NOT NULL AUTO_INCREMENT,
+    `name` varchar(255) NOT NULL,
+    `category` varchar(100) DEFAULT NULL,
+    `value` decimal(12,2) NOT NULL,
+    `as_of_date` date NOT NULL,
+    `notes` text DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`liability_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Shelves table
@@ -110,4 +224,47 @@ CREATE TABLE `Shelves` (
     `holding` int(11) DEFAULT NULL,
     `created_at` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`shelf_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+CREATE TABLE IF NOT EXISTS `CostCenters` (
+  `center_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `category` enum('direct','overhead') NOT NULL DEFAULT 'direct',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`center_id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Discounts table
+DROP TABLE IF EXISTS `Discounts`;
+CREATE TABLE `Discounts` (
+  `discount_id` varchar(36) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `phone` varchar(50) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `city` varchar(255) DEFAULT NULL,
+  `discount_code` varchar(50) NOT NULL,
+  `discount_percentage` decimal(5,2) NOT NULL,
+  `notes` text DEFAULT NULL,
+  `is_used` tinyint(1) NOT NULL DEFAULT 0,
+  `used_at` datetime DEFAULT NULL,
+  `used_by_customer_id` varchar(36) DEFAULT NULL,
+  `used_by_name` varchar(255) DEFAULT NULL,
+  `used_by_phone` varchar(50) DEFAULT NULL,
+  `applied_by_employee_id` varchar(50) DEFAULT NULL,
+  `applied_by_employee_name` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`discount_id`),
+  UNIQUE KEY `discount_code` (`discount_code`),
+  KEY `idx_discounts_code` (`discount_code`),
+  KEY `idx_discounts_phone` (`phone`),
+  KEY `idx_discounts_used_by` (`used_by_customer_id`),
+  KEY `idx_discounts_applied_by` (`applied_by_employee_id`),
+  CONSTRAINT `fk_discounts_created_by` FOREIGN KEY (`created_by`) REFERENCES `Accounts` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_discounts_used_by` FOREIGN KEY (`used_by_customer_id`) REFERENCES `Customers` (`customer_id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_discounts_applied_by` FOREIGN KEY (`applied_by_employee_id`) REFERENCES `Accounts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
