@@ -18,6 +18,7 @@ import {
   StepLabel,
   Alert,
   InputAdornment,
+  CircularProgress,
 } from '@mui/material';
 import {
   CalendarMonth,
@@ -39,6 +40,8 @@ import 'dayjs/locale/en';
 import 'dayjs/locale/fi';
 import LanguageSelector from '../components/LanguageSelector';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001').replace(/\/+$/, '');
+
 function TabPanel({ children, value, index }) {
   return (
     <div hidden={value !== index}>
@@ -51,6 +54,9 @@ function CustomerPortalPage() {
   const { t, i18n } = useTranslation();
   const [tabValue, setTabValue] = useState(0);
   const [trackingNumber, setTrackingNumber] = useState('');
+  const [trackingResult, setTrackingResult] = useState(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackingError, setTrackingError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -87,24 +93,25 @@ function CustomerPortalPage() {
       setLoading(true);
       
       // Fetch reservation settings (including system lock status)
-      const settingsResponse = await fetch('http://localhost:5001/api/reservation-settings');
+      const settingsResponse = await fetch(`${API_BASE_URL}/api/reservation-settings`);
       const settingsData = await settingsResponse.json();
+      const timeSlotMinutes = Number.parseInt(settingsData?.settings?.time_slot_minutes, 10) || reservationSettings.time_slot_minutes;
       
       if (settingsData.ok) {
         setSystemLocked(settingsData.settings.system_locked);
         setReservationSettings({
-          time_slot_minutes: settingsData.settings.time_slot_minutes,
+          time_slot_minutes: timeSlotMinutes,
           hours_start: settingsData.settings.hours_start,
           hours_end: settingsData.settings.hours_end
         });
       }
       
       // Fetch existing reservations
-      const reservationsResponse = await fetch('http://localhost:5001/api/reservations');
+      const reservationsResponse = await fetch(`${API_BASE_URL}/api/reservations`);
       const reservationsData = await reservationsResponse.json();
       
       // Fetch locked time slots
-      const lockedSlotsResponse = await fetch('http://localhost:5001/api/locked-time-slots');
+      const lockedSlotsResponse = await fetch(`${API_BASE_URL}/api/locked-time-slots`);
       const lockedSlotsData = await lockedSlotsResponse.json();
       
       const blocked = [];
@@ -122,7 +129,7 @@ function CustomerPortalPage() {
       // Add admin-locked time slots to blocked list
       if (lockedSlotsData.ok && lockedSlotsData.slots) {
         lockedSlotsData.slots.forEach(slot => {
-          // For locked slots, we need to block every 30-minute interval within the range
+          // For locked slots, we need to block every configured interval within the range
           const start = dayjs(slot.start_time);
           const end = dayjs(slot.end_time);
           let current = start;
@@ -133,7 +140,7 @@ function CustomerPortalPage() {
               type: 'admin_lock',
               reason: slot.reason
             });
-            current = current.add(reservationSettings.time_slot_minutes, 'minute');
+            current = current.add(timeSlotMinutes, 'minute');
           }
         });
       }
@@ -251,7 +258,7 @@ function CustomerPortalPage() {
       setSubmitting(true);
       setSubmitError('');
       
-      const response = await fetch('http://localhost:5001/api/reservations', {
+      const response = await fetch(`${API_BASE_URL}/api/reservations`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -296,6 +303,65 @@ function CustomerPortalPage() {
       setSubmitting(false);
     }
   };
+
+  const normalizeStatus = (status) => String(status || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  const getTrackingStep = (status) => {
+    const normalized = normalizeStatus(status);
+
+    if (!normalized) return -1;
+    if (['pending', 'received', 'order received', 'submitted'].includes(normalized)) return 0;
+    if (['processing', 'in processing'].includes(normalized)) return 1;
+    if (['processing complete', 'processed', 'ready for pallet', 'ready for pickup', 'ready'].includes(normalized)) return 2;
+    if (['picked up', 'picked', 'completed', 'complete', 'collected'].includes(normalized)) return 3;
+    return -1;
+  };
+
+  const handleTrackOrder = async () => {
+    const trimmed = trackingNumber.trim();
+
+    if (!trimmed) {
+      setTrackingError(t('tracking.input_required'));
+      setTrackingResult(null);
+      return;
+    }
+
+    try {
+      setTrackingLoading(true);
+      setTrackingError('');
+
+      const response = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(trimmed)}/status`);
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        const notFound = response.status === 404 || data?.error === 'not_found';
+        setTrackingError(notFound ? t('tracking.not_found') : t('tracking.lookup_error'));
+        setTrackingResult(null);
+        return;
+      }
+
+      setTrackingResult({ status: data.status || '' });
+    } catch (error) {
+      console.error('Error fetching order status:', error);
+      setTrackingError(t('tracking.lookup_error'));
+      setTrackingResult(null);
+    } finally {
+      setTrackingLoading(false);
+    }
+  };
+
+  const handleTrackingInputChange = (event) => {
+    setTrackingNumber(event.target.value);
+    if (trackingError) {
+      setTrackingError('');
+    }
+    if (trackingResult) {
+      setTrackingResult(null);
+    }
+  };
+
+  const trackingStep = trackingResult ? getTrackingStep(trackingResult.status) : -1;
+  const trackingStatusText = trackingResult?.status ? trackingResult.status : t('tracking.status_unknown');
 
   return (
     <Box
@@ -557,7 +623,7 @@ function CustomerPortalPage() {
                 label={t('tracking.input_label')}
                 variant="outlined"
                 value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
+                onChange={handleTrackingInputChange}
                 sx={{
                   mb: 2,
                   '& .MuiOutlinedInput-root': {
@@ -573,7 +639,7 @@ function CustomerPortalPage() {
               <Button
                 variant="contained"
                 size="large"
-                startIcon={<Search />}
+                startIcon={trackingLoading ? <CircularProgress size={18} color="inherit" /> : <Search />}
                 sx={{
                   bgcolor: '#4CAF50',
                   px: 4,
@@ -581,10 +647,18 @@ function CustomerPortalPage() {
                     bgcolor: '#45a049',
                   },
                 }}
+                disabled={trackingLoading}
+                onClick={handleTrackOrder}
               >
-                {t('tracking.search_button')}
+                {trackingLoading ? t('tracking.searching') : t('tracking.search_button')}
               </Button>
             </Box>
+
+            {trackingError && (
+              <Alert severity="error" sx={{ mb: 3 }} onClose={() => setTrackingError('')}>
+                {trackingError}
+              </Alert>
+            )}
 
             <Divider sx={{ my: 4 }} />
 
@@ -598,16 +672,16 @@ function CustomerPortalPage() {
                       {t('tracking.status_title')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {t('tracking.status_subtitle')}
+                      {trackingResult
+                        ? t('tracking.current_status', { status: trackingStatusText })
+                        : t('tracking.status_subtitle')}
                     </Typography>
                   </Box>
                 </Box>
 
-                <Stepper orientation="vertical" activeStep={-1}>
+                <Stepper orientation="vertical" activeStep={trackingStep}>
                   <Step>
-                    <StepLabel
-                      StepIconComponent={() => <CheckCircle sx={{ color: '#4CAF50' }} />}
-                    >
+                    <StepLabel>
                       <Typography variant="body1" fontWeight={500}>
                         {t('tracking.step_received')}
                       </Typography>

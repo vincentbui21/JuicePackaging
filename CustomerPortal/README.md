@@ -27,3 +27,17 @@ This app is configured to run on `customer.mehustaja.fi` on port 5174.
 ## API Integration
 
 The customer portal connects to the same backend as the main system app.
+
+### Environment Variables
+
+Create `CustomerPortal/.env` to point to the backend API:
+
+```bash
+VITE_API_BASE_URL=http://localhost:5001
+```
+
+Use the production API when deployed, for example:
+
+```bash
+VITE_API_BASE_URL=https://api.mehustaja.fi
+```

@@ -5,4 +5,8 @@ function generateUUID(){
     return id
 }
 
-module.exports = {generateUUID}
+function generateUniqueId() {
+    return generateUUID();
+}
+
+module.exports = { generateUUID, generateUniqueId }

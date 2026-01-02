@@ -16,10 +16,18 @@ const server = http.createServer(app);
 const pool = database.pool;
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
+const allowedOrigins = [
+  "https://system.mehustaja.fi",
+  "https://customer.mehustaja.fi",
+  "https://customer.mehustaja.fi:5174",
+  "http://localhost",
+  "http://localhost:5173",
+  "http://localhost:5174",
+];
 
 const io = new Server(server, {
   cors: {
-    origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
@@ -30,7 +38,7 @@ app.set('io', io);
 
 // REST API CORS
 app.use(cors({
-  origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires'],
   credentials: true
@@ -420,6 +428,29 @@ async function getCurrentSettings() {
   } catch {
     return {};
   }
+}
+
+function formatDateTimeToSQL(value) {
+  if (!value) return null;
+
+  const asString = String(value);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(asString)) {
+    return asString;
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(asString)) {
+    return `${asString}:00`;
+  }
+
+  const date = value instanceof Date ? value : new Date(asString);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 // Simple test route
@@ -2672,6 +2703,11 @@ app.post('/api/reservations', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    const reservationDateTime = formatDateTimeToSQL(reservation_datetime);
+    if (!reservationDateTime) {
+      return res.status(400).json({ error: 'Invalid reservation date/time' });
+    }
+
     // Check if system is locked
     const settings = await getCurrentSettings();
     if (settings.reservation_system_locked === 'true') {
@@ -2681,17 +2717,21 @@ app.post('/api/reservations', async (req, res) => {
     // Check for overlapping locked time slots
     const [lockedSlots] = await pool.query(
       'SELECT * FROM LockedTimeSlots WHERE start_time <= ? AND end_time >= ?',
-      [reservation_datetime, reservation_datetime]
+      [reservationDateTime, reservationDateTime]
     );
 
     if (lockedSlots.length > 0) {
       return res.status(400).json({ error: 'This time slot is locked by admin' });
     }
 
-    // Check for existing reservations at the same time (within 30 minutes)
-    const reservationTime = new Date(reservation_datetime);
-    const startWindow = new Date(reservationTime.getTime() - 30 * 60000); // 30 min before
-    const endWindow = new Date(reservationTime.getTime() + 30 * 60000); // 30 min after
+    // Check for existing reservations within the configured time slot window
+    const [datePart, timePart] = reservationDateTime.split(" ");
+    const [year, month, day] = datePart.split("-").map(Number);
+    const [hours, minutes, seconds] = timePart.split(":").map(Number);
+    const reservationTime = new Date(year, month - 1, day, hours, minutes, seconds);
+    const timeSlotMinutes = parseInt(settings.reservation_time_slot_minutes, 10) || 30;
+    const startWindow = formatDateTimeToSQL(new Date(reservationTime.getTime() - timeSlotMinutes * 60000));
+    const endWindow = formatDateTimeToSQL(new Date(reservationTime.getTime() + timeSlotMinutes * 60000));
 
     const [existingReservations] = await pool.query(
       'SELECT * FROM Reservations WHERE reservation_datetime BETWEEN ? AND ?',
@@ -2703,10 +2743,10 @@ app.post('/api/reservations', async (req, res) => {
     }
 
     // Create reservation
-    const reservation_id = uuid.generateUniqueId();
+    const reservation_id = uuid.generateUUID();
     await pool.query(
       'INSERT INTO Reservations (reservation_id, customer_name, phone, email, apple_weight_kg, reservation_datetime, message) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [reservation_id, customer_name, phone, email || null, apple_weight_kg, reservation_datetime, message || null]
+      [reservation_id, customer_name, phone, email || null, apple_weight_kg, reservationDateTime, message || null]
     );
 
     const [newReservation] = await pool.query(
@@ -2772,7 +2812,7 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
       customer_id = existingCustomers[0].customer_id;
     } else {
       // Create new customer
-      customer_id = uuid.generateUniqueId();
+      customer_id = uuid.generateUUID();
       await connection.query(
         'INSERT INTO Customers (customer_id, name, phone, email) VALUES (?, ?, ?, ?)',
         [customer_id, reservation.customer_name, reservation.phone, reservation.email]
@@ -2780,7 +2820,7 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
     }
 
     // Create order
-    const order_id = uuid.generateUniqueId();
+    const order_id = uuid.generateUUID();
     const created_at = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     
     await connection.query(
@@ -2832,10 +2872,16 @@ app.post('/api/locked-time-slots', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    const startTimeSql = formatDateTimeToSQL(start_time);
+    const endTimeSql = formatDateTimeToSQL(end_time);
+    if (!startTimeSql || !endTimeSql) {
+      return res.status(400).json({ error: 'Invalid time slot range' });
+    }
+
     // Check for overlapping slots
     const [overlapping] = await pool.query(
       'SELECT * FROM LockedTimeSlots WHERE (start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?) OR (start_time >= ? AND end_time <= ?)',
-      [end_time, start_time, end_time, end_time, start_time, end_time]
+      [endTimeSql, startTimeSql, endTimeSql, endTimeSql, startTimeSql, endTimeSql]
     );
 
     if (overlapping.length > 0) {
@@ -2844,7 +2890,7 @@ app.post('/api/locked-time-slots', async (req, res) => {
 
     const [result] = await pool.query(
       'INSERT INTO LockedTimeSlots (start_time, end_time, reason) VALUES (?, ?, ?)',
-      [start_time, end_time, reason || null]
+      [startTimeSql, endTimeSql, reason || null]
     );
 
     const [newSlot] = await pool.query(

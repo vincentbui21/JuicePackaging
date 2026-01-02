@@ -47,6 +47,7 @@ import {
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { useTranslation } from 'react-i18next';
+import api from '../services/axios';
 
 dayjs.extend(isoWeek);
 
@@ -67,54 +68,67 @@ export default function ReservationManagement() {
   const [selectedLockedSlot, setSelectedLockedSlot] = useState(null);
   const [searchText, setSearchText] = useState('');
 
-  // Mock data - will be replaced with API call
   useEffect(() => {
-    // TODO: Fetch reservations from API
-    const mockReservations = [
-      {
-        id: 1,
-        name: 'John Doe',
-        phone: '+358 40 123 4567',
-        email: 'john@example.com',
-        appleWeight: 150,
-        dateTime: dayjs().hour(13).minute(0).format(),
-        message: 'Please call before arrival',
-      },
-      {
-        id: 2,
-        name: 'Jane Smith',
-        phone: '+358 50 987 6543',
-        email: 'jane@example.com',
-        appleWeight: 200,
-        dateTime: dayjs().hour(15).minute(30).format(),
-        message: '',
-      },
-      {
-        id: 3,
-        name: 'Matti Virtanen',
-        phone: '+358 44 555 1234',
-        email: 'matti@example.com',
-        appleWeight: 120,
-        dateTime: dayjs().add(1, 'day').hour(10).minute(0).format(),
-        message: 'First time customer',
-      },
-    ];
-    setReservations(mockReservations);
-
-    // TODO: Fetch locked time slots from API
-    const mockLockedSlots = [
-      {
-        id: 1,
-        startTime: dayjs().hour(12).minute(0).format(),
-        endTime: dayjs().hour(13).minute(0).format(),
-        reason: 'Lunch break',
-      },
-    ];
-    setLockedTimeSlots(mockLockedSlots);
-
-    // TODO: Fetch system lock status from API
-    setSystemLocked(false);
+    fetchReservationData();
   }, []);
+
+  const mapReservation = (reservation) => ({
+    id: reservation.reservation_id || reservation.id,
+    name: String(reservation.customer_name || reservation.name || ''),
+    phone: String(reservation.phone || ''),
+    email: String(reservation.email || ''),
+    appleWeight: Number(reservation.apple_weight_kg ?? reservation.appleWeight ?? 0),
+    dateTime: reservation.reservation_datetime || reservation.dateTime,
+    message: String(reservation.message || ''),
+  });
+
+  const mapLockedSlot = (slot) => ({
+    id: slot.slot_id || slot.id,
+    startTime: slot.start_time || slot.startTime,
+    endTime: slot.end_time || slot.endTime,
+    reason: slot.reason || '',
+  });
+
+  const fetchReservations = async () => {
+    try {
+      const res = await api.get('/api/reservations');
+      if (res.data?.ok) {
+        const mapped = (res.data.reservations || []).map(mapReservation);
+        setReservations(mapped);
+      }
+    } catch (error) {
+      console.error('Failed to fetch reservations:', error);
+    }
+  };
+
+  const fetchLockedSlots = async () => {
+    try {
+      const res = await api.get('/api/locked-time-slots');
+      if (res.data?.ok) {
+        const mapped = (res.data.slots || []).map(mapLockedSlot);
+        setLockedTimeSlots(mapped);
+      }
+    } catch (error) {
+      console.error('Failed to fetch locked time slots:', error);
+    }
+  };
+
+  const fetchSystemLockStatus = async () => {
+    try {
+      const res = await api.get('/api/reservation-settings');
+      if (res.data?.ok) {
+        setSystemLocked(!!res.data.settings?.system_locked);
+      }
+    } catch (error) {
+      console.error('Failed to fetch reservation settings:', error);
+    }
+  };
+
+  const fetchReservationData = () => {
+    fetchReservations();
+    fetchLockedSlots();
+    fetchSystemLockStatus();
+  };
 
   const handlePrevious = () => {
     if (viewMode === 'week') {
@@ -147,41 +161,63 @@ export default function ReservationManagement() {
   };
 
   const handleCheckInCustomer = () => {
-    // TODO: API call to move reservation to customers and orders tables
-    console.log('Checking in customer:', selectedReservation.id);
-    // After successful API call, remove from reservations list
-    setReservations(reservations.filter(res => res.id !== selectedReservation.id));
-    handleCloseDialog();
+    if (!selectedReservation?.id) return;
+    api.post(`/api/reservations/${selectedReservation.id}/check-in`)
+      .then(() => {
+        setReservations((prev) => prev.filter(res => res.id !== selectedReservation.id));
+        handleCloseDialog();
+      })
+      .catch((error) => {
+        console.error('Failed to check in reservation:', error);
+      });
   };
 
   const handleToggleSystemLock = async () => {
-    // TODO: Update system lock status via API
-    const newStatus = !systemLocked;
-    setSystemLocked(newStatus);
-    console.log('System lock toggled:', newStatus);
+    try {
+      const res = await api.post('/api/reservation-settings/toggle-lock');
+      if (res.data?.ok) {
+        setSystemLocked(!!res.data.locked);
+      }
+    } catch (error) {
+      console.error('Failed to toggle reservation lock:', error);
+    }
   };
 
   const handleAddLockedSlot = () => {
     if (!newLockStart || !newLockEnd) return;
     
-    // TODO: Save locked slot to API
-    const newSlot = {
-      id: Date.now(),
-      startTime: newLockStart.format(),
-      endTime: newLockEnd.format(),
-      reason: newLockReason || 'Blocked by admin',
-    };
-    
-    setLockedTimeSlots([...lockedTimeSlots, newSlot]);
-    setLockDialogOpen(false);
-    setNewLockStart(null);
-    setNewLockEnd(null);
-    setNewLockReason('');
+    api.post('/api/locked-time-slots', {
+      start_time: newLockStart.toISOString(),
+      end_time: newLockEnd.toISOString(),
+      reason: newLockReason || t('reservation.blocked_by_admin'),
+    })
+      .then((res) => {
+        if (res.data?.ok && res.data.slot) {
+          setLockedTimeSlots((prev) => [...prev, mapLockedSlot(res.data.slot)]);
+        } else {
+          fetchLockedSlots();
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to create locked time slot:', error);
+      })
+      .finally(() => {
+        setLockDialogOpen(false);
+        setNewLockStart(null);
+        setNewLockEnd(null);
+        setNewLockReason('');
+      });
   };
 
   const handleDeleteLockedSlot = (slotId) => {
-    // TODO: Delete locked slot via API
-    setLockedTimeSlots(lockedTimeSlots.filter(slot => slot.id !== slotId));
+    if (!slotId) return;
+    api.delete(`/api/locked-time-slots/${slotId}`)
+      .then(() => {
+        setLockedTimeSlots((prev) => prev.filter(slot => slot.id !== slotId));
+      })
+      .catch((error) => {
+        console.error('Failed to delete locked time slot:', error);
+      });
   };
 
   const handleLockedSlotClick = (slot) => {
@@ -1001,7 +1037,7 @@ export default function ReservationManagement() {
           </Button>
         </DialogActions>
       </Dialog>
-      {/* Locked Time Slots Management */}}
+      {/* Locked Time Slots Management */}
       {lockedTimeSlots.length > 0 && (
         <Paper sx={{ p: 2, mt: 2 }}>
           <Stack spacing={2}>
