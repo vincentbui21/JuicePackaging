@@ -25,7 +25,11 @@
     "weight_required": "Please enter estimated apple weight",
     "datetime_required": "Please select a date and time",
     "timeslot_unavailable": "This time slot is unavailable. Please select a different time.",
-    "timeslot_helper": "Time slots must be at least 30 minutes apart"
+    "timeslot_helper": "Time slots must be at least 30 minutes apart",
+    "system_locked": "The reservation system is currently locked. Please contact us for assistance.",
+    "submitting": "Submitting...",
+    "submission_success": "Reservation submitted successfully! We look forward to seeing you.",
+    "submission_error": "Failed to submit reservation. Please try again."
   },
   "tracking": {
     "title": "Track Your Order",

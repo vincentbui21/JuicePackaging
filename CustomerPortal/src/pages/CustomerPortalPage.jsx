@@ -62,6 +62,15 @@ function CustomerPortalPage() {
   const [formErrors, setFormErrors] = useState({});
   const [blockedTimeSlots, setBlockedTimeSlots] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [systemLocked, setSystemLocked] = useState(false);
+  const [reservationSettings, setReservationSettings] = useState({
+    time_slot_minutes: 30,
+    hours_start: 8,
+    hours_end: 20
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   // Set dayjs locale based on i18n language
   React.useEffect(() => {
@@ -76,14 +85,60 @@ function CustomerPortalPage() {
   const fetchBlockedTimeSlots = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API endpoint
-      // const response = await fetch('/api/blocked-time-slots');
-      // const data = await response.json();
-      // Expected format: [{ datetime: '2026-01-15T10:00:00', type: 'reservation' | 'admin_lock' }, ...]
-      // setBlockedTimeSlots(data);
       
-      // For now, set empty array until API is ready
-      setBlockedTimeSlots([]);
+      // Fetch reservation settings (including system lock status)
+      const settingsResponse = await fetch('http://localhost:5001/api/reservation-settings');
+      const settingsData = await settingsResponse.json();
+      
+      if (settingsData.ok) {
+        setSystemLocked(settingsData.settings.system_locked);
+        setReservationSettings({
+          time_slot_minutes: settingsData.settings.time_slot_minutes,
+          hours_start: settingsData.settings.hours_start,
+          hours_end: settingsData.settings.hours_end
+        });
+      }
+      
+      // Fetch existing reservations
+      const reservationsResponse = await fetch('http://localhost:5001/api/reservations');
+      const reservationsData = await reservationsResponse.json();
+      
+      // Fetch locked time slots
+      const lockedSlotsResponse = await fetch('http://localhost:5001/api/locked-time-slots');
+      const lockedSlotsData = await lockedSlotsResponse.json();
+      
+      const blocked = [];
+      
+      // Add existing reservations to blocked list
+      if (reservationsData.ok && reservationsData.reservations) {
+        reservationsData.reservations.forEach(res => {
+          blocked.push({
+            datetime: res.reservation_datetime,
+            type: 'reservation'
+          });
+        });
+      }
+      
+      // Add admin-locked time slots to blocked list
+      if (lockedSlotsData.ok && lockedSlotsData.slots) {
+        lockedSlotsData.slots.forEach(slot => {
+          // For locked slots, we need to block every 30-minute interval within the range
+          const start = dayjs(slot.start_time);
+          const end = dayjs(slot.end_time);
+          let current = start;
+          
+          while (current.isBefore(end) || current.isSame(end)) {
+            blocked.push({
+              datetime: current.toISOString(),
+              type: 'admin_lock',
+              reason: slot.reason
+            });
+            current = current.add(reservationSettings.time_slot_minutes, 'minute');
+          }
+        });
+      }
+      
+      setBlockedTimeSlots(blocked);
     } catch (error) {
       console.error('Error fetching blocked time slots:', error);
     } finally {
@@ -91,7 +146,7 @@ function CustomerPortalPage() {
     }
   };
 
-  // Check if a datetime is within 30 minutes of any blocked slot
+  // Check if a datetime is within the configured time slot window of any blocked slot
   const isTimeSlotBlocked = (dateTime) => {
     if (!dateTime) return false;
     
@@ -101,8 +156,8 @@ function CustomerPortalPage() {
       const blockedTime = dayjs(blocked.datetime);
       const diffInMinutes = Math.abs(selectedTime.diff(blockedTime, 'minute'));
       
-      // Block if within 30 minutes (before or after)
-      return diffInMinutes < 30;
+      // Block if within the configured time slot window (before or after)
+      return diffInMinutes < reservationSettings.time_slot_minutes;
     });
   };
 
@@ -110,11 +165,22 @@ function CustomerPortalPage() {
   const shouldDisableTime = (value, view) => {
     if (!value) return false;
     
+    const hour = value.hour();
+    
+    // Disable hours outside the configured range
+    if (hour < reservationSettings.hours_start || hour >= reservationSettings.hours_end) {
+      return true;
+    }
+    
     // Check if the time is blocked
     return isTimeSlotBlocked(value);
   };
 
   const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+  };
+
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
@@ -168,27 +234,66 @@ function CustomerPortalPage() {
     return errors;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
-    // TODO: Call API to backend
-    console.log('Form submitted:', formData);
-  };
-
-  const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-    // Clear error for this field
-    if (formErrors[e.target.name]) {
-      setFormErrors({
-        ...formErrors,
-        [e.target.name]: '',
+    
+    // Check if system is locked
+    if (systemLocked) {
+      setSubmitError(t('booking.system_locked'));
+      return;
+    }
+    
+    try {
+      setSubmitting(true);
+      setSubmitError('');
+      
+      const response = await fetch('http://localhost:5001/api/reservations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_name: formData.name,
+          phone: formData.phone,
+          email: formData.email || null,
+          apple_weight_kg: parseFloat(formData.appleWeight),
+          reservation_datetime: formData.dateTime.toISOString(),
+          message: formData.message || null,
+        }),
       });
+      
+      const data = await response.json();
+      
+      if (!response.ok || !data.ok) {
+        setSubmitError(data.error || t('booking.submission_error'));
+        return;
+      }
+      
+      // Success
+      setSubmitSuccess(true);
+      
+      // Clear form
+      setFormData({
+        name: '',
+        phone: '',
+        email: '',
+        appleWeight: '',
+        dateTime: null,
+        message: '',
+      });
+      
+      // Refresh blocked time slots
+      fetchBlockedTimeSlots();
+      
+    } catch (error) {
+      console.error('Error submitting reservation:', error);
+      setSubmitError(t('booking.submission_error'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -363,13 +468,15 @@ function CustomerPortalPage() {
                         onChange={handleDateTimeChange}
                         minDateTime={dayjs().add(1, 'hour')}
                         maxDateTime={dayjs().add(14, 'day')}
+                        minTime={dayjs().hour(reservationSettings.hours_start).minute(0)}
+                        maxTime={dayjs().hour(reservationSettings.hours_end - 1).minute(59)}
                         shouldDisableTime={shouldDisableTime}
                         shouldDisableDate={(date) => {
                           const minDate = dayjs().add(1, 'hour').startOf('day');
                           const maxDate = dayjs().add(14, 'day').endOf('day');
                           return date.isBefore(minDate) || date.isAfter(maxDate);
                         }}
-                        timeSteps={{ minutes: 15 }}
+                        timeSteps={{ minutes: reservationSettings.time_slot_minutes }}
                         skipDisabled
                         slotProps={{
                           textField: {
@@ -400,14 +507,36 @@ function CustomerPortalPage() {
                   </Grid>
                 </Paper>
 
+                {/* System Locked Alert */}
+                {systemLocked && (
+                  <Alert severity="error" sx={{ mt: 3 }}>
+                    {t('booking.system_locked')}
+                  </Alert>
+                )}
+
+                {/* Success Message */}
+                {submitSuccess && (
+                  <Alert severity="success" sx={{ mt: 3 }} onClose={() => setSubmitSuccess(false)}>
+                    {t('booking.submission_success')}
+                  </Alert>
+                )}
+
+                {/* Error Message */}
+                {submitError && (
+                  <Alert severity="error" sx={{ mt: 3 }} onClose={() => setSubmitError('')}>
+                    {submitError}
+                  </Alert>
+                )}
+
                 <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
                   <Button
                     variant="contained"
                     size="large"
                     onClick={handleSubmit}
                     color="primary"
+                    disabled={submitting || systemLocked}
                   >
-                    {t('booking.submit')}
+                    {submitting ? t('booking.submitting') : t('booking.submit')}
                   </Button>
                 </Box>
               </LocalizationProvider>

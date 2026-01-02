@@ -25,7 +25,11 @@
     "weight_required": "Syötä arvioitu omenamäärä",
     "datetime_required": "Valitse päivä ja aika",
     "timeslot_unavailable": "Tämä aika ei ole saatavilla. Valitse toinen aika.",
-    "timeslot_helper": "Aikavälit on oltava vähintään 30 minuuttia toisistaan"
+    "timeslot_helper": "Aikavälit on oltava vähintään 30 minuuttia toisistaan",
+    "system_locked": "Varausjärjestelmä on tällä hetkellä lukittu. Ota meihin yhteyttä.",
+    "submitting": "Lähetetään...",
+    "submission_success": "Varaus lähetetty onnistuneesti! Odotamme näkemistä.",
+    "submission_error": "Varauksen lähettäminen epäonnistui. Yritä uudelleen."
   },
   "tracking": {
     "title": "Seuraa tilaustasi",

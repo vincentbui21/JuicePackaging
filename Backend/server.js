@@ -2660,6 +2660,280 @@ app.get('/admin/lock-status', async (req, res) => {
 
 // ============== END ADVANCED ADMIN OPERATIONS ==============
 
+// ============== RESERVATION SYSTEM ==============
+
+// Create new reservation (Customer Portal)
+app.post('/api/reservations', async (req, res) => {
+  try {
+    const { customer_name, phone, email, apple_weight_kg, reservation_datetime, message } = req.body;
+
+    // Validate required fields
+    if (!customer_name || !phone || !apple_weight_kg || !reservation_datetime) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Check if system is locked
+    const settings = await getCurrentSettings();
+    if (settings.reservation_system_locked === 'true') {
+      return res.status(403).json({ error: 'Reservation system is currently locked' });
+    }
+
+    // Check for overlapping locked time slots
+    const [lockedSlots] = await pool.query(
+      'SELECT * FROM LockedTimeSlots WHERE start_time <= ? AND end_time >= ?',
+      [reservation_datetime, reservation_datetime]
+    );
+
+    if (lockedSlots.length > 0) {
+      return res.status(400).json({ error: 'This time slot is locked by admin' });
+    }
+
+    // Check for existing reservations at the same time (within 30 minutes)
+    const reservationTime = new Date(reservation_datetime);
+    const startWindow = new Date(reservationTime.getTime() - 30 * 60000); // 30 min before
+    const endWindow = new Date(reservationTime.getTime() + 30 * 60000); // 30 min after
+
+    const [existingReservations] = await pool.query(
+      'SELECT * FROM Reservations WHERE reservation_datetime BETWEEN ? AND ?',
+      [startWindow, endWindow]
+    );
+
+    if (existingReservations.length > 0) {
+      return res.status(400).json({ error: 'This time slot is already reserved' });
+    }
+
+    // Create reservation
+    const reservation_id = uuid.generateUniqueId();
+    await pool.query(
+      'INSERT INTO Reservations (reservation_id, customer_name, phone, email, apple_weight_kg, reservation_datetime, message) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [reservation_id, customer_name, phone, email || null, apple_weight_kg, reservation_datetime, message || null]
+    );
+
+    const [newReservation] = await pool.query(
+      'SELECT * FROM Reservations WHERE reservation_id = ?',
+      [reservation_id]
+    );
+
+    // Emit socket event to notify admin
+    const io = req.app.get('io');
+    io.emit('new_reservation', newReservation[0]);
+
+    res.json({ ok: true, reservation: newReservation[0] });
+  } catch (err) {
+    console.error('Error creating reservation:', err);
+    res.status(500).json({ error: 'Failed to create reservation' });
+  }
+});
+
+// Get all reservations (Admin)
+app.get('/api/reservations', async (req, res) => {
+  try {
+    const [reservations] = await pool.query(
+      'SELECT * FROM Reservations ORDER BY reservation_datetime ASC'
+    );
+    res.json({ ok: true, reservations });
+  } catch (err) {
+    console.error('Error fetching reservations:', err);
+    res.status(500).json({ error: 'Failed to fetch reservations' });
+  }
+});
+
+// Check in customer (Admin) - Convert reservation to order
+app.post('/api/reservations/:id/check-in', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const { id } = req.params;
+
+    // Get reservation details
+    const [reservations] = await connection.query(
+      'SELECT * FROM Reservations WHERE reservation_id = ?',
+      [id]
+    );
+
+    if (reservations.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+
+    const reservation = reservations[0];
+
+    // Check if customer already exists by phone
+    const [existingCustomers] = await connection.query(
+      'SELECT * FROM Customers WHERE phone = ? AND is_deleted = 0',
+      [reservation.phone]
+    );
+
+    let customer_id;
+
+    if (existingCustomers.length > 0) {
+      // Use existing customer
+      customer_id = existingCustomers[0].customer_id;
+    } else {
+      // Create new customer
+      customer_id = uuid.generateUniqueId();
+      await connection.query(
+        'INSERT INTO Customers (customer_id, name, phone, email) VALUES (?, ?, ?, ?)',
+        [customer_id, reservation.customer_name, reservation.phone, reservation.email]
+      );
+    }
+
+    // Create order
+    const order_id = uuid.generateUniqueId();
+    const created_at = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    await connection.query(
+      'INSERT INTO Orders (order_id, customer_id, weight_kg, status, created_at, notes) VALUES (?, ?, ?, ?, ?, ?)',
+      [order_id, customer_id, reservation.apple_weight_kg, 'pending', created_at, reservation.message]
+    );
+
+    // Delete reservation
+    await connection.query(
+      'DELETE FROM Reservations WHERE reservation_id = ?',
+      [id]
+    );
+
+    await connection.commit();
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('reservation_checked_in', { reservation_id: id, customer_id, order_id });
+
+    res.json({ ok: true, customer_id, order_id });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error checking in reservation:', err);
+    res.status(500).json({ error: 'Failed to check in reservation' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Get all locked time slots (Admin & Customer Portal)
+app.get('/api/locked-time-slots', async (req, res) => {
+  try {
+    const [slots] = await pool.query(
+      'SELECT * FROM LockedTimeSlots ORDER BY start_time ASC'
+    );
+    res.json({ ok: true, slots });
+  } catch (err) {
+    console.error('Error fetching locked time slots:', err);
+    res.status(500).json({ error: 'Failed to fetch locked time slots' });
+  }
+});
+
+// Create locked time slot (Admin)
+app.post('/api/locked-time-slots', async (req, res) => {
+  try {
+    const { start_time, end_time, reason } = req.body;
+
+    if (!start_time || !end_time) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Check for overlapping slots
+    const [overlapping] = await pool.query(
+      'SELECT * FROM LockedTimeSlots WHERE (start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?) OR (start_time >= ? AND end_time <= ?)',
+      [end_time, start_time, end_time, end_time, start_time, end_time]
+    );
+
+    if (overlapping.length > 0) {
+      return res.status(400).json({ error: 'Time slot overlaps with existing locked slot' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO LockedTimeSlots (start_time, end_time, reason) VALUES (?, ?, ?)',
+      [start_time, end_time, reason || null]
+    );
+
+    const [newSlot] = await pool.query(
+      'SELECT * FROM LockedTimeSlots WHERE slot_id = ?',
+      [result.insertId]
+    );
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('locked_slot_created', newSlot[0]);
+
+    res.json({ ok: true, slot: newSlot[0] });
+  } catch (err) {
+    console.error('Error creating locked time slot:', err);
+    res.status(500).json({ error: 'Failed to create locked time slot' });
+  }
+});
+
+// Delete locked time slot (Admin)
+app.delete('/api/locked-time-slots/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.query(
+      'DELETE FROM LockedTimeSlots WHERE slot_id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Locked time slot not found' });
+    }
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('locked_slot_deleted', { slot_id: parseInt(id) });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error deleting locked time slot:', err);
+    res.status(500).json({ error: 'Failed to delete locked time slot' });
+  }
+});
+
+// Get reservation settings (Customer Portal & Admin)
+app.get('/api/reservation-settings', async (req, res) => {
+  try {
+    const settings = await getCurrentSettings();
+    res.json({
+      ok: true,
+      settings: {
+        system_locked: settings.reservation_system_locked === 'true',
+        time_slot_minutes: parseInt(settings.reservation_time_slot_minutes) || 30,
+        hours_start: parseInt(settings.reservation_hours_start) || 8,
+        hours_end: parseInt(settings.reservation_hours_end) || 20
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching reservation settings:', err);
+    res.status(500).json({ error: 'Failed to fetch reservation settings' });
+  }
+});
+
+// Toggle reservation system lock (Admin)
+app.post('/api/reservation-settings/toggle-lock', async (req, res) => {
+  try {
+    const content = await fs.readFile(settingsFilePath, 'utf8');
+    const settings = parseSettingsFile(content);
+    
+    // Toggle the lock status
+    const newLockStatus = settings.reservation_system_locked === 'true' ? 'false' : 'true';
+    settings.reservation_system_locked = newLockStatus;
+    
+    // Write back to file
+    const newContent = stringifySettings(settings);
+    await fs.writeFile(settingsFilePath, newContent, 'utf8');
+    
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('reservation_system_lock_changed', { locked: newLockStatus === 'true' });
+    
+    res.json({ ok: true, locked: newLockStatus === 'true' });
+  } catch (err) {
+    console.error('Error toggling reservation system lock:', err);
+    res.status(500).json({ error: 'Failed to toggle lock status' });
+  }
+});
+
+// ============== END RESERVATION SYSTEM ==============
+
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {
   console.log("server is listening at port 5001!!");
