@@ -33,8 +33,11 @@ export function buildAdminReport(rows = [], costTotals = {}, pricing = {}) {
     const kilos = round(row.kilos, 2);
     const pouches = toNumber(row.pouches_produced);
     const city = String(row.city || "").trim().toLowerCase();
-    const unitPrice = basePrice + (city === "kuopio" ? 0 : shippingFee);
-    const revenue = pouches > 0 ? round(pouches * unitPrice, 2) : 0;
+    const fallbackUnitPrice = basePrice + (city === "kuopio" ? 0 : shippingFee);
+    const totalCost = toNumber(row.total_cost);
+    const useTotalCostForUnit = totalCost > 0 && pouches > 0;
+    const unitPrice = useTotalCostForUnit ? round(totalCost / pouches, 2) : fallbackUnitPrice;
+    const revenue = totalCost > 0 ? round(totalCost, 2) : (pouches > 0 ? round(pouches * unitPrice, 2) : 0);
 
     // TODO: replace with real COGS once available in the data model.
     const directCost = round(row.direct_cost, 2);

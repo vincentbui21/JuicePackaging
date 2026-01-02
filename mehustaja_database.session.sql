@@ -66,3 +66,18 @@ CREATE TABLE IF NOT EXISTS `Liabilities` (
     `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
     PRIMARY KEY (`liability_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ 
+
+SELECT
+  DATE(b.created_at) AS production_date,
+  o.order_id,
+  COALESCE(o.actual_pouches, o.pouches_count, 0) AS pouches_produced,
+  o.total_cost
+FROM (
+  SELECT SUBSTRING(bx.box_id, 5, 36) AS order_id, MIN(bx.created_at) AS created_at
+  FROM Boxes bx
+  WHERE bx.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+  GROUP BY order_id
+) b
+JOIN Orders o ON o.order_id = b.order_id
+ORDER BY b.created_at DESC;
