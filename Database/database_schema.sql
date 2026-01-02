@@ -57,6 +57,7 @@ CREATE TABLE `Customers` (
 DROP TABLE IF EXISTS `Pallets`;
 CREATE TABLE `Pallets` (
     `pallet_id` varchar(36) NOT NULL,
+    `pallet_name` varchar(64) NOT NULL,
     `section` varchar(36) DEFAULT NULL,
     `created_at` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`pallet_id`)
@@ -266,4 +267,35 @@ CREATE TABLE `Discounts` (
   CONSTRAINT `fk_discounts_created_by` FOREIGN KEY (`created_by`) REFERENCES `Accounts` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_discounts_used_by` FOREIGN KEY (`used_by_customer_id`) REFERENCES `Customers` (`customer_id`) ON DELETE SET NULL,
   CONSTRAINT `fk_discounts_applied_by` FOREIGN KEY (`applied_by_employee_id`) REFERENCES `Accounts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Reservations table
+DROP TABLE IF EXISTS `Reservations`;
+CREATE TABLE `Reservations` (
+    `reservation_id` VARCHAR(36) NOT NULL,
+    `customer_name` VARCHAR(255) NOT NULL,
+    `phone` VARCHAR(50) NOT NULL,
+    `email` VARCHAR(255) DEFAULT NULL,
+    `apple_weight_kg` DECIMAL(10,2) NOT NULL,
+    `reservation_datetime` DATETIME NOT NULL,
+    `message` TEXT DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+    PRIMARY KEY (`reservation_id`),
+    KEY `idx_reservations_datetime` (`reservation_datetime`),
+    KEY `idx_reservations_phone` (`phone`),
+    KEY `idx_reservations_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Locked time slots table
+DROP TABLE IF EXISTS `LockedTimeSlots`;
+CREATE TABLE `LockedTimeSlots` (
+    `slot_id` INT(11) NOT NULL AUTO_INCREMENT,
+    `start_time` DATETIME NOT NULL,
+    `end_time` DATETIME NOT NULL,
+    `reason` TEXT DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+    PRIMARY KEY (`slot_id`),
+    KEY `idx_locked_slots_time_range` (`start_time`, `end_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
