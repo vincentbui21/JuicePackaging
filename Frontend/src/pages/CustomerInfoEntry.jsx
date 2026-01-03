@@ -1,4 +1,4 @@
-import { Typography, Button, Box, Paper } from '@mui/material';
+import { Typography, Button, Box, Paper, Snackbar, Alert } from '@mui/material';
 import CustomerInfo from '../components/customerinfoinput';
 import OrderInfoInput from '../components/orderinfoinput';
 import RequiredInputReminder from '../components/required_input_reminder';
@@ -35,6 +35,7 @@ function CustomerInfoEntry() {
   const [qrcodes, setQrcodes] = useState([]);
   const [customerForwardName, setCustomerForwardName] = useState("");
   const [maxCrate, setMaxCrate] = useState("");
+  const [errorSnackbar, setErrorSnackbar] = useState({ open: false, message: "" });
 
   function resetData() {
     setCustomerData(initialCustomerData);
@@ -53,7 +54,17 @@ function CustomerInfoEntry() {
       set_Openreminder(true);
       return;
     }
+// Validate crate count
+    const crateCount = Number(orderdata.No_of_Crates);
+    if (crateCount <= 0 || !Number.isInteger(crateCount)) {
+      setErrorSnackbar({ 
+        open: true, 
+        message: t('customer_info_entry.crate_count_error') || "Number of crates must be at least 1"
+      });
+      return;
+    }
 
+    
     try {
       const response = await api.post('/new-entry', [customerdata, orderdata]);
       // response.data should be an array of crate IDs
@@ -126,6 +137,21 @@ function CustomerInfoEntry() {
         name={customerForwardName}
         max={maxCrate}
       />
+
+      <Snackbar 
+        open={errorSnackbar.open} 
+        autoHideDuration={4000} 
+        onClose={() => setErrorSnackbar({ ...errorSnackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setErrorSnackbar({ ...errorSnackbar, open: false })} 
+          severity="error" 
+          sx={{ width: '100%' }}
+        >
+          {errorSnackbar.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 }

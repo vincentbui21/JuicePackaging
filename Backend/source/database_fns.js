@@ -18,8 +18,15 @@ const pool = mysql.createPool({
     queueLimit: 0
 }).promise();
 
-async function update_new_customer_data(customer_data, order_data) {
+// Helper function to get connection with timezone set
+async function getConnectionWithTimezone() {
     const connection = await pool.getConnection();
+    await connection.query("SET time_zone = 'Europe/Helsinki'");
+    return connection;
+}
+
+async function update_new_customer_data(customer_data, order_data) {
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -66,7 +73,7 @@ async function update_new_customer_data(customer_data, order_data) {
             estimatedPouches, // pouches_count
             estimatedPouches, // actual_pouches - same as estimated initially
             order_data.Notes,
-            logic.formatDateToSQL(customer_data.entryDate)       
+            new Date() // Use current server timestamp instead of frontend date     
         ]);
 
         // Record initial status in history
@@ -83,7 +90,7 @@ async function update_new_customer_data(customer_data, order_data) {
                 newCrateId,
                 customerID,
                 "Created",
-                logic.formatDateToSQL(customer_data.entryDate),
+                new Date(), // Use current server timestamp
                 `${i}/${order_data.No_of_Crates}` //crate_order      
             ])
         }
@@ -102,7 +109,7 @@ async function update_new_customer_data(customer_data, order_data) {
 
 
 async function get_crate_data(crate_id) {
-    const connection = await pool.getConnection()
+    const connection = await getConnectionWithTimezone()
 
     try{
         const CustomerData = `
@@ -147,7 +154,7 @@ async function get_crate_data(crate_id) {
 }
 
 async function update_crates_status(crateIds, newStatus) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         if (!Array.isArray(crateIds) || crateIds.length === 0) {
@@ -198,7 +205,7 @@ async function update_crates_status(crateIds, newStatus) {
 }
 
 async function update_order_status(customer_id, new_status) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -240,7 +247,7 @@ async function update_order_status(customer_id, new_status) {
 }
 
 async function getCustomers(customerName, page, limit) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const parsedPage = page != null ? parseInt(page, 10) : 1;
@@ -311,7 +318,7 @@ async function getCustomers(customerName, page, limit) {
 }
 
 async function delete_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     try {
         const query = `
             UPDATE Customers
@@ -329,7 +336,7 @@ async function delete_customer(customer_id) {
 }
 
 async function get_deleted_customers() {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     try {
         const query = `
             SELECT 
@@ -390,7 +397,7 @@ async function get_deleted_customers() {
 }
 
 async function restore_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     try {
         const query = `
             UPDATE Customers
@@ -409,7 +416,7 @@ async function restore_customer(customer_id) {
 
 
 async function force_delete_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -450,7 +457,7 @@ async function insertCratesForCustomer(connection, customer_id, crateCount, upda
 }
 
 async function updateCustomerData(customer_id, customerInfoChange, orderInfoChange) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -599,7 +606,7 @@ async function updateCustomerData(customer_id, customerInfoChange, orderInfoChan
 }
 
 async function get_crates_by_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const query = `
@@ -720,7 +727,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
 }
 
 async function getPalletsByLocation(location, page, limit) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const parsedPage = page != null ? parseInt(page, 10) : 1;
@@ -765,7 +772,7 @@ async function getPalletsByLocation(location, page, limit) {
 
 
 async function deletePallet(pallet_id) {
-  const connection = await pool.getConnection();
+  const connection = await getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
 
@@ -795,7 +802,7 @@ async function deletePallet(pallet_id) {
 
 
 async function updatePalletCapacity(pallete_id, newCapacity) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const parsedCapacity = parseInt(newCapacity, 10);
@@ -839,7 +846,7 @@ async function updatePalletCapacity(pallete_id, newCapacity) {
     }
 }
 async function markOrderAsReady(order_id) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   try {
     await conn.beginTransaction();
     
@@ -880,7 +887,7 @@ async function markOrderAsReady(order_id) {
 }
 
   async function markOrderAsDone(order_id, comment = "") {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   try {
     await conn.beginTransaction();
 
@@ -954,7 +961,7 @@ async function markOrderAsReady(order_id) {
     
    
 async function updateOrderInfo(order_id, data = {}) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   try {
     await conn.beginTransaction();
 
@@ -1072,7 +1079,7 @@ async function updateOrderInfo(order_id, data = {}) {
       }
 
       async function force_delete_order(order_id) {
-        const connection = await pool.getConnection();
+        const connection = await getConnectionWithTimezone();
         try {
           await connection.beginTransaction();
           const pattern = `BOX_${order_id}%`;
@@ -1107,7 +1114,7 @@ async function updateOrderInfo(order_id, data = {}) {
       }
       
       async function createPallet(location, capacity, palletName = null) {
-        const connection = await pool.getConnection();
+        const connection = await getConnectionWithTimezone();
         try {
           // Auto-number within the same location if no name given
           const [[{ cnt }]] = await connection.query(
@@ -1155,7 +1162,7 @@ async function updateOrderInfo(order_id, data = {}) {
      // Holding-safe
 // Holding-safe + robust ID normalization
 async function assignBoxToPallet(box_id_raw, pallet_id) {
-  const connection = await pool.getConnection();
+  const connection = await getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
 
@@ -1277,7 +1284,7 @@ async function updatePalletHolding(pallet_id, connOrPool = pool) {
       
       
       async function markOrderAsPickedUp(order_id) {
-        const conn = await pool.getConnection();
+        const conn = await getConnectionWithTimezone();
         try {
           await conn.beginTransaction();
           
@@ -1372,7 +1379,7 @@ async function searchOrdersWithShelfInfo(query) {
       }
 
       async function getAllShelfLocations() {
-        const connection = await pool.getConnection();
+        const connection = await getConnectionWithTimezone();
         try {
             const [rows] = await connection.query('SELECT DISTINCT location FROM Shelves');
             return rows;
@@ -1386,7 +1393,7 @@ async function searchOrdersWithShelfInfo(query) {
     
 
     async function createShelf(location, capacity = 4, shelfName = null) {
-      const connection = await pool.getConnection();
+      const connection = await getConnectionWithTimezone();
       try {
         if (!location || capacity == null) throw new Error("Missing required parameters");
     
@@ -1434,7 +1441,7 @@ async function getShelvesByLocation(location) {
 
 
 async function getBoxesByPalletId(pallet_id) {
-  const connection = await pool.getConnection();
+  const connection = await getConnectionWithTimezone();
   try {
     const [rows] = await connection.query(
       `
@@ -1464,7 +1471,7 @@ async function getBoxesByPalletId(pallet_id) {
 }
 
   async function assignPalletToShelf(palletId, shelfId) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
   
     try {
       await connection.beginTransaction();
@@ -1751,7 +1758,7 @@ async function getScanInfoByBoxId(box_id_raw) {
 }
 
 async function assignBoxesToPallet(pallet_id, box_ids = []) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
 
   try {
     await conn.beginTransaction();
@@ -3384,7 +3391,7 @@ async function deleteLiability(liabilityId) {
 }
 
 async function getOrderStatusHistory(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     
     try {
         const query = `
@@ -3552,7 +3559,7 @@ async function getAutoInventoryTransactionByOrder(orderId) {
  * @returns {Promise<Object>} { success, inventoryTxId, costEntryId, message }
  */
 async function createAutoInventoryDeduction(orderId, pouchCount, unitCost = 0.5) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   
   try {
     await conn.beginTransaction();
@@ -3778,7 +3785,7 @@ async function listReportSnapshots(filters = {}) {
  * Moves data to archive tables while preserving for historical analysis
  */
 async function archiveSeasonData(seasonName, periodStart, periodEnd) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   
   try {
     await conn.beginTransaction();
@@ -4032,3 +4039,4 @@ async function recordReportExport(exportType, reportType, periodStart, periodEnd
 }
 
 module.exports.pool = pool;
+module.exports.getConnectionWithTimezone = getConnectionWithTimezone;

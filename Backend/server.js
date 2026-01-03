@@ -2170,7 +2170,7 @@ app.get("/default-setting", async (req, res) => {
 
 app.post("/default-setting", async (req, res) => {
   
-  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword} = req.body;
+  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword, reservation_system_locked, reservation_time_slot_minutes, reservation_hours_start, reservation_hours_end} = req.body;
   console.log(req.body);
 
   console.log("Received body:", req.body);
@@ -2198,6 +2198,10 @@ app.post("/default-setting", async (req, res) => {
     if (price !== undefined) settings.price = price;
     if (shipping_fee !== undefined) settings.shipping_fee = shipping_fee;
     if (printer_ip !== undefined) settings.printer_ip = printer_ip;
+    if (reservation_system_locked !== undefined) settings.reservation_system_locked = reservation_system_locked;
+    if (reservation_time_slot_minutes !== undefined) settings.reservation_time_slot_minutes = reservation_time_slot_minutes;
+    if (reservation_hours_start !== undefined) settings.reservation_hours_start = reservation_hours_start;
+    if (reservation_hours_end !== undefined) settings.reservation_hours_end = reservation_hours_end;
 
 
     await fs.writeFile(settingsFilePath, stringifySettings(settings), "utf8");
@@ -2616,7 +2620,7 @@ app.get('/api/discounts/search/by-code', async (req, res) => {
 
 // Delete all customer data (EXTREMELY DANGEROUS)
 app.post('/admin/delete-all-customer-data', async (req, res) => {
-  const connection = await pool.getConnection();
+  const connection = await database.getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
     
@@ -2801,7 +2805,7 @@ app.get('/api/reservations', async (req, res) => {
 
 // Check in customer (Admin) - Convert reservation to order
 app.post('/api/reservations/:id/check-in', async (req, res) => {
-  const connection = await pool.getConnection();
+  const connection = await database.getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
 
