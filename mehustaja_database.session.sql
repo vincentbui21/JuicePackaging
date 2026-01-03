@@ -81,3 +81,6 @@ FROM (
 ) b
 JOIN Orders o ON o.order_id = b.order_id
 ORDER BY b.created_at DESC;
+
+
+ALTER TABLE Orders DROP INDEX unique_customer_id;

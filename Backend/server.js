@@ -708,6 +708,27 @@ const markDoneHandler = async (req, res) => {
     // Update order status + create BOX_* entries
     const result = await database.markOrderAsDone(order_id, comment);
 
+    // AUTO-DEDUCT INVENTORY: When order is marked "Processing complete"
+    // Automatically reduce pouch inventory and create COGS entry
+    try {
+      const [[order]] = await database.pool.query(
+        `SELECT actual_pouches, pouches_count FROM Orders WHERE order_id = ?`,
+        [order_id]
+      );
+      
+      if (order) {
+        const pouchCount = order.actual_pouches || order.pouches_count || 0;
+        if (pouchCount > 0) {
+          // Auto-deduct with default unit cost of €0.50 per pouch
+          const deductResult = await database.createAutoInventoryDeduction(order_id, pouchCount, 0.5);
+          console.log(`[Auto-Deduction] ${deductResult.message}`);
+        }
+      }
+    } catch (autoDeductError) {
+      // Log but don't fail the order completion if auto-deduction fails
+      console.warn(`[Auto-Deduction Warning] Could not auto-deduct for ${order_id}:`, autoDeductError.message);
+    }
+
     // Broadcast
     io.emit("order-status-updated", { order_id, status: "processing complete" });
     emitActivity('processing', `Order ${order_id} processing completed`, { order_id });
@@ -2823,10 +2844,57 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
     const order_id = uuid.generateUUID();
     const created_at = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     
-    await connection.query(
-      'INSERT INTO Orders (order_id, customer_id, weight_kg, status, created_at, notes) VALUES (?, ?, ?, ?, ?, ?)',
-      [order_id, customer_id, reservation.apple_weight_kg, 'pending', created_at, reservation.message]
+    // Check if customer already has an order (UNIQUE constraint allows only one per customer)
+    const [existingOrders] = await connection.query(
+      'SELECT order_id FROM Orders WHERE customer_id = ?',
+      [customer_id]
     );
+
+    let finalOrderId = order_id;
+    
+    if (existingOrders.length > 0) {
+      // Order already exists for this customer - update it instead of creating duplicate
+      finalOrderId = existingOrders[0].order_id;
+      
+      // Get pricing defaults from file (fallback to 8 if missing)
+      const settings = await getCurrentSettings();
+      const basePrice = Number.parseFloat(settings.price);
+      const pricePerPouch = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 8;
+
+      // Calculate estimated pouches (65% yield, 3L per pouch)
+      const weight = Number.parseFloat(reservation.apple_weight_kg);
+      const safeWeight = Number.isFinite(weight) ? weight : 0;
+      const estimatedPouches = Math.floor((safeWeight * 0.65) / 3);
+      const totalCost = Number((estimatedPouches * pricePerPouch).toFixed(2));
+      
+      // Update existing order with new details from reservation
+      await connection.query(
+        'UPDATE Orders SET weight_kg = ?, pouches_count = ?, actual_pouches = ?, total_cost = ?, notes = ?, status = ?, created_at = ? WHERE order_id = ?',
+        [reservation.apple_weight_kg, estimatedPouches, estimatedPouches, totalCost, reservation.message, 'In Progress', created_at, finalOrderId]
+      );
+    } else {
+      // Get pricing defaults from file (fallback to 8 if missing)
+      const settings = await getCurrentSettings();
+      const basePrice = Number.parseFloat(settings.price);
+      const pricePerPouch = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 8;
+
+      // Calculate estimated pouches (65% yield, 3L per pouch)
+      const weight = Number.parseFloat(reservation.apple_weight_kg);
+      const safeWeight = Number.isFinite(weight) ? weight : 0;
+      const estimatedPouches = Math.floor((safeWeight * 0.65) / 3);
+      const totalCost = Number((estimatedPouches * pricePerPouch).toFixed(2));
+      
+      // Create new order
+      await connection.query(
+        'INSERT INTO Orders (order_id, customer_id, weight_kg, status, created_at, notes, total_cost, pouches_count, actual_pouches) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [order_id, customer_id, reservation.apple_weight_kg, 'In Progress', created_at, reservation.message, totalCost, estimatedPouches, estimatedPouches]
+      );
+
+      await connection.query(
+        'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+        [order_id, customer_id, 'In Progress']
+      );
+    }
 
     // Delete reservation
     await connection.query(
@@ -2838,7 +2906,9 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
 
     // Emit socket event
     const io = req.app.get('io');
-    io.emit('reservation_checked_in', { reservation_id: id, customer_id, order_id });
+    io.emit('reservation_checked_in', { reservation_id: id, customer_id, order_id: finalOrderId });
+    io.emit('order-status-updated');
+    emitActivity('customer', `Reservation checked in - ${reservation.customer_name}`, { customer_id, order_id: finalOrderId });
 
     res.json({ ok: true, customer_id, order_id });
   } catch (err) {
@@ -2978,7 +3048,186 @@ app.post('/api/reservation-settings/toggle-lock', async (req, res) => {
   }
 });
 
-// ============== END RESERVATION SYSTEM ==============
+// ============== HISTORICAL DATA & SNAPSHOTS ==============
+
+/**
+ * Archive a complete season's data for historical preservation
+ * Called at end of season to snapshot report state before customer deletion
+ * POST /archive-season
+ * Body: { seasonName, periodStart, periodEnd }
+ */
+app.post('/archive-season', async (req, res) => {
+  try {
+    const { seasonName, periodStart, periodEnd } = req.body;
+
+    if (!seasonName || !periodStart || !periodEnd) {
+      return res.status(400).json({
+        error: 'Missing required fields: seasonName, periodStart, periodEnd'
+      });
+    }
+
+    const result = await database.archiveSeasonData(seasonName, periodStart, periodEnd);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.message });
+    }
+
+    io.emit('season_archived', {
+      seasonName,
+      ordersArchived: result.ordersArchived,
+      costsArchived: result.costsArchived,
+      timestamp: new Date()
+    });
+
+    res.json({
+      success: true,
+      seasonName,
+      ordersArchived: result.ordersArchived,
+      costsArchived: result.costsArchived,
+      message: result.message
+    });
+  } catch (err) {
+    console.error('Error archiving season:', err);
+    res.status(500).json({ error: 'Failed to archive season' });
+  }
+});
+
+/**
+ * List available historical periods/seasons
+ * GET /historical-periods
+ */
+app.get('/historical-periods', async (req, res) => {
+  try {
+    const periods = await database.listReportSnapshots();
+    res.json({
+      success: true,
+      periods
+    });
+  } catch (err) {
+    console.error('Error fetching historical periods:', err);
+    res.status(500).json({ error: 'Failed to fetch periods' });
+  }
+});
+
+/**
+ * Get historical report data for a specific season
+ * Even if customers are deleted, archived data is preserved
+ * GET /historical-report/:seasonName
+ */
+app.get('/historical-report/:seasonName', async (req, res) => {
+  try {
+    const { seasonName } = req.params;
+    const result = await database.getHistoricalReport(seasonName);
+
+    if (!result.success) {
+      return res.status(404).json({ error: result.message });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching historical report:', err);
+    res.status(500).json({ error: 'Failed to fetch historical report' });
+  }
+});
+
+/**
+ * Compare two seasons side-by-side
+ * GET /report-comparison/:season1/:season2
+ */
+app.get('/report-comparison/:season1/:season2', async (req, res) => {
+  try {
+    const { season1, season2 } = req.params;
+    const result = await database.compareSeasons(season1, season2);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error comparing seasons:', err);
+    res.status(500).json({ error: 'Failed to compare seasons' });
+  }
+});
+
+/**
+ * Create a point-in-time snapshot of the current report
+ * Useful for monthly/quarterly snapshots or before major operations
+ * POST /create-snapshot
+ * Body: { snapshotName, periodStart, periodEnd, reportData, notes }
+ */
+app.post('/create-snapshot', async (req, res) => {
+  try {
+    const { snapshotName, periodStart, periodEnd, reportData, notes } = req.body;
+    const createdBy = req.user?.username || 'system';
+
+    if (!snapshotName || !reportData) {
+      return res.status(400).json({
+        error: 'Missing required fields: snapshotName, reportData'
+      });
+    }
+
+    const result = await database.createReportSnapshot(
+      snapshotName,
+      periodStart || new Date(),
+      periodEnd || new Date(),
+      reportData,
+      createdBy,
+      notes
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      snapshotId: result.snapshotId,
+      message: result.message
+    });
+  } catch (err) {
+    console.error('Error creating snapshot:', err);
+    res.status(500).json({ error: 'Failed to create snapshot' });
+  }
+});
+
+/**
+ * Record a report export (for compliance/audit trail)
+ * POST /record-export
+ * Body: { exportType, reportType, periodStart, periodEnd, fileName, fileSize, rowCount }
+ */
+app.post('/record-export', async (req, res) => {
+  try {
+    const { exportType, reportType, periodStart, periodEnd, fileName, fileSize, rowCount } = req.body;
+    const exportedBy = req.user?.username || 'unknown';
+
+    const result = await database.recordReportExport(
+      exportType || 'csv',
+      reportType || 'admin_report',
+      periodStart,
+      periodEnd,
+      fileName,
+      fileSize || 0,
+      rowCount || 0,
+      exportedBy
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      exportId: result.exportId,
+      message: result.message
+    });
+  } catch (err) {
+    console.error('Error recording export:', err);
+    res.status(500).json({ error: 'Failed to record export' });
+  }
+});
+
+// ============== END HISTORICAL DATA ==============
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {

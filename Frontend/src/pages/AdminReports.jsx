@@ -222,6 +222,15 @@ export default function AdminReports() {
   });
   const [editingLiabilityId, setEditingLiabilityId] = useState(null);
 
+  // Historical data & snapshots
+  const [reportMode, setReportMode] = useState("current"); // "current" or "historical"
+  const [historicalPeriods, setHistoricalPeriods] = useState([]);
+  const [selectedPeriod, setSelectedPeriod] = useState("");
+  const [historicalData, setHistoricalData] = useState(null);
+  const [comparePeriod1, setComparePeriod1] = useState("");
+  const [comparePeriod2, setComparePeriod2] = useState("");
+  const [comparisonResult, setComparisonResult] = useState(null);
+
   const costTotals = useMemo(() => {
     const totals = { direct: 0, overhead: 0, total: 0 };
     costEntries.forEach((entry) => {
@@ -444,8 +453,47 @@ export default function AdminReports() {
     }
   };
 
+  const loadHistoricalPeriods = async () => {
+    try {
+      const { data } = await api.get("/historical-periods");
+      setHistoricalPeriods(Array.isArray(data?.periods) ? data.periods : []);
+    } catch (err) {
+      console.error("Failed to load historical periods", err);
+      // Not critical - only show error if explicitly trying to access historical data
+    }
+  };
+
+  const loadHistoricalReport = async (seasonName) => {
+    try {
+      const { data } = await api.get(`/historical-report/${encodeURIComponent(seasonName)}`);
+      if (data.success) {
+        setHistoricalData(data);
+      } else {
+        showToast(`Failed to load historical data for ${seasonName}`, "error");
+      }
+    } catch (err) {
+      console.error("Failed to load historical report", err);
+      showToast("Failed to load historical report", "error");
+    }
+  };
+
+  const compareSeasonReports = async (s1, s2) => {
+    try {
+      const { data } = await api.get(`/report-comparison/${encodeURIComponent(s1)}/${encodeURIComponent(s2)}`);
+      if (data.success) {
+        setComparisonResult(data.comparison);
+      } else {
+        showToast("Failed to compare seasons", "error");
+      }
+    } catch (err) {
+      console.error("Failed to compare seasons", err);
+      showToast("Failed to compare seasons", "error");
+    }
+  };
+
   useEffect(() => {
     loadCostCenters();
+    loadHistoricalPeriods();
   }, []);
 
   useEffect(() => {
@@ -1376,6 +1424,116 @@ export default function AdminReports() {
         </CardContent>
       </Card>
 
+      {/* Historical Data Mode Selector */}
+      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.default" }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <Typography variant="subtitle2" fontWeight={600}>Historical Data & Analysis</Typography>
+            
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>Report Mode</InputLabel>
+                <Select
+                  value={reportMode}
+                  label="Report Mode"
+                  onChange={(e) => {
+                    setReportMode(e.target.value);
+                    if (e.target.value === "historical") {
+                      setSelectedPeriod("");
+                    }
+                  }}
+                >
+                  <MenuItem value="current">2026 Current</MenuItem>
+                  <MenuItem value="historical">2025 & Earlier</MenuItem>
+                  <MenuItem value="compare">Compare Seasons</MenuItem>
+                </Select>
+              </FormControl>
+
+              {reportMode === "historical" && historicalPeriods.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel>Select Season</InputLabel>
+                  <Select
+                    value={selectedPeriod}
+                    label="Select Season"
+                    onChange={(e) => {
+                      setSelectedPeriod(e.target.value);
+                      loadHistoricalReport(e.target.value);
+                    }}
+                  >
+                    {historicalPeriods.map((period) => (
+                      <MenuItem key={period.snapshot_id} value={period.snapshot_name}>
+                        {period.snapshot_name} ({period.period_start} to {period.period_end})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+
+              {reportMode === "compare" && historicalPeriods.length > 0 && (
+                <>
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Season 1</InputLabel>
+                    <Select
+                      value={comparePeriod1}
+                      label="Season 1"
+                      onChange={(e) => setComparePeriod1(e.target.value)}
+                    >
+                      {historicalPeriods.map((period) => (
+                        <MenuItem key={`1-${period.snapshot_id}`} value={period.snapshot_name}>
+                          {period.snapshot_name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Season 2</InputLabel>
+                    <Select
+                      value={comparePeriod2}
+                      label="Season 2"
+                      onChange={(e) => setComparePeriod2(e.target.value)}
+                    >
+                      {historicalPeriods.map((period) => (
+                        <MenuItem key={`2-${period.snapshot_id}`} value={period.snapshot_name}>
+                          {period.snapshot_name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      if (comparePeriod1 && comparePeriod2) {
+                        compareSeasonReports(comparePeriod1, comparePeriod2);
+                      } else {
+                        showToast("Please select both seasons to compare", "warning");
+                      }
+                    }}
+                  >
+                    Compare
+                  </Button>
+                </>
+              )}
+
+              {historicalPeriods.length === 0 && reportMode !== "current" && (
+                <Typography variant="body2" color="text.secondary">
+                  No historical data available. Archive seasons to enable historical analysis.
+                </Typography>
+              )}
+            </Stack>
+
+            {selectedPeriod && historicalData && (
+              <Alert severity="info">
+                Viewing historical data for {selectedPeriod}: {historicalData.totals?.orders || 0} orders,{" "}
+                €{(historicalData.totals?.revenue || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </Alert>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
       {loading && (
         <Stack alignItems="center" py={3}>
           <CircularProgress size={28} />
@@ -2064,6 +2222,68 @@ export default function AdminReports() {
                               )}
                             </TableBody>
                           </Table>
+
+                          {/* NEW: Auto-Generated Transactions Section */}
+                          <Divider sx={{ my: 3 }} />
+                          <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2 }}>
+                            Automatically Generated Transactions
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
+                            These transactions are automatically created when orders are completed. They track pouch usage for proper COGS accounting.
+                          </Typography>
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
+                                <TableCell sx={{ width: 100 }}>Date</TableCell>
+                                <TableCell sx={{ width: 120 }}>Item</TableCell>
+                                <TableCell sx={{ width: 100 }}>Type</TableCell>
+                                <TableCell align="right" sx={{ width: 80 }}>Qty</TableCell>
+                                <TableCell align="right" sx={{ width: 100 }}>Unit cost</TableCell>
+                                <TableCell align="right" sx={{ width: 100 }}>Total</TableCell>
+                                <TableCell sx={{ width: 120 }}>Order ID</TableCell>
+                                <TableCell>Notes</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {!inventoryTransactions || inventoryTransactions.filter(tx => tx.is_auto_generated === 1).length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      No automatic transactions yet. They will appear here when orders are completed.
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                inventoryTransactions
+                                  .filter(tx => tx.is_auto_generated === 1)
+                                  .map((tx) => (
+                                    <TableRow key={tx.tx_id} sx={{ backgroundColor: "#fafafa" }}>
+                                      <TableCell>{tx.tx_date}</TableCell>
+                                      <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
+                                      <TableCell>
+                                        <Chip 
+                                          label={tx.tx_type} 
+                                          size="small" 
+                                          color="primary" 
+                                          variant="outlined"
+                                        />
+                                      </TableCell>
+                                      <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
+                                      <TableCell align="right">
+                                        {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
+                                      </TableCell>
+                                      <TableCell align="right" sx={{ fontWeight: 600 }}>
+                                        {tx.total_cost != null ? formatCurrency(tx.total_cost) : "—"}
+                                      </TableCell>
+                                      <TableCell sx={{ fontFamily: "monospace", fontSize: "0.85em" }}>
+                                        {tx.related_order_id ? tx.related_order_id.substring(0, 8) + "..." : "—"}
+                                      </TableCell>
+                                      <TableCell sx={{ overflowWrap: "anywhere", fontSize: "0.85em" }}>{tx.notes || "—"}</TableCell>
+                                    </TableRow>
+                                  ))
+                              )}
+                            </TableBody>
+                          </Table>
                         </Stack>
                       </Grid>
                     </Grid>
@@ -2437,6 +2657,88 @@ export default function AdminReports() {
             </Stack>
           </TabPanel>
         </>
+      )}
+
+      {/* Season Comparison Results */}
+      {reportMode === "compare" && comparisonResult && (
+        <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+          <CardContent>
+            <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
+              Season Comparison: {comparisonResult.season1} vs {comparisonResult.season2}
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            
+            <Grid container spacing={2}>
+              {/* Orders Comparison */}
+              <Grid item xs={12} sm={6} md={3}>
+                <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Orders</Typography>
+                    <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
+                      <Typography variant="h5">{comparisonResult.metrics.orders.season2}</Typography>
+                      <Typography variant="body2" color={comparisonResult.metrics.orders.change >= 0 ? "success.main" : "error.main"}>
+                        {comparisonResult.metrics.orders.change >= 0 ? "+" : ""}{comparisonResult.metrics.orders.change}
+                        ({comparisonResult.metrics.orders.changePercent}%)
+                      </Typography>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">vs {comparisonResult.metrics.orders.season1}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Kilos Comparison */}
+              <Grid item xs={12} sm={6} md={3}>
+                <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Kilos</Typography>
+                    <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
+                      <Typography variant="h5">{comparisonResult.metrics.kilos.season2.toFixed(0)}</Typography>
+                      <Typography variant="body2" color={comparisonResult.metrics.kilos.change >= 0 ? "success.main" : "error.main"}>
+                        {comparisonResult.metrics.kilos.change >= 0 ? "+" : ""}{comparisonResult.metrics.kilos.change.toFixed(0)}
+                        ({comparisonResult.metrics.kilos.changePercent}%)
+                      </Typography>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">vs {comparisonResult.metrics.kilos.season1.toFixed(0)}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Pouches Comparison */}
+              <Grid item xs={12} sm={6} md={3}>
+                <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Pouches</Typography>
+                    <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
+                      <Typography variant="h5">{comparisonResult.metrics.pouches.season2.toFixed(0)}</Typography>
+                      <Typography variant="body2" color={comparisonResult.metrics.pouches.change >= 0 ? "success.main" : "error.main"}>
+                        {comparisonResult.metrics.pouches.change >= 0 ? "+" : ""}{comparisonResult.metrics.pouches.change.toFixed(0)}
+                        ({comparisonResult.metrics.pouches.changePercent}%)
+                      </Typography>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">vs {comparisonResult.metrics.pouches.season1.toFixed(0)}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Revenue Comparison */}
+              <Grid item xs={12} sm={6} md={3}>
+                <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Revenue</Typography>
+                    <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
+                      <Typography variant="h5">€{comparisonResult.metrics.revenue.season2.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Typography>
+                      <Typography variant="body2" color={comparisonResult.metrics.revenue.change >= 0 ? "success.main" : "error.main"}>
+                        {comparisonResult.metrics.revenue.change >= 0 ? "+" : ""}€{comparisonResult.metrics.revenue.change.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ({comparisonResult.metrics.revenue.changePercent}%)
+                      </Typography>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">vs €{comparisonResult.metrics.revenue.season1.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
       )}
 
       <Snackbar

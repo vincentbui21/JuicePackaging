@@ -2567,16 +2567,14 @@ async function getTodayMetrics() {
     
     const [processedResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_processed FROM Orders 
-       WHERE status IN ('Ready for pickup', 'Picked up') 
-       AND created_at >= ? AND created_at < ?`,
+       WHERE created_at >= ? AND created_at < ?`,
       [start, end]
     );
     const kg_processed = processedResult[0]?.kg_processed || 0;
     
     const [takenResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_taken_in FROM Orders 
-       WHERE status IS NOT NULL 
-       AND created_at >= ? AND created_at < ?`,
+       WHERE created_at >= ? AND created_at < ?`,
       [start, end]
     );
     const kg_taken_in = takenResult[0]?.kg_taken_in || 0;
@@ -2613,16 +2611,14 @@ async function getYesterdayMetrics() {
     
     const [processedResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_processed FROM Orders 
-       WHERE status IN ('Ready for pickup', 'Picked up') 
-       AND created_at >= ? AND created_at < ?`,
+       WHERE created_at >= ? AND created_at < ?`,
       [yStart, yEnd]
     );
     const kg_processed = processedResult[0]?.kg_processed || 0;
     
     const [takenResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_taken_in FROM Orders 
-       WHERE status IS NOT NULL 
-       AND created_at >= ? AND created_at < ?`,
+       WHERE created_at >= ? AND created_at < ?`,
       [yStart, yEnd]
     );
     const kg_taken_in = takenResult[0]?.kg_taken_in || 0;
@@ -2700,11 +2696,11 @@ async function getAdminReportRows({ startDate, endDate, cities = [] } = {}) {
   const filters = [];
 
   if (startDate) {
-    filters.push("DATE(b.created_at) >= ?");
+    filters.push("DATE(o.created_at) >= ?");
     params.push(startDate);
   }
   if (endDate) {
-    filters.push("DATE(b.created_at) <= ?");
+    filters.push("DATE(o.created_at) <= ?");
     params.push(endDate);
   }
   if (Array.isArray(cities) && cities.length > 0) {
@@ -2718,27 +2714,19 @@ async function getAdminReportRows({ startDate, endDate, cities = [] } = {}) {
   const [rows] = await pool.query(
     `
     SELECT
-      DATE(b.created_at) AS production_date,
+      DATE(o.created_at) AS production_date,
       c.city,
       c.name AS customer_name,
       o.order_id,
       COALESCE(o.actual_pouches, o.pouches_count, 0) AS pouches_produced,
       COALESCE(o.weight_kg, 0) AS kilos,
       COALESCE(o.total_cost, 0) AS total_cost
-    FROM (
-      SELECT
-        SUBSTRING(bx.box_id, 5, 36) AS order_id,
-        MIN(bx.created_at) AS created_at
-      FROM Boxes bx
-      WHERE bx.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
-      GROUP BY order_id
-    ) b
-    JOIN Orders o ON o.order_id = b.order_id
+    FROM Orders o
     JOIN Customers c ON c.customer_id = o.customer_id
     WHERE 1=1
       AND COALESCE(o.is_deleted, 0) = 0
       ${whereSql}
-    ORDER BY b.created_at DESC, o.order_id ASC
+    ORDER BY o.created_at DESC, o.order_id ASC
     `,
     params
   );
@@ -3526,6 +3514,521 @@ assignBoxesToPallet,
     updateLiability,
     deleteLiability,
     getOrderStatusHistory,
+    createAutoInventoryDeduction,
+    getAutoInventoryTransactionByOrder,
+    createReportSnapshot,
+    getReportSnapshot,
+    listReportSnapshots,
+    archiveSeasonData,
+    getHistoricalReport,
+    compareSeasons,
+    recordReportExport
+}
+
+// ===== AUTOMATIC INVENTORY DEDUCTION (Pouch Usage) =====
+
+/**
+ * Check if an auto-inventory deduction already exists for an order
+ * @param {string} orderId - Order ID
+ * @returns {Promise<Object|null>} Existing AutoInventoryTransaction or null
+ */
+async function getAutoInventoryTransactionByOrder(orderId) {
+  const [rows] = await pool.query(
+    `SELECT auto_tx_id, order_id, inventory_tx_id, cost_entry_id, pouch_count, total_cost
+     FROM AutoInventoryTransactions
+     WHERE order_id = ?
+     LIMIT 1`,
+    [orderId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Automatically deduce pouches from inventory when an order is completed
+ * Creates inventory transaction (usage) + cost entry (COGS) + audit record
+ * @param {string} orderId - Order ID
+ * @param {number} pouchCount - Number of pouches produced
+ * @param {number} unitCost - Cost per pouch (defaults to 0.5 if not provided)
+ * @returns {Promise<Object>} { success, inventoryTxId, costEntryId, message }
+ */
+async function createAutoInventoryDeduction(orderId, pouchCount, unitCost = 0.5) {
+  const conn = await pool.getConnection();
+  
+  try {
+    await conn.beginTransaction();
+
+    // 1) Prevent double-posting: check if already deducted
+    const [[existing]] = await conn.query(
+      `SELECT auto_tx_id FROM AutoInventoryTransactions WHERE order_id = ?`,
+      [orderId]
+    );
+    
+    if (existing) {
+      await conn.commit();
+      return {
+        success: false,
+        message: `Auto-deduction already exists for order ${orderId}`,
+        autoTxId: existing.auto_tx_id
+      };
+    }
+
+    // 2) Get the default "Pouches" inventory item (item_id = 1)
+    const [[pouchItem]] = await conn.query(
+      `SELECT item_id, cost_center_id FROM InventoryItems WHERE item_id = 1`,
+      []
+    );
+    
+    if (!pouchItem) {
+      throw new Error("Pouches inventory item not found. Run database migration first.");
+    }
+
+    // 3) Get the COGS cost center (will be id = 2 after migration)
+    const [[costCenter]] = await conn.query(
+      `SELECT center_id FROM CostCenters WHERE name = 'Cost of Goods Sold (Inventory)'`,
+      []
+    );
+    
+    if (!costCenter) {
+      throw new Error("COGS cost center not found. Run database migration first.");
+    }
+
+    // 4) Calculate total cost
+    const totalCost = Number((pouchCount * unitCost).toFixed(2));
+    const today = new Date().toISOString().split('T')[0];
+
+    // 5) Create inventory transaction (type = usage)
+    const [invTxResult] = await conn.query(
+      `INSERT INTO InventoryTransactions 
+       (item_id, tx_type, quantity, unit_cost, total_cost, tx_date, notes, is_auto_generated, related_order_id)
+       VALUES (?, 'usage', ?, ?, ?, ?, ?, 1, ?)`,
+      [pouchItem.item_id, pouchCount, unitCost, totalCost, today, 
+       `Auto-deducted from order ${orderId}`, orderId]
+    );
+    const inventoryTxId = invTxResult.insertId;
+
+    // 6) Create cost entry (COGS)
+    const [costEntryResult] = await conn.query(
+      `INSERT INTO CostEntries 
+       (center_id, amount, incurred_date, notes, is_inventory_adjustment, related_order_id)
+       VALUES (?, ?, ?, ?, 1, ?)`,
+      [costCenter.center_id, totalCost, today, 
+       `COGS: ${pouchCount} pouches @ €${unitCost}/unit for order ${orderId}`, orderId]
+    );
+    const costEntryId = costEntryResult.insertId;
+
+    // 7) Link them together
+    await conn.query(
+      `UPDATE InventoryTransactions SET cost_entry_id = ? WHERE tx_id = ?`,
+      [costEntryId, inventoryTxId]
+    );
+
+    // 8) Record in AutoInventoryTransactions for audit trail
+    const [autoTxResult] = await conn.query(
+      `INSERT INTO AutoInventoryTransactions 
+       (order_id, inventory_tx_id, cost_entry_id, pouch_count, unit_cost, total_cost, trigger_status)
+       VALUES (?, ?, ?, ?, ?, ?, 'Processing complete')`,
+      [orderId, inventoryTxId, costEntryId, pouchCount, unitCost, totalCost]
+    );
+
+    await conn.commit();
+
+    return {
+      success: true,
+      autoTxId: autoTxResult.insertId,
+      inventoryTxId,
+      costEntryId,
+      totalCost,
+      message: `Auto-deducted ${pouchCount} pouches (€${totalCost}) for order ${orderId}`
+    };
+
+  } catch (error) {
+    await conn.rollback();
+    console.error("createAutoInventoryDeduction error:", error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  } finally {
+    conn.release();
+  }
+}
+
+// ===== HISTORICAL DATA SNAPSHOTS & ARCHIVAL =====
+
+/**
+ * Create a report snapshot at a point in time
+ * Captures entire financial state for season/period comparison
+ */
+async function createReportSnapshot(snapshotName, periodStart, periodEnd, reportData, createdBy = 'system', notes = null) {
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO ReportSnapshots 
+       (snapshot_name, snapshot_type, period_start, period_end, 
+        total_revenue, total_kilos, total_pouches, total_orders,
+        direct_costs, overhead_costs, gross_profit, net_profit,
+        inventory_value, fixed_assets_value, liabilities_value,
+        customer_count, avg_order_value, avg_kilos_per_order,
+        yield_percentage, gross_margin_pct, net_margin_pct,
+        snapshot_data, created_by, notes)
+       VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        snapshotName,
+        periodStart,
+        periodEnd,
+        reportData.totals?.revenue || 0,
+        reportData.totals?.kilos || 0,
+        reportData.totals?.pouches || 0,
+        reportData.totals?.orders || 0,
+        reportData.totals?.direct_cost || 0,
+        reportData.totals?.overhead_cost || 0,
+        reportData.totals?.gross_profit || 0,
+        reportData.totals?.net_profit || 0,
+        reportData.totals?.inventory_value || 0,
+        reportData.totals?.fixed_assets_value || 0,
+        reportData.totals?.liabilities_value || 0,
+        reportData.totals?.customer_count || 0,
+        reportData.totals?.avg_order_value || 0,
+        reportData.totals?.avg_kilos_per_order || 0,
+        reportData.totals?.yield_pct || 0,
+        reportData.totals?.gross_margin_pct || 0,
+        reportData.totals?.net_margin_pct || 0,
+        JSON.stringify(reportData),
+        createdBy,
+        notes
+      ]
+    );
+
+    return {
+      success: true,
+      snapshotId: result.insertId,
+      message: `Snapshot created: ${snapshotName}`
+    };
+  } catch (error) {
+    console.error('createReportSnapshot error:', error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Get report snapshot for comparison
+ */
+async function getReportSnapshot(snapshotId) {
+  const [rows] = await pool.query(
+    `SELECT * FROM ReportSnapshots WHERE snapshot_id = ? LIMIT 1`,
+    [snapshotId]
+  );
+  
+  if (!rows[0]) return null;
+  
+  const snapshot = rows[0];
+  try {
+    snapshot.snapshot_data = JSON.parse(snapshot.snapshot_data || '{}');
+  } catch (e) {
+    snapshot.snapshot_data = {};
+  }
+  return snapshot;
+}
+
+/**
+ * List all report snapshots with optional filtering
+ */
+async function listReportSnapshots(filters = {}) {
+  const params = [];
+  const conditions = [];
+
+  if (filters.snapshotType) {
+    conditions.push('snapshot_type = ?');
+    params.push(filters.snapshotType);
+  }
+  if (filters.periodStart) {
+    conditions.push('period_start >= ?');
+    params.push(filters.periodStart);
+  }
+  if (filters.periodEnd) {
+    conditions.push('period_end <= ?');
+    params.push(filters.periodEnd);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  
+  const [rows] = await pool.query(
+    `SELECT snapshot_id, snapshot_name, snapshot_type, period_start, period_end,
+            total_revenue, total_kilos, total_pouches, total_orders,
+            gross_profit, net_profit, customer_count, gross_margin_pct,
+            created_by, created_at, notes
+     FROM ReportSnapshots
+     ${where}
+     ORDER BY created_at DESC`,
+    params
+  );
+
+  return rows.map(r => ({
+    ...r,
+    period_start: r.period_start?.toISOString?.().split('T')[0] || r.period_start,
+    period_end: r.period_end?.toISOString?.().split('T')[0] || r.period_end,
+    created_at: r.created_at?.toISOString?.() || r.created_at
+  }));
+}
+
+/**
+ * Archive all orders and costs for a completed season
+ * Moves data to archive tables while preserving for historical analysis
+ */
+async function archiveSeasonData(seasonName, periodStart, periodEnd) {
+  const conn = await pool.getConnection();
+  
+  try {
+    await conn.beginTransaction();
+
+    // 1. Archive orders (denormalize with customer data in case customer is deleted)
+    const [ordersToArchive] = await conn.query(
+      `SELECT o.*, c.name as customer_name, c.city as customer_city, 
+              c.phone as customer_phone, c.email as customer_email
+       FROM Orders o
+       LEFT JOIN Customers c ON o.customer_id = c.customer_id
+       WHERE DATE(o.created_at) BETWEEN ? AND ?
+         AND o.status IN ('Ready for pickup', 'Picked up')`,
+      [periodStart, periodEnd]
+    );
+
+    for (const order of ordersToArchive) {
+      await conn.query(
+        `INSERT INTO ArchivedOrders 
+         (order_id, customer_id, customer_name, customer_city, customer_phone, customer_email,
+          order_status, weight_kg, crate_count, box_count, pouches_count, actual_pouches,
+          total_cost, notes, created_at, ready_at, picked_up_at, archive_season, archive_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          order.order_id, order.customer_id, order.customer_name, order.customer_city,
+          order.customer_phone, order.customer_email, order.status, order.weight_kg,
+          order.crate_count, order.box_count, order.pouches_count, order.actual_pouches,
+          order.total_cost, order.notes, order.created_at, order.ready_at, order.picked_up_at,
+          seasonName, 'End of season'
+        ]
+      );
+    }
+
+    // 2. Archive cost entries
+    const [costsToArchive] = await conn.query(
+      `SELECT ce.*, cc.name as center_name, cc.category as center_category
+       FROM CostEntries ce
+       LEFT JOIN CostCenters cc ON ce.center_id = cc.center_id
+       WHERE DATE(ce.incurred_date) BETWEEN ? AND ?`,
+      [periodStart, periodEnd]
+    );
+
+    for (const cost of costsToArchive) {
+      await conn.query(
+        `INSERT INTO ArchivedCostEntries
+         (entry_id, center_id, center_name, center_category, amount, incurred_date,
+          is_inventory_adjustment, related_order_id, notes, archive_season)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          cost.entry_id, cost.center_id, cost.center_name, cost.center_category,
+          cost.amount, cost.incurred_date, cost.is_inventory_adjustment,
+          cost.related_order_id, cost.notes, seasonName
+        ]
+      );
+    }
+
+    // 3. Mark orders with season
+    await conn.query(
+      `UPDATE Orders SET season = ? WHERE DATE(created_at) BETWEEN ? AND ?`,
+      [seasonName, periodStart, periodEnd]
+    );
+
+    // 4. Create/update historical period
+    const [periodExists] = await conn.query(
+      `SELECT period_id FROM HistoricalPeriods WHERE period_name = ? LIMIT 1`,
+      [seasonName]
+    );
+
+    if (!periodExists[0]) {
+      await conn.query(
+        `INSERT INTO HistoricalPeriods (period_name, period_type, start_date, end_date, is_closed, archived_order_count, archived_revenue)
+         VALUES (?, 'season', ?, ?, 1, ?, 
+                 (SELECT SUM(total_cost) FROM ArchivedOrders WHERE archive_season = ?))`,
+        [seasonName, periodStart, periodEnd, ordersToArchive.length, seasonName]
+      );
+    } else {
+      await conn.query(
+        `UPDATE HistoricalPeriods SET is_closed = 1, closed_at = NOW(), archived_order_count = ?
+         WHERE period_name = ?`,
+        [ordersToArchive.length, seasonName]
+      );
+    }
+
+    await conn.commit();
+
+    return {
+      success: true,
+      ordersArchived: ordersToArchive.length,
+      costsArchived: costsToArchive.length,
+      message: `Season "${seasonName}" archived: ${ordersToArchive.length} orders, ${costsToArchive.length} costs`
+    };
+
+  } catch (error) {
+    await conn.rollback();
+    console.error('archiveSeasonData error:', error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Get historical report data (from archives or snapshots)
+ * Used when customers are deleted but data is still needed
+ */
+async function getHistoricalReport(seasonName) {
+  try {
+    const [period] = await pool.query(
+      `SELECT * FROM HistoricalPeriods WHERE period_name = ? LIMIT 1`,
+      [seasonName]
+    );
+
+    if (!period[0]) return null;
+
+    const periodData = period[0];
+
+    // Get archived orders for this season
+    const [orders] = await pool.query(
+      `SELECT * FROM ArchivedOrders WHERE archive_season = ?`,
+      [seasonName]
+    );
+
+    // Get archived costs for this season
+    const [costs] = await pool.query(
+      `SELECT * FROM ArchivedCostEntries WHERE archive_season = ?`,
+      [seasonName]
+    );
+
+    // Get snapshot if exists
+    let snapshot = null;
+    if (periodData.snapshot_id) {
+      snapshot = await getReportSnapshot(periodData.snapshot_id);
+    }
+
+    // Calculate totals from archived data
+    const totals = {
+      orders: orders.length,
+      kilos: orders.reduce((sum, o) => sum + (Number(o.weight_kg) || 0), 0),
+      pouches: orders.reduce((sum, o) => sum + (Number(o.actual_pouches) || 0), 0),
+      revenue: orders.reduce((sum, o) => sum + (Number(o.total_cost) || 0), 0),
+      orders_data: orders
+    };
+
+    return {
+      success: true,
+      seasonName,
+      period: periodData,
+      snapshot,
+      totals,
+      orders,
+      costs,
+      message: `Historical data for ${seasonName}: ${orders.length} orders, ${costs.length} cost entries`
+    };
+
+  } catch (error) {
+    console.error('getHistoricalReport error:', error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Compare two seasons/periods
+ */
+async function compareSeasons(seasonName1, seasonName2) {
+  try {
+    const report1 = await getHistoricalReport(seasonName1);
+    const report2 = await getHistoricalReport(seasonName2);
+
+    if (!report1.success || !report2.success) {
+      return {
+        success: false,
+        message: 'Could not retrieve one or both seasons'
+      };
+    }
+
+    const comparison = {
+      season1: seasonName1,
+      season2: seasonName2,
+      metrics: {
+        orders: {
+          season1: report1.totals.orders,
+          season2: report2.totals.orders,
+          change: report2.totals.orders - report1.totals.orders,
+          changePercent: report1.totals.orders ? ((report2.totals.orders - report1.totals.orders) / report1.totals.orders * 100).toFixed(1) : 0
+        },
+        kilos: {
+          season1: report1.totals.kilos,
+          season2: report2.totals.kilos,
+          change: report2.totals.kilos - report1.totals.kilos,
+          changePercent: report1.totals.kilos ? ((report2.totals.kilos - report1.totals.kilos) / report1.totals.kilos * 100).toFixed(1) : 0
+        },
+        pouches: {
+          season1: report1.totals.pouches,
+          season2: report2.totals.pouches,
+          change: report2.totals.pouches - report1.totals.pouches,
+          changePercent: report1.totals.pouches ? ((report2.totals.pouches - report1.totals.pouches) / report1.totals.pouches * 100).toFixed(1) : 0
+        },
+        revenue: {
+          season1: report1.totals.revenue,
+          season2: report2.totals.revenue,
+          change: report2.totals.revenue - report1.totals.revenue,
+          changePercent: report1.totals.revenue ? ((report2.totals.revenue - report1.totals.revenue) / report1.totals.revenue * 100).toFixed(1) : 0
+        }
+      }
+    };
+
+    return {
+      success: true,
+      comparison,
+      message: `Comparison complete: ${seasonName1} vs ${seasonName2}`
+    };
+
+  } catch (error) {
+    console.error('compareSeasons error:', error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Record a report export (for audit trail and compliance)
+ */
+async function recordReportExport(exportType, reportType, periodStart, periodEnd, fileName, fileSize, rowCount, exportedBy) {
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO ReportExports 
+       (export_type, report_type, period_start, period_end, file_name, file_size_bytes, row_count, exported_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [exportType, reportType, periodStart, periodEnd, fileName, fileSize, rowCount, exportedBy]
+    );
+
+    return {
+      success: true,
+      exportId: result.insertId,
+      message: `Export recorded: ${fileName}`
+    };
+  } catch (error) {
+    console.error('recordReportExport error:', error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  }
 }
 
 module.exports.pool = pool;
