@@ -21,6 +21,7 @@ import {
   FormControlLabel,
   Alert,
   Divider,
+  Snackbar,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
@@ -43,6 +44,7 @@ import {
   LockOpen,
   Plus,
   Trash2,
+  Printer,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -67,6 +69,8 @@ export default function ReservationManagement() {
   const [lockedSlotDialogOpen, setLockedSlotDialogOpen] = useState(false);
   const [selectedLockedSlot, setSelectedLockedSlot] = useState(null);
   const [searchText, setSearchText] = useState('');
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const actionButtonSx = { px: 3, py: 1.5, fontWeight: 600, fontSize: '0.95rem', minWidth: 240 };
 
   useEffect(() => {
     fetchReservationData();
@@ -80,6 +84,8 @@ export default function ReservationManagement() {
     appleWeight: Number(reservation.apple_weight_kg ?? reservation.appleWeight ?? 0),
     dateTime: reservation.reservation_datetime || reservation.dateTime,
     message: String(reservation.message || ''),
+    checked_in_at: reservation.checked_in_at || reservation.checkedInAt || null,
+    order_id: reservation.order_id || null,
   });
 
   const mapLockedSlot = (slot) => ({
@@ -163,13 +169,175 @@ export default function ReservationManagement() {
   const handleCheckInCustomer = () => {
     if (!selectedReservation?.id) return;
     api.post(`/api/reservations/${selectedReservation.id}/check-in`)
-      .then(() => {
-        setReservations((prev) => prev.filter(res => res.id !== selectedReservation.id));
+      .then((response) => {
+        const checkedInAt = new Date().toISOString();
+        const orderId = response.data?.order_id;
+        setReservations((prev) => prev.map((res) => (
+          res.id === selectedReservation.id
+            ? { ...res, checked_in_at: checkedInAt, order_id: orderId ?? res.order_id }
+            : res
+        )));
         handleCloseDialog();
       })
       .catch((error) => {
         console.error('Failed to check in reservation:', error);
       });
+  };
+
+  const handlePrintReservation = (reservation) => {
+    if (!reservation) return;
+
+    const trackingNumber = reservation.order_id || t('reservation.na');
+    const printWindow = window.open('', '_blank', 'width=520,height=640');
+
+    if (!printWindow) {
+      setSnackbar({
+        open: true,
+        message: t('reservation.print_error'),
+        severity: 'error'
+      });
+      return;
+    }
+
+    const formatLabel = (label) => (label.trim().endsWith(':') ? label : `${label}:`);
+    const doc = printWindow.document;
+    doc.title = t('reservation.reservation_details');
+
+    const style = doc.createElement('style');
+    style.textContent = `
+      @page { margin: 18mm; }
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        color: #111;
+      }
+      .print-wrap {
+        max-width: 480px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 16px;
+      }
+      .tracking {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        margin-bottom: 16px;
+      }
+      .order-id {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      .meta {
+        font-size: 14px;
+        margin: 6px 0;
+      }
+      .label {
+        font-weight: 600;
+        margin-right: 6px;
+      }
+      .message {
+        margin-top: 14px;
+        padding-top: 10px;
+        border-top: 1px solid #ddd;
+      }
+    `;
+    doc.head.appendChild(style);
+
+    const wrapper = doc.createElement('div');
+    wrapper.className = 'print-wrap';
+
+    const heading = doc.createElement('h1');
+    heading.textContent = t('reservation.reservation_details');
+
+    const tracking = doc.createElement('div');
+    tracking.className = 'tracking';
+    tracking.textContent = trackingNumber;
+
+    wrapper.appendChild(heading);
+    wrapper.appendChild(tracking);
+
+    const orderIdLabel = doc.createElement('div');
+    orderIdLabel.className = 'label';
+    orderIdLabel.textContent = formatLabel(t('reservation.order_id_label'));
+
+    const orderId = doc.createElement('div');
+    orderId.className = 'order-id';
+    orderId.textContent = reservation.order_id || t('reservation.na');
+
+    wrapper.appendChild(orderIdLabel);
+    wrapper.appendChild(orderId);
+
+    const reservationDate = dayjs(reservation.dateTime).format('MMMM D, YYYY [at] HH:mm');
+    const details = [
+      { label: formatLabel(t('reservation.customer_name')), value: reservation.name },
+      { label: formatLabel(t('reservation.date_time_label')), value: reservationDate },
+      { label: formatLabel(t('reservation.phone_label')), value: reservation.phone },
+      { label: formatLabel(t('reservation.email_label')), value: reservation.email || t('reservation.na') },
+      {
+        label: formatLabel(t('reservation.apple_weight_label')),
+        value: `${reservation.appleWeight} ${t('reservation.kg_unit')}`
+      },
+    ];
+
+    details.forEach(({ label, value }) => {
+      const row = doc.createElement('div');
+      row.className = 'meta';
+
+      const labelEl = doc.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = label;
+
+      const valueEl = doc.createElement('span');
+      valueEl.textContent = value || t('reservation.na');
+
+      row.appendChild(labelEl);
+      row.appendChild(valueEl);
+      wrapper.appendChild(row);
+    });
+
+    if (reservation.message) {
+      const messageWrap = doc.createElement('div');
+      messageWrap.className = 'message';
+
+      const messageLabel = doc.createElement('div');
+      messageLabel.className = 'label';
+      messageLabel.textContent = formatLabel(t('reservation.message_label'));
+
+      const messageValue = doc.createElement('div');
+      messageValue.textContent = reservation.message;
+
+      messageWrap.appendChild(messageLabel);
+      messageWrap.appendChild(messageValue);
+      wrapper.appendChild(messageWrap);
+    }
+
+    doc.body.appendChild(wrapper);
+    doc.close();
+
+    let didPrint = false;
+    const triggerPrint = () => {
+      if (didPrint) return;
+      didPrint = true;
+      printWindow.focus();
+      printWindow.print();
+      printWindow.onafterprint = () => printWindow.close();
+    };
+
+    if (doc.readyState === 'complete') {
+      setTimeout(triggerPrint, 50);
+    } else {
+      printWindow.onload = () => setTimeout(triggerPrint, 50);
+    }
+
+    setSnackbar({
+      open: true,
+      message: t('reservation.print_success'),
+      severity: 'success'
+    });
   };
 
   const handleToggleSystemLock = async () => {
@@ -387,6 +555,8 @@ export default function ReservationManagement() {
                   const topPosition = getReservationPosition(reservation);
                   if (topPosition === null) return null;
 
+                  const isCheckedIn = !!reservation.checked_in_at;
+
                   return (
                     <Card
                       key={reservation.id}
@@ -396,8 +566,10 @@ export default function ReservationManagement() {
                         left: 4,
                         right: 4,
                         minHeight: 50,
-                        bgcolor: '#4CAF50',
+                        bgcolor: isCheckedIn ? '#9E9E9E' : '#4CAF50',
                         color: 'white',
+                        opacity: isCheckedIn ? 0.7 : 1,
+                        border: isCheckedIn ? '2px dashed rgba(255, 255, 255, 0.75)' : 'none',
                         cursor: 'pointer',
                         '&:hover': {
                           opacity: 0.9,
@@ -519,6 +691,7 @@ export default function ReservationManagement() {
           {/* Reservations */}
           {dayReservations.map(reservation => {
             const topPosition = getReservationPosition(reservation);
+            const isCheckedIn = !!reservation.checked_in_at;
             if (topPosition === null) return null;
 
             return (
@@ -530,9 +703,11 @@ export default function ReservationManagement() {
                   left: 16,
                   right: 16,
                   minHeight: 70,
-                  bgcolor: '#4CAF50',
+                  bgcolor: isCheckedIn ? '#9E9E9E' : '#4CAF50',
                   color: 'white',
                   cursor: 'pointer',
+                  opacity: isCheckedIn ? 0.7 : 1,
+                  border: isCheckedIn ? '2px dashed rgba(255, 255, 255, 0.75)' : 'none',
                   '&:hover': {
                     opacity: 0.9,
                     transform: 'scale(1.01)',
@@ -638,16 +813,26 @@ export default function ReservationManagement() {
       {
         field: 'actions',
         headerName: t('reservation.actions'),
-        width: 100,
+        width: 150,
         sortable: false,
         renderCell: (params) => (
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => handleReservationClick(params.row)}
-          >
-            {t('reservation.view')}
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => handleReservationClick(params.row)}
+            >
+              {t('reservation.view')}
+            </Button>
+            <Tooltip title={t('reservation.print_tracking')}>
+              <IconButton
+                size="small"
+                onClick={() => handlePrintReservation(params.row)}
+              >
+                <Printer size={18} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
         ),
       },
     ];
@@ -663,10 +848,18 @@ export default function ReservationManagement() {
         <DataGrid
           rows={filteredReservations}
           columns={columns}
+          getRowClassName={(params) => (params.row.checked_in_at ? 'reservation-checked-in' : '')}
           pageSize={10}
           rowsPerPageOptions={[10, 25, 50]}
           disableSelectionOnClick
           sx={{
+            '& .reservation-checked-in': {
+              bgcolor: 'rgba(158, 158, 158, 0.12)',
+              color: 'text.secondary',
+            },
+            '& .reservation-checked-in:hover': {
+              bgcolor: 'rgba(158, 158, 158, 0.2)',
+            },
             '& .MuiDataGrid-cell:focus': {
               outline: 'none',
             },
@@ -680,10 +873,10 @@ export default function ReservationManagement() {
   };
 
   return (
-    <Box>
+    <Box className="page-transition">
       {/* System Lock Alert */}
       {systemLocked && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
+        <Alert severity="warning" sx={{ mb: 2 }} className="animate-slide-in-down">
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Typography>
               <strong>{t('reservation.system_locked_message')}</strong>
@@ -701,7 +894,7 @@ export default function ReservationManagement() {
       )}
 
       {/* Header with controls */}
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: 2, mb: 2 }} className="animate-slide-in-up">
         <Stack spacing={2}>
           {/* Top row: Navigation and view controls */}
           <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" flexWrap="wrap">
@@ -832,6 +1025,16 @@ export default function ReservationManagement() {
                 </Grid>
                 <Grid item xs={12}>
                   <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography variant="body1">
+                      <strong>{t('reservation.order_id_label')}</strong>{' '}
+                      <Box component="span" sx={{ fontWeight: 700 }}>
+                        {selectedReservation.order_id || t('reservation.na')}
+                      </Box>
+                    </Typography>
+                  </Stack>
+                </Grid>
+                <Grid item xs={12}>
+                  <Stack direction="row" spacing={1} alignItems="center">
                     <Phone size={20} />
                     <Typography variant="body1">
                       <strong>{t('reservation.phone_label')}</strong> {selectedReservation.phone}
@@ -867,18 +1070,46 @@ export default function ReservationManagement() {
                     </Stack>
                   </Grid>
                 )}
+                {selectedReservation.checked_in_at && (
+                  <Grid item xs={12}>
+                    <Chip
+                      label={`✓ ${t('reservation.in_progress')} - ${dayjs(selectedReservation.checked_in_at).format('MMM D, HH:mm')}`}
+                      color="success"
+                      variant="outlined"
+                      sx={{ width: '100%' }}
+                    />
+                  </Grid>
+                )}
               </Grid>
             </DialogContent>
-            <DialogActions sx={{ p: 2, gap: 1 }}>
-              <Button
-                startIcon={<Check />}
-                variant="contained"
-                color="success"
-                onClick={handleCheckInCustomer}
-              >
-                {t('reservation.customer_arrived')}
+            <DialogActions sx={{ p: 2, gap: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between' }}>
+              <Button onClick={handleCloseDialog} variant="text">
+                {t('reservation.close')}
               </Button>
-              <Button onClick={handleCloseDialog}>{t('reservation.close')}</Button>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ flex: 1, justifyContent: 'flex-end' }}>
+                <Button
+                  startIcon={<Printer size={20} />}
+                  variant="contained"
+                  color="success"
+                  size="large"
+                  onClick={() => handlePrintReservation(selectedReservation)}
+                  sx={actionButtonSx}
+                >
+                  {t('reservation.print_tracking')}
+                </Button>
+                {!selectedReservation.checked_in_at && (
+                  <Button
+                    startIcon={<Check size={20} />}
+                    variant="contained"
+                    color="success"
+                    size="large"
+                    onClick={handleCheckInCustomer}
+                    sx={actionButtonSx}
+                  >
+                    {t('reservation.customer_arrived')}
+                  </Button>
+                )}
+              </Stack>
             </DialogActions>
           </>
         )}
@@ -1083,6 +1314,15 @@ export default function ReservationManagement() {
           </Stack>
         </Paper>
       )}
+
+      {/* Print Snackbar Notification */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        message={snackbar.message}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      />
     </Box>
   );
 }

@@ -12,6 +12,7 @@
   "booking": {
     "title": "Varaa mehustusaika",
     "subtitle": "Täytä alla oleva lomake varataksesi ajan mehun noutoa varten.",
+    "kuopio_notice": "Tämä varaus on tarkoitettu ainoastaan asiakkaille, jotka tuovat tilauksensa Kuopion toimipisteeseen.",
     "price_info": "Hinta: 8,00 € / 3 litran pakkaus (sis. alv 25,5%)",
     "name": "Nimi",
     "phone": "Puhelinnumero",
@@ -29,7 +30,13 @@
     "system_locked": "Varausjärjestelmä on tällä hetkellä lukittu. Ota meihin yhteyttä.",
     "submitting": "Lähetetään...",
     "submission_success": "Varaus lähetetty onnistuneesti! Odotamme näkemistä.",
-    "submission_error": "Varauksen lähettäminen epäonnistui. Yritä uudelleen."
+    "submission_error": "Varauksen lähettäminen epäonnistui. Yritä uudelleen.",
+    "success_title": "Varaus vahvistettu!",
+    "success_message": "Varausasi on lähetetty onnistuneesti.",
+    "tracking_notice": "Seurantanumero annetaan sinulle saapuessasi Kuopion toimipisteeseen.",
+    "countdown_title": "Aika varaukseeseesi:",
+    "book_another": "Varaa uusi aika",
+    "close": "Sulje"
   },
   "tracking": {
     "title": "Seuraa tilaustasi",
@@ -44,6 +51,7 @@
     "status_subtitle": "Syötä seurantanumerosi yllä nähdäksesi tilauksen tiedot",
     "current_status": "Nykyinen tila: {{status}}",
     "status_unknown": "Tuntematon",
+    "no_history": "Tilauksen tiedot ladataan...",
     "step_received": "Tilaus vastaanotettu",
     "step_received_desc": "Tilauksesi on vahvistettu ja käsittelyssä",
     "step_processing": "Mehustuksessa",

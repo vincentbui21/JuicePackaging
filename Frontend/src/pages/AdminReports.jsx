@@ -12,6 +12,10 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Grid,
   Divider,
   Table,
@@ -28,52 +32,53 @@ import {
   Snackbar,
   useTheme,
 } from "@mui/material";
-import { Edit as EditIcon, Delete as DeleteIcon, Close as CloseIcon } from "@mui/icons-material";
-import { DataGrid } from "@mui/x-data-grid";
+import { Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, ResponsiveContainer } from "recharts";
 import { Download, FileText, Save } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import ThemeModeToggle from "../components/ThemeModeToggle";
 import api from "../services/axios";
 import { buildAdminReport } from "../utils/adminReport";
 
 const presets = [
-  { key: "today", label: "Today" },
-  { key: "week", label: "This week" },
-  { key: "month", label: "This month" },
-  { key: "quarter", label: "This quarter" },
-  { key: "custom", label: "Custom" },
+  { key: "today", labelKey: "admin_reports.presets.today" },
+  { key: "week", labelKey: "admin_reports.presets.week" },
+  { key: "month", labelKey: "admin_reports.presets.month" },
+  { key: "quarter", labelKey: "admin_reports.presets.quarter" },
+  { key: "custom", labelKey: "admin_reports.presets.custom" },
 ];
 
 const inventoryCategoryOptions = [
-  "Raw materials",
-  "Packaging",
-  "Work in progress",
-  "Finished goods",
-  "Supplies",
-  "Other",
+  { value: "Raw materials", labelKey: "admin_reports.inventory_categories.raw_materials" },
+  { value: "Packaging", labelKey: "admin_reports.inventory_categories.packaging" },
+  { value: "Work in progress", labelKey: "admin_reports.inventory_categories.work_in_progress" },
+  { value: "Finished goods", labelKey: "admin_reports.inventory_categories.finished_goods" },
+  { value: "Supplies", labelKey: "admin_reports.inventory_categories.supplies" },
+  { value: "Other", labelKey: "admin_reports.inventory_categories.other" },
 ];
 
 const assetCategoryOptions = [
-  "Cash",
-  "Accounts receivable",
-  "Inventory",
-  "Prepaid expenses",
-  "Equipment",
-  "Vehicles",
-  "Buildings",
-  "Land",
-  "Intangible assets",
-  "Investments",
-  "Other assets",
+  { value: "Cash", labelKey: "admin_reports.asset_categories.cash" },
+  { value: "Accounts receivable", labelKey: "admin_reports.asset_categories.accounts_receivable" },
+  { value: "Inventory", labelKey: "admin_reports.asset_categories.inventory" },
+  { value: "Prepaid expenses", labelKey: "admin_reports.asset_categories.prepaid_expenses" },
+  { value: "Equipment", labelKey: "admin_reports.asset_categories.equipment" },
+  { value: "Vehicles", labelKey: "admin_reports.asset_categories.vehicles" },
+  { value: "Buildings", labelKey: "admin_reports.asset_categories.buildings" },
+  { value: "Land", labelKey: "admin_reports.asset_categories.land" },
+  { value: "Intangible assets", labelKey: "admin_reports.asset_categories.intangible_assets" },
+  { value: "Investments", labelKey: "admin_reports.asset_categories.investments" },
+  { value: "Other assets", labelKey: "admin_reports.asset_categories.other_assets" },
 ];
 
 const liabilityCategoryOptions = [
-  "Accounts payable",
-  "Accrued expenses",
-  "Short-term loans",
-  "Long-term debt",
-  "Taxes payable",
-  "Deferred revenue",
-  "Other liabilities",
+  { value: "Accounts payable", labelKey: "admin_reports.liability_categories.accounts_payable" },
+  { value: "Accrued expenses", labelKey: "admin_reports.liability_categories.accrued_expenses" },
+  { value: "Short-term loans", labelKey: "admin_reports.liability_categories.short_term_loans" },
+  { value: "Long-term debt", labelKey: "admin_reports.liability_categories.long_term_debt" },
+  { value: "Taxes payable", labelKey: "admin_reports.liability_categories.taxes_payable" },
+  { value: "Deferred revenue", labelKey: "admin_reports.liability_categories.deferred_revenue" },
+  { value: "Other liabilities", labelKey: "admin_reports.liability_categories.other_liabilities" },
 ];
 
 const toDateStr = (d) => d.toISOString().slice(0, 10);
@@ -145,6 +150,39 @@ const TabPanel = ({ value, tab, children }) => (
 
 export default function AdminReports() {
   const theme = useTheme();
+  const { t } = useTranslation();
+  const chartColors = useMemo(() => ({
+    kilos: theme.palette.primary.main,
+    pouches: theme.palette.warning.main,
+    revenue: theme.palette.info.main,
+    expected: theme.palette.text.secondary,
+    variance: theme.palette.error.main,
+  }), [theme]);
+  const legendFormatter = (value) => (
+    <span style={{ color: theme.palette.text.primary }}>{value}</span>
+  );
+  const inventoryCategoryMap = useMemo(() => (
+    new Map(inventoryCategoryOptions.map((option) => [option.value, option.labelKey]))
+  ), []);
+  const assetCategoryMap = useMemo(() => (
+    new Map(assetCategoryOptions.map((option) => [option.value, option.labelKey]))
+  ), []);
+  const liabilityCategoryMap = useMemo(() => (
+    new Map(liabilityCategoryOptions.map((option) => [option.value, option.labelKey]))
+  ), []);
+  const resolveCategoryLabel = (categoryMap, value) => {
+    if (!value) return "—";
+    const labelKey = categoryMap.get(value);
+    return labelKey ? t(labelKey) : value;
+  };
+  const resolveTxTypeLabel = (value) => {
+    if (!value) return "—";
+    return t(`admin_reports.inventory.tx_type.${value}`, { defaultValue: value });
+  };
+  const resolveUnitLabel = (value) => {
+    if (!value) return "—";
+    return value === "unit" ? t("admin_reports.inventory.units.unit") : value;
+  };
   const [preset, setPreset] = useState("month");
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -197,7 +235,7 @@ export default function AdminReports() {
     name: "",
     sku: "",
     unit: "unit",
-    category: inventoryCategoryOptions[0],
+    category: inventoryCategoryOptions[0].value,
     cost_center_id: "",
   });
   const [editingItemId, setEditingItemId] = useState(null);
@@ -207,7 +245,7 @@ export default function AdminReports() {
   const [liabilities, setLiabilities] = useState([]);
   const [assetForm, setAssetForm] = useState({
     name: "",
-    category: assetCategoryOptions[0],
+    category: assetCategoryOptions[0].value,
     value: "",
     acquired_date: "",
     notes: "",
@@ -215,12 +253,20 @@ export default function AdminReports() {
   const [editingAssetId, setEditingAssetId] = useState(null);
   const [liabilityForm, setLiabilityForm] = useState({
     name: "",
-    category: liabilityCategoryOptions[0],
+    category: liabilityCategoryOptions[0].value,
     value: "",
     as_of_date: "",
     notes: "",
   });
   const [editingLiabilityId, setEditingLiabilityId] = useState(null);
+  const [centerDialogOpen, setCenterDialogOpen] = useState(false);
+  const [entryDialogOpen, setEntryDialogOpen] = useState(false);
+  const [itemDialogOpen, setItemDialogOpen] = useState(false);
+  const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [assetDialogOpen, setAssetDialogOpen] = useState(false);
+  const [liabilityDialogOpen, setLiabilityDialogOpen] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [archiveForm, setArchiveForm] = useState({ seasonName: "", periodStart: "", periodEnd: "" });
 
   // Historical data & snapshots
   const [reportMode, setReportMode] = useState("current"); // "current" or "historical"
@@ -367,7 +413,7 @@ export default function AdminReports() {
       });
     } catch (err) {
       console.error("Failed to load cost centers", err);
-      showToast("Failed to load cost centers", "error");
+      showToast(t("admin_reports.errors.load_cost_centers"), "error");
     }
   };
 
@@ -380,7 +426,7 @@ export default function AdminReports() {
       setCostEntries(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load cost entries", err);
-      showToast("Failed to load cost entries", "error");
+      showToast(t("admin_reports.errors.load_cost_entries"), "error");
     }
   };
 
@@ -400,7 +446,7 @@ export default function AdminReports() {
       });
     } catch (err) {
       console.error("Failed to load inventory items", err);
-      showToast("Failed to load inventory items", "error");
+      showToast(t("admin_reports.errors.load_inventory_items"), "error");
     }
   };
 
@@ -413,7 +459,7 @@ export default function AdminReports() {
       setInventoryTransactions(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load inventory transactions", err);
-      showToast("Failed to load inventory transactions", "error");
+      showToast(t("admin_reports.errors.load_inventory_transactions"), "error");
     }
   };
 
@@ -425,7 +471,7 @@ export default function AdminReports() {
       setInventorySummary(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load inventory summary", err);
-      showToast("Failed to load inventory summary", "error");
+      showToast(t("admin_reports.errors.load_inventory_summary"), "error");
     }
   };
 
@@ -437,7 +483,7 @@ export default function AdminReports() {
       setAssets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load assets", err);
-      showToast("Failed to load assets", "error");
+      showToast(t("admin_reports.errors.load_assets"), "error");
     }
   };
 
@@ -449,7 +495,7 @@ export default function AdminReports() {
       setLiabilities(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load liabilities", err);
-      showToast("Failed to load liabilities", "error");
+      showToast(t("admin_reports.errors.load_liabilities"), "error");
     }
   };
 
@@ -469,11 +515,11 @@ export default function AdminReports() {
       if (data.success) {
         setHistoricalData(data);
       } else {
-        showToast(`Failed to load historical data for ${seasonName}`, "error");
+        showToast(t("admin_reports.errors.load_historical_data", { season: seasonName }), "error");
       }
     } catch (err) {
       console.error("Failed to load historical report", err);
-      showToast("Failed to load historical report", "error");
+      showToast(t("admin_reports.errors.load_historical_report"), "error");
     }
   };
 
@@ -483,11 +529,11 @@ export default function AdminReports() {
       if (data.success) {
         setComparisonResult(data.comparison);
       } else {
-        showToast("Failed to compare seasons", "error");
+        showToast(t("admin_reports.errors.compare_seasons"), "error");
       }
     } catch (err) {
       console.error("Failed to compare seasons", err);
-      showToast("Failed to compare seasons", "error");
+      showToast(t("admin_reports.errors.compare_seasons"), "error");
     }
   };
 
@@ -540,7 +586,7 @@ export default function AdminReports() {
         setRows(Array.isArray(data?.rows) ? data.rows : []);
       } catch (err) {
         console.error("Failed to load admin reports", err);
-        setError("Failed to load admin reports data.");
+        setError(t("admin_reports.errors.load_reports"));
       } finally {
         setLoading(false);
       }
@@ -593,7 +639,7 @@ export default function AdminReports() {
       name: "",
       sku: "",
       unit: "unit",
-      category: inventoryCategoryOptions[0],
+      category: inventoryCategoryOptions[0].value,
       cost_center_id: firstDirect?.center_id || "",
     });
     setEditingItemId(null);
@@ -614,7 +660,7 @@ export default function AdminReports() {
   const resetAssetForm = () => {
     setAssetForm({
       name: "",
-      category: assetCategoryOptions[0],
+      category: assetCategoryOptions[0].value,
       value: "",
       acquired_date: endDate || "",
       notes: "",
@@ -625,7 +671,7 @@ export default function AdminReports() {
   const resetLiabilityForm = () => {
     setLiabilityForm({
       name: "",
-      category: liabilityCategoryOptions[0],
+      category: liabilityCategoryOptions[0].value,
       value: "",
       as_of_date: endDate || "",
       notes: "",
@@ -633,10 +679,84 @@ export default function AdminReports() {
     setEditingLiabilityId(null);
   };
 
+  const openCenterDialog = () => {
+    resetCenterForm();
+    setCenterDialogOpen(true);
+  };
+
+  const closeCenterDialog = () => {
+    setCenterDialogOpen(false);
+    resetCenterForm();
+  };
+
+  const openEntryDialog = () => {
+    resetEntryForm();
+    setEntryDialogOpen(true);
+  };
+
+  const closeEntryDialog = () => {
+    setEntryDialogOpen(false);
+    resetEntryForm();
+  };
+
+  const openItemDialog = () => {
+    resetItemForm();
+    setItemDialogOpen(true);
+  };
+
+  const closeItemDialog = () => {
+    setItemDialogOpen(false);
+    resetItemForm();
+  };
+
+  const openTxDialog = () => {
+    resetTxForm();
+    setTxDialogOpen(true);
+  };
+
+  const closeTxDialog = () => {
+    setTxDialogOpen(false);
+    resetTxForm();
+  };
+
+  const openAssetDialog = () => {
+    resetAssetForm();
+    setAssetDialogOpen(true);
+  };
+
+  const closeAssetDialog = () => {
+    setAssetDialogOpen(false);
+    resetAssetForm();
+  };
+
+  const openLiabilityDialog = () => {
+    resetLiabilityForm();
+    setLiabilityDialogOpen(true);
+  };
+
+  const closeLiabilityDialog = () => {
+    setLiabilityDialogOpen(false);
+    resetLiabilityForm();
+  };
+
+  const openArchiveDialog = () => {
+    setArchiveForm({
+      seasonName: "",
+      periodStart: startDate || "",
+      periodEnd: endDate || "",
+    });
+    setArchiveDialogOpen(true);
+  };
+
+  const closeArchiveDialog = () => {
+    setArchiveDialogOpen(false);
+    setArchiveForm({ seasonName: "", periodStart: "", periodEnd: "" });
+  };
+
   const handleSaveCenter = async () => {
     const trimmedName = centerForm.name.trim();
     if (!trimmedName) {
-      showToast("Cost center name is required", "error");
+      showToast(t("admin_reports.errors.center_name_required"), "error");
       return;
     }
     try {
@@ -645,39 +765,41 @@ export default function AdminReports() {
           name: trimmedName,
           category: centerForm.category,
         });
-        showToast("Cost center updated");
+        showToast(t("admin_reports.messages.center_updated"));
       } else {
         await api.post("/cost-centers", {
           name: trimmedName,
           category: centerForm.category,
         });
-        showToast("Cost center added");
+        showToast(t("admin_reports.messages.center_added"));
       }
       resetCenterForm();
+      setCenterDialogOpen(false);
       await loadCostCenters();
     } catch (err) {
       console.error("Failed to save cost center", err);
-      showToast("Failed to save cost center", "error");
+      showToast(t("admin_reports.errors.save_center"), "error");
     }
   };
 
   const handleEditCenter = (center) => {
     setEditingCenterId(center.center_id);
     setCenterForm({ name: center.name || "", category: center.category || "direct" });
+    setCenterDialogOpen(true);
   };
 
   const handleDeleteCenter = async (centerId) => {
-    const confirmed = window.confirm("Delete this cost center? All related entries will be removed.");
+    const confirmed = window.confirm(t("admin_reports.confirm.delete_center"));
     if (!confirmed) return;
     try {
       await api.delete(`/cost-centers/${centerId}`);
-      showToast("Cost center deleted");
+      showToast(t("admin_reports.messages.center_deleted"));
       if (editingCenterId === centerId) resetCenterForm();
       await loadCostCenters();
       await loadCostEntries();
     } catch (err) {
       console.error("Failed to delete cost center", err);
-      showToast("Failed to delete cost center", "error");
+      showToast(t("admin_reports.errors.delete_center"), "error");
     }
   };
 
@@ -686,15 +808,15 @@ export default function AdminReports() {
     const amountNum = Number(entryForm.amount);
     const dateStr = String(entryForm.incurred_date || "").trim();
     if (!Number.isFinite(centerId)) {
-      showToast("Select a cost center", "error");
+      showToast(t("admin_reports.errors.select_cost_center"), "error");
       return;
     }
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      showToast("Amount must be greater than 0", "error");
+      showToast(t("admin_reports.errors.amount_positive"), "error");
       return;
     }
     if (!dateStr) {
-      showToast("Date is required", "error");
+      showToast(t("admin_reports.errors.date_required"), "error");
       return;
     }
     try {
@@ -705,7 +827,7 @@ export default function AdminReports() {
           incurred_date: dateStr,
           notes: entryForm.notes,
         });
-        showToast("Cost entry updated");
+        showToast(t("admin_reports.messages.entry_updated"));
       } else {
         await api.post("/cost-entries", {
           center_id: centerId,
@@ -713,13 +835,14 @@ export default function AdminReports() {
           incurred_date: dateStr,
           notes: entryForm.notes,
         });
-        showToast("Cost entry added");
+        showToast(t("admin_reports.messages.entry_added"));
       }
       resetEntryForm();
+      setEntryDialogOpen(false);
       await loadCostEntries();
     } catch (err) {
       console.error("Failed to save cost entry", err);
-      showToast("Failed to save cost entry", "error");
+      showToast(t("admin_reports.errors.save_entry"), "error");
     }
   };
 
@@ -731,26 +854,27 @@ export default function AdminReports() {
       incurred_date: entry.incurred_date || "",
       notes: entry.notes || "",
     });
+    setEntryDialogOpen(true);
   };
 
   const handleDeleteEntry = async (entryId) => {
-    const confirmed = window.confirm("Delete this cost entry?");
+    const confirmed = window.confirm(t("admin_reports.confirm.delete_entry"));
     if (!confirmed) return;
     try {
       await api.delete(`/cost-entries/${entryId}`);
-      showToast("Cost entry deleted");
+      showToast(t("admin_reports.messages.entry_deleted"));
       if (editingEntryId === entryId) resetEntryForm();
       await loadCostEntries();
     } catch (err) {
       console.error("Failed to delete cost entry", err);
-      showToast("Failed to delete cost entry", "error");
+      showToast(t("admin_reports.errors.delete_entry"), "error");
     }
   };
 
   const handleSaveItem = async () => {
     const trimmedName = itemForm.name.trim();
     if (!trimmedName) {
-      showToast("Inventory item name is required", "error");
+      showToast(t("admin_reports.errors.item_name_required"), "error");
       return;
     }
     const payload = {
@@ -763,17 +887,18 @@ export default function AdminReports() {
     try {
       if (editingItemId) {
         await api.put(`/inventory-items/${editingItemId}`, payload);
-        showToast("Inventory item updated");
+        showToast(t("admin_reports.messages.item_updated"));
       } else {
         await api.post("/inventory-items", payload);
-        showToast("Inventory item added");
+        showToast(t("admin_reports.messages.item_added"));
       }
       resetItemForm();
+      setItemDialogOpen(false);
       await loadInventoryItems();
       await loadInventorySummary();
     } catch (err) {
       console.error("Failed to save inventory item", err);
-      showToast("Failed to save inventory item", "error");
+      showToast(t("admin_reports.errors.save_item"), "error");
     }
   };
 
@@ -783,23 +908,24 @@ export default function AdminReports() {
       name: item.name || "",
       sku: item.sku || "",
       unit: item.unit || "unit",
-      category: item.category || inventoryCategoryOptions[0],
+      category: item.category || inventoryCategoryOptions[0].value,
       cost_center_id: item.cost_center_id || "",
     });
+    setItemDialogOpen(true);
   };
 
   const handleDeleteItem = async (itemId) => {
-    const confirmed = window.confirm("Delete this inventory item? It must have no transactions.");
+    const confirmed = window.confirm(t("admin_reports.confirm.delete_item"));
     if (!confirmed) return;
     try {
       await api.delete(`/inventory-items/${itemId}`);
-      showToast("Inventory item deleted");
+      showToast(t("admin_reports.messages.item_deleted"));
       if (editingItemId === itemId) resetItemForm();
       await loadInventoryItems();
       await loadInventorySummary();
     } catch (err) {
       console.error("Failed to delete inventory item", err);
-      showToast(err?.response?.data?.error || "Failed to delete inventory item", "error");
+      showToast(err?.response?.data?.error || t("admin_reports.errors.delete_item"), "error");
     }
   };
 
@@ -808,23 +934,23 @@ export default function AdminReports() {
     const qty = Number(txForm.quantity);
     const dateStr = String(txForm.tx_date || "").trim();
     if (!Number.isFinite(itemId)) {
-      showToast("Select an inventory item", "error");
+      showToast(t("admin_reports.errors.select_inventory_item"), "error");
       return;
     }
     if (!txForm.tx_type) {
-      showToast("Select a transaction type", "error");
+      showToast(t("admin_reports.errors.select_tx_type"), "error");
       return;
     }
     if (!Number.isFinite(qty) || qty === 0) {
-      showToast("Quantity must be non-zero", "error");
+      showToast(t("admin_reports.errors.quantity_nonzero"), "error");
       return;
     }
     if (txForm.tx_type !== "adjustment" && qty < 0) {
-      showToast("Quantity must be positive for this type", "error");
+      showToast(t("admin_reports.errors.quantity_positive"), "error");
       return;
     }
     if (!dateStr) {
-      showToast("Transaction date is required", "error");
+      showToast(t("admin_reports.errors.tx_date_required"), "error");
       return;
     }
     const payload = {
@@ -838,18 +964,19 @@ export default function AdminReports() {
     try {
       if (editingTxId) {
         await api.put(`/inventory-transactions/${editingTxId}`, payload);
-        showToast("Inventory transaction updated");
+        showToast(t("admin_reports.messages.tx_updated"));
       } else {
         await api.post("/inventory-transactions", payload);
-        showToast("Inventory transaction added");
+        showToast(t("admin_reports.messages.tx_added"));
       }
       resetTxForm();
+      setTxDialogOpen(false);
       await loadInventoryTransactions();
       await loadInventorySummary();
       await loadCostEntries();
     } catch (err) {
       console.error("Failed to save inventory transaction", err);
-      showToast("Failed to save inventory transaction", "error");
+      showToast(t("admin_reports.errors.save_tx"), "error");
     }
   };
 
@@ -863,21 +990,22 @@ export default function AdminReports() {
       tx_date: tx.tx_date || "",
       notes: tx.notes || "",
     });
+    setTxDialogOpen(true);
   };
 
   const handleDeleteTx = async (txId) => {
-    const confirmed = window.confirm("Delete this inventory transaction?");
+    const confirmed = window.confirm(t("admin_reports.confirm.delete_tx"));
     if (!confirmed) return;
     try {
       await api.delete(`/inventory-transactions/${txId}`);
-      showToast("Inventory transaction deleted");
+      showToast(t("admin_reports.messages.tx_deleted"));
       if (editingTxId === txId) resetTxForm();
       await loadInventoryTransactions();
       await loadInventorySummary();
       await loadCostEntries();
     } catch (err) {
       console.error("Failed to delete inventory transaction", err);
-      showToast("Failed to delete inventory transaction", "error");
+      showToast(t("admin_reports.errors.delete_tx"), "error");
     }
   };
 
@@ -886,15 +1014,15 @@ export default function AdminReports() {
     const valueNum = Number(assetForm.value);
     const dateStr = String(assetForm.acquired_date || "").trim();
     if (!trimmedName) {
-      showToast("Asset name is required", "error");
+      showToast(t("admin_reports.errors.asset_name_required"), "error");
       return;
     }
     if (!Number.isFinite(valueNum) || valueNum <= 0) {
-      showToast("Asset value must be greater than 0", "error");
+      showToast(t("admin_reports.errors.asset_value_positive"), "error");
       return;
     }
     if (!dateStr) {
-      showToast("Acquired date is required", "error");
+      showToast(t("admin_reports.errors.asset_date_required"), "error");
       return;
     }
     const payload = {
@@ -907,16 +1035,17 @@ export default function AdminReports() {
     try {
       if (editingAssetId) {
         await api.put(`/assets/${editingAssetId}`, payload);
-        showToast("Asset updated");
+        showToast(t("admin_reports.messages.asset_updated"));
       } else {
         await api.post("/assets", payload);
-        showToast("Asset added");
+        showToast(t("admin_reports.messages.asset_added"));
       }
       resetAssetForm();
+      setAssetDialogOpen(false);
       await loadAssets();
     } catch (err) {
       console.error("Failed to save asset", err);
-      showToast("Failed to save asset", "error");
+      showToast(t("admin_reports.errors.save_asset"), "error");
     }
   };
 
@@ -924,24 +1053,25 @@ export default function AdminReports() {
     setEditingAssetId(asset.asset_id);
     setAssetForm({
       name: asset.name || "",
-      category: asset.category || assetCategoryOptions[0],
+      category: asset.category || assetCategoryOptions[0].value,
       value: asset.value ?? "",
       acquired_date: asset.acquired_date || "",
       notes: asset.notes || "",
     });
+    setAssetDialogOpen(true);
   };
 
   const handleDeleteAsset = async (assetId) => {
-    const confirmed = window.confirm("Delete this asset?");
+    const confirmed = window.confirm(t("admin_reports.confirm.delete_asset"));
     if (!confirmed) return;
     try {
       await api.delete(`/assets/${assetId}`);
-      showToast("Asset deleted");
+      showToast(t("admin_reports.messages.asset_deleted"));
       if (editingAssetId === assetId) resetAssetForm();
       await loadAssets();
     } catch (err) {
       console.error("Failed to delete asset", err);
-      showToast("Failed to delete asset", "error");
+      showToast(t("admin_reports.errors.delete_asset"), "error");
     }
   };
 
@@ -950,15 +1080,15 @@ export default function AdminReports() {
     const valueNum = Number(liabilityForm.value);
     const dateStr = String(liabilityForm.as_of_date || "").trim();
     if (!trimmedName) {
-      showToast("Liability name is required", "error");
+      showToast(t("admin_reports.errors.liability_name_required"), "error");
       return;
     }
     if (!Number.isFinite(valueNum) || valueNum <= 0) {
-      showToast("Liability value must be greater than 0", "error");
+      showToast(t("admin_reports.errors.liability_value_positive"), "error");
       return;
     }
     if (!dateStr) {
-      showToast("As-of date is required", "error");
+      showToast(t("admin_reports.errors.liability_date_required"), "error");
       return;
     }
     const payload = {
@@ -971,16 +1101,17 @@ export default function AdminReports() {
     try {
       if (editingLiabilityId) {
         await api.put(`/liabilities/${editingLiabilityId}`, payload);
-        showToast("Liability updated");
+        showToast(t("admin_reports.messages.liability_updated"));
       } else {
         await api.post("/liabilities", payload);
-        showToast("Liability added");
+        showToast(t("admin_reports.messages.liability_added"));
       }
       resetLiabilityForm();
+      setLiabilityDialogOpen(false);
       await loadLiabilities();
     } catch (err) {
       console.error("Failed to save liability", err);
-      showToast("Failed to save liability", "error");
+      showToast(t("admin_reports.errors.save_liability"), "error");
     }
   };
 
@@ -988,37 +1119,65 @@ export default function AdminReports() {
     setEditingLiabilityId(liability.liability_id);
     setLiabilityForm({
       name: liability.name || "",
-      category: liability.category || liabilityCategoryOptions[0],
+      category: liability.category || liabilityCategoryOptions[0].value,
       value: liability.value ?? "",
       as_of_date: liability.as_of_date || "",
       notes: liability.notes || "",
     });
+    setLiabilityDialogOpen(true);
   };
 
   const handleDeleteLiability = async (liabilityId) => {
-    const confirmed = window.confirm("Delete this liability?");
+    const confirmed = window.confirm(t("admin_reports.confirm.delete_liability"));
     if (!confirmed) return;
     try {
       await api.delete(`/liabilities/${liabilityId}`);
-      showToast("Liability deleted");
+      showToast(t("admin_reports.messages.liability_deleted"));
       if (editingLiabilityId === liabilityId) resetLiabilityForm();
       await loadLiabilities();
     } catch (err) {
       console.error("Failed to delete liability", err);
-      showToast("Failed to delete liability", "error");
+      showToast(t("admin_reports.errors.delete_liability"), "error");
+    }
+  };
+
+  const handleArchiveSeason = async () => {
+    const seasonName = archiveForm.seasonName.trim();
+    const periodStart = String(archiveForm.periodStart || "").trim();
+    const periodEnd = String(archiveForm.periodEnd || "").trim();
+    if (!seasonName) {
+      showToast(t("admin_reports.errors.season_name_required"), "error");
+      return;
+    }
+    if (!periodStart || !periodEnd) {
+      showToast(t("admin_reports.errors.season_dates_required"), "error");
+      return;
+    }
+    try {
+      const { data } = await api.post("/archive-season", { seasonName, periodStart, periodEnd });
+      if (data?.success) {
+        showToast(data.message || t("admin_reports.messages.season_archived"));
+        closeArchiveDialog();
+        await loadHistoricalPeriods();
+      } else {
+        showToast(data?.error || t("admin_reports.errors.archive_season"), "error");
+      }
+    } catch (err) {
+      console.error("Failed to archive season", err);
+      showToast(err?.response?.data?.error || t("admin_reports.errors.archive_season"), "error");
     }
   };
 
   const handleExportCsv = () => {
     const headers = [
-      "Date",
-      "City",
-      "Customer name",
-      "Order ID",
-      "Pouches produced",
-      "Kilos",
-      "Unit price (€ / pouch)",
-      "Revenue (€)",
+      t("admin_reports.csv.headers.date"),
+      t("admin_reports.csv.headers.city"),
+      t("admin_reports.csv.headers.customer_name"),
+      t("admin_reports.csv.headers.order_id"),
+      t("admin_reports.csv.headers.pouches_produced"),
+      t("admin_reports.csv.headers.kilos"),
+      t("admin_reports.csv.headers.unit_price"),
+      t("admin_reports.csv.headers.revenue"),
     ];
 
     const escape = (val) => {
@@ -1039,7 +1198,7 @@ export default function AdminReports() {
     ]));
 
     lines.push([
-      "Totals",
+      t("admin_reports.csv.totals"),
       "",
       "",
       "",
@@ -1060,9 +1219,9 @@ export default function AdminReports() {
   };
 
   const buildPdfHtml = () => {
-    const title = "Apple Juice Production & Financial Report";
+    const title = t("admin_reports.title");
     const rangeText = `${startDate || "—"} → ${endDate || "—"}`;
-    const cityText = selectedCities.length ? selectedCities.join(", ") : "All cities";
+    const cityText = selectedCities.length ? selectedCities.join(", ") : t("admin_reports.filters.all_cities");
     const rowsHtml = report.rows.length
       ? report.rows.map((r) => (
         `<tr>
@@ -1076,13 +1235,13 @@ export default function AdminReports() {
           <td class="num">${escapeHtml(formatCurrency(r.revenue))}</td>
         </tr>`
       )).join("")
-      : `<tr><td colspan="8" class="empty">No data for the selected range.</td></tr>`;
+      : `<tr><td colspan="8" class="empty">${escapeHtml(t("admin_reports.pdf.no_data"))}</td></tr>`;
 
     return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Admin Report ${escapeHtml(startDate || "")} - ${escapeHtml(endDate || "")}</title>
+    <title>${escapeHtml(t("admin_reports.pdf.report_title"))} ${escapeHtml(startDate || "")} - ${escapeHtml(endDate || "")}</title>
     <style>
       @page { margin: 18mm; }
       body { font-family: "Arial", sans-serif; color: #222; }
@@ -1101,43 +1260,43 @@ export default function AdminReports() {
   </head>
   <body>
     <h1>${escapeHtml(title)}</h1>
-    <div class="meta">Date range: ${escapeHtml(rangeText)} · Cities: ${escapeHtml(cityText)}</div>
+    <div class="meta">${escapeHtml(t("admin_reports.pdf.date_range"))}: ${escapeHtml(rangeText)} · ${escapeHtml(t("admin_reports.pdf.cities"))}: ${escapeHtml(cityText)}</div>
 
-    <h2>Summary</h2>
+    <h2>${escapeHtml(t("admin_reports.pdf.summary_title"))}</h2>
     <div class="summary">
-      <div><span>Total kilos</span><strong>${escapeHtml(formatNumber(report.totals.kilos))} kg</strong></div>
-      <div><span>Total pouches</span><strong>${escapeHtml(formatNumber(report.totals.pouches))}</strong></div>
-      <div><span>Revenue</span><strong>${escapeHtml(formatCurrency(report.totals.revenue))}</strong></div>
-      <div><span>Direct cost</span><strong>${escapeHtml(formatCurrency(report.totals.direct_cost))}</strong></div>
-      <div><span>Overhead / expenses</span><strong>${escapeHtml(formatCurrency(report.totals.overhead_cost))}</strong></div>
-      <div><span>Total costs</span><strong>${escapeHtml(formatCurrency(report.totals.total_costs))}</strong></div>
-      <div><span>Gross profit</span><strong>${escapeHtml(formatCurrency(report.totals.gross_profit))}</strong></div>
-      <div><span>Gross margin</span><strong>${escapeHtml(formatPercent(report.totals.gross_margin_pct))}</strong></div>
-      <div><span>Net profit</span><strong>${escapeHtml(formatCurrency(report.totals.net_profit))}</strong></div>
-      <div><span>Net margin</span><strong>${escapeHtml(formatPercent(report.totals.net_margin_pct))}</strong></div>
-      <div><span>Avg order value</span><strong>${escapeHtml(formatCurrency(report.totals.avg_order_value))}</strong></div>
-      <div><span>Yield</span><strong>${escapeHtml(formatPercent(report.totals.yield_pct))}</strong></div>
-      <div><span>Top city</span><strong>${escapeHtml(report.topCity || "—")}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.total_kilos"))}</span><strong>${escapeHtml(formatNumber(report.totals.kilos))} kg</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.total_pouches"))}</span><strong>${escapeHtml(formatNumber(report.totals.pouches))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.revenue"))}</span><strong>${escapeHtml(formatCurrency(report.totals.revenue))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.direct_cost"))}</span><strong>${escapeHtml(formatCurrency(report.totals.direct_cost))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.overhead_cost"))}</span><strong>${escapeHtml(formatCurrency(report.totals.overhead_cost))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.total_costs"))}</span><strong>${escapeHtml(formatCurrency(report.totals.total_costs))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.gross_profit"))}</span><strong>${escapeHtml(formatCurrency(report.totals.gross_profit))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.gross_margin"))}</span><strong>${escapeHtml(formatPercent(report.totals.gross_margin_pct))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.net_profit"))}</span><strong>${escapeHtml(formatCurrency(report.totals.net_profit))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.net_margin"))}</span><strong>${escapeHtml(formatPercent(report.totals.net_margin_pct))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.avg_order_value"))}</span><strong>${escapeHtml(formatCurrency(report.totals.avg_order_value))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.yield"))}</span><strong>${escapeHtml(formatPercent(report.totals.yield_pct))}</strong></div>
+      <div><span>${escapeHtml(t("admin_reports.pdf.summary.top_city"))}</span><strong>${escapeHtml(report.topCity || "—")}</strong></div>
     </div>
 
-    <h2>Detailed Orders</h2>
+    <h2>${escapeHtml(t("admin_reports.pdf.detailed_orders"))}</h2>
     <table>
       <thead>
         <tr>
-          <th>Date</th>
-          <th>City</th>
-          <th>Customer name</th>
-          <th>Order ID</th>
-          <th class="num">Pouches</th>
-          <th class="num">Kilos</th>
-          <th class="num">Unit price</th>
-          <th class="num">Revenue</th>
+          <th>${escapeHtml(t("admin_reports.pdf.table.date"))}</th>
+          <th>${escapeHtml(t("admin_reports.pdf.table.city"))}</th>
+          <th>${escapeHtml(t("admin_reports.pdf.table.customer_name"))}</th>
+          <th>${escapeHtml(t("admin_reports.pdf.table.order_id"))}</th>
+          <th class="num">${escapeHtml(t("admin_reports.pdf.table.pouches"))}</th>
+          <th class="num">${escapeHtml(t("admin_reports.pdf.table.kilos"))}</th>
+          <th class="num">${escapeHtml(t("admin_reports.pdf.table.unit_price"))}</th>
+          <th class="num">${escapeHtml(t("admin_reports.pdf.table.revenue"))}</th>
         </tr>
       </thead>
       <tbody>
         ${rowsHtml}
         <tr class="totals">
-          <td>Totals</td>
+          <td>${escapeHtml(t("admin_reports.pdf.totals"))}</td>
           <td></td>
           <td></td>
           <td></td>
@@ -1159,9 +1318,9 @@ export default function AdminReports() {
   };
 
   const buildIncomeStatementHtml = () => {
-    const title = "Income Statement";
+    const title = t("admin_reports.statements.income_statement");
     const rangeText = `${startDate || "—"} → ${endDate || "—"}`;
-    const cityText = selectedCities.length ? selectedCities.join(", ") : "All cities";
+    const cityText = selectedCities.length ? selectedCities.join(", ") : t("admin_reports.filters.all_cities");
     return `<!doctype html>
 <html>
   <head>
@@ -1181,14 +1340,14 @@ export default function AdminReports() {
   </head>
   <body>
     <h1>${escapeHtml(title)}</h1>
-    <div class="meta">Date range: ${escapeHtml(rangeText)} · Cities: ${escapeHtml(cityText)}</div>
+    <div class="meta">${escapeHtml(t("admin_reports.pdf.date_range"))}: ${escapeHtml(rangeText)} · ${escapeHtml(t("admin_reports.pdf.cities"))}: ${escapeHtml(cityText)}</div>
     <table>
       <tbody>
-        <tr><th>Revenue</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.revenue))}</td></tr>
-        <tr><th>Direct costs</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.directCosts))}</td></tr>
-        <tr class="total"><th>Gross profit</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.grossProfit))}</td></tr>
-        <tr><th>Overhead / expenses</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.overheadCosts))}</td></tr>
-        <tr class="total"><th>Net profit</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.netProfit))}</td></tr>
+        <tr><th>${escapeHtml(t("admin_reports.statements.revenue"))}</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.revenue))}</td></tr>
+        <tr><th>${escapeHtml(t("admin_reports.statements.direct_costs"))}</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.directCosts))}</td></tr>
+        <tr class="total"><th>${escapeHtml(t("admin_reports.statements.gross_profit"))}</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.grossProfit))}</td></tr>
+        <tr><th>${escapeHtml(t("admin_reports.statements.overhead_expenses"))}</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.overheadCosts))}</td></tr>
+        <tr class="total"><th>${escapeHtml(t("admin_reports.statements.net_profit"))}</th><td class="num">${escapeHtml(formatCurrency(incomeStatement.netProfit))}</td></tr>
       </tbody>
     </table>
     <script>
@@ -1202,7 +1361,7 @@ export default function AdminReports() {
   };
 
   const buildBalanceSheetHtml = () => {
-    const title = "Statement of Financial Position";
+    const title = t("admin_reports.statements.balance_sheet");
     const asOfText = endDate || startDate || "—";
     return `<!doctype html>
 <html>
@@ -1224,36 +1383,36 @@ export default function AdminReports() {
   </head>
   <body>
     <h1>${escapeHtml(title)}</h1>
-    <div class="meta">As of: ${escapeHtml(asOfText)}</div>
+    <div class="meta">${escapeHtml(t("admin_reports.pdf.as_of"))}: ${escapeHtml(asOfText)}</div>
 
-    <h2>Assets</h2>
+    <h2>${escapeHtml(t("admin_reports.statements.assets_title"))}</h2>
     <table>
       <tbody>
-        <tr><th>Inventory</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.inventoryValue))}</td></tr>
+        <tr><th>${escapeHtml(t("admin_reports.statements.inventory_label"))}</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.inventoryValue))}</td></tr>
         ${assets.map((asset) => (
-          `<tr><th>${escapeHtml(asset.name || "Asset")}</th><td class="num">${escapeHtml(formatCurrency(asset.value))}</td></tr>`
+          `<tr><th>${escapeHtml(asset.name || t("admin_reports.pdf.asset_fallback"))}</th><td class="num">${escapeHtml(formatCurrency(asset.value))}</td></tr>`
         )).join("")}
-        <tr class="total"><th>Total assets</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.totalAssets))}</td></tr>
+        <tr class="total"><th>${escapeHtml(t("admin_reports.pdf.total_assets"))}</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.totalAssets))}</td></tr>
       </tbody>
     </table>
 
-    <h2>Liabilities</h2>
+    <h2>${escapeHtml(t("admin_reports.statements.liabilities_title"))}</h2>
     <table>
       <tbody>
         ${liabilities.length
           ? liabilities.map((liability) => (
-            `<tr><th>${escapeHtml(liability.name || "Liability")}</th><td class="num">${escapeHtml(formatCurrency(liability.value))}</td></tr>`
+            `<tr><th>${escapeHtml(liability.name || t("admin_reports.pdf.liability_fallback"))}</th><td class="num">${escapeHtml(formatCurrency(liability.value))}</td></tr>`
           )).join("")
-          : `<tr><th>Liabilities</th><td class="num">${escapeHtml(formatCurrency(0))}</td></tr>`
+          : `<tr><th>${escapeHtml(t("admin_reports.pdf.liabilities_label"))}</th><td class="num">${escapeHtml(formatCurrency(0))}</td></tr>`
         }
-        <tr class="total"><th>Total liabilities</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.totalLiabilities))}</td></tr>
+        <tr class="total"><th>${escapeHtml(t("admin_reports.pdf.total_liabilities"))}</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.totalLiabilities))}</td></tr>
       </tbody>
     </table>
 
-    <h2>Equity</h2>
+    <h2>${escapeHtml(t("admin_reports.statements.equity_label"))}</h2>
     <table>
       <tbody>
-        <tr class="total"><th>Equity</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.equity))}</td></tr>
+        <tr class="total"><th>${escapeHtml(t("admin_reports.statements.equity_label"))}</th><td class="num">${escapeHtml(formatCurrency(balanceSheet.equity))}</td></tr>
       </tbody>
     </table>
 
@@ -1270,7 +1429,7 @@ export default function AdminReports() {
   const openPrintWindow = (html) => {
     const popup = window.open("", "_blank", "width=1200,height=900");
     if (!popup) {
-      alert("Please allow pop-ups to export the PDF.");
+      alert(t("admin_reports.errors.allow_popups"));
       return false;
     }
     popup.document.open();
@@ -1303,70 +1462,48 @@ export default function AdminReports() {
     setSaveNotice(true);
   };
 
-  const columns = useMemo(() => ([
-    { field: "production_date", headerName: "Date", minWidth: 100, flex: 0.7 },
-    { field: "city", headerName: "City", minWidth: 100, flex: 0.7 },
-    { field: "customer_name", headerName: "Customer name", minWidth: 140, flex: 1.2 },
-    { field: "order_id", headerName: "Order ID", minWidth: 130, flex: 1 },
-    { field: "pouches_produced", headerName: "Pouches produced", type: "number", minWidth: 120, flex: 0.9 },
-    { field: "kilos", headerName: "Kilos", type: "number", minWidth: 90, flex: 0.6 },
-    {
-      field: "unit_price",
-      headerName: "Unit price €/pouch",
-      type: "number",
-      minWidth: 130,
-      flex: 0.9,
-      valueFormatter: ({ value }) => formatCurrency(value),
-    },
-    {
-      field: "revenue",
-      headerName: "Revenue (€)",
-      type: "number",
-      minWidth: 110,
-      flex: 0.8,
-      valueFormatter: ({ value }) => formatCurrency(value),
-    },
-  ]), []);
-
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} className="page-transition">
       <Stack
         direction={{ xs: "column", lg: "row" }}
         alignItems={{ xs: "flex-start", lg: "center" }}
         justifyContent="space-between"
         spacing={2}
+        className="animate-slide-in-down"
       >
         <Box>
-          <Typography variant="h5" fontWeight={800}>Apple Juice Production & Financial Report</Typography>
-          <Typography variant="body2" color="text.secondary">Admin dashboard – company-wide view</Typography>
+          <Typography variant="h5" fontWeight={800}>{t("admin_reports.title")}</Typography>
+          <Typography variant="body2" color="text.secondary">{t("admin_reports.subtitle")}</Typography>
         </Box>
-        <Stack direction="row" spacing={1} flexWrap="wrap">
+        <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+          <ThemeModeToggle />
           <Button variant="outlined" startIcon={<Download size={16} />} onClick={handleExportCsv}>
-            Export CSV
+            {t("admin_reports.actions.export_csv")}
           </Button>
           <Button variant="outlined" startIcon={<FileText size={16} />} onClick={handleExportPdf}>
-            Export PDF
+            {t("admin_reports.actions.export_pdf")}
           </Button>
           <Button variant="contained" startIcon={<Save size={16} />} onClick={handleSaveView}>
-            Save view
+            {t("admin_reports.actions.save_view")}
           </Button>
         </Stack>
       </Stack>
 
-      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }} className="animate-slide-in-up">
         <CardContent>
           <Stack spacing={2}>
             <Box>
-              <Typography variant="caption" color="text.secondary">Date range</Typography>
+              <Typography variant="caption" color="text.secondary">{t("admin_reports.filters.date_range")}</Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1 }}>
                 {presets.map((p) => (
                   <Chip
                     key={p.key}
-                    label={p.label}
+                    label={t(p.labelKey)}
                     clickable
                     color={preset === p.key ? "primary" : "default"}
                     variant={preset === p.key ? "filled" : "outlined"}
                     onClick={() => setPreset(p.key)}
+                    className="animate-scale-in"
                   />
                 ))}
               </Stack>
@@ -1375,7 +1512,7 @@ export default function AdminReports() {
             {preset === "custom" && (
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField
-                  label="Start date"
+                  label={t("admin_reports.filters.start_date")}
                   type="date"
                   size="small"
                   value={startDate}
@@ -1383,7 +1520,7 @@ export default function AdminReports() {
                   InputLabelProps={{ shrink: true }}
                 />
                 <TextField
-                  label="End date"
+                  label={t("admin_reports.filters.end_date")}
                   type="date"
                   size="small"
                   value={endDate}
@@ -1394,10 +1531,10 @@ export default function AdminReports() {
             )}
 
             <FormControl size="small" sx={{ minWidth: 220 }}>
-              <InputLabel id="city-select-label">City</InputLabel>
+              <InputLabel id="city-select-label">{t("admin_reports.filters.city")}</InputLabel>
               <Select
                 labelId="city-select-label"
-                label="City"
+                label={t("admin_reports.filters.city")}
                 multiple
                 value={selectedCities}
                 onChange={(e) => {
@@ -1405,12 +1542,12 @@ export default function AdminReports() {
                   setSelectedCities(typeof value === "string" ? value.split(",") : value);
                 }}
                 renderValue={(selected) => (
-                  selected.length ? selected.join(", ") : "All cities"
+                  selected.length ? selected.join(", ") : t("admin_reports.filters.all_cities")
                 )}
               >
                 {cityOptions.length === 0 && (
                   <MenuItem disabled value="">
-                    No cities available
+                    {t("admin_reports.filters.no_cities")}
                   </MenuItem>
                 )}
                 {cityOptions.map((city) => (
@@ -1428,14 +1565,22 @@ export default function AdminReports() {
       <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.default" }}>
         <CardContent>
           <Stack spacing={2}>
-            <Typography variant="subtitle2" fontWeight={600}>Historical Data & Analysis</Typography>
+            <Typography variant="subtitle2" fontWeight={600}>{t("admin_reports.historical.title")}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t("admin_reports.historical.subtitle")}
+            </Typography>
             
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems="flex-start"
+              sx={{ flexWrap: "wrap" }}
+            >
               <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel>Report Mode</InputLabel>
+                <InputLabel>{t("admin_reports.historical.report_mode")}</InputLabel>
                 <Select
                   value={reportMode}
-                  label="Report Mode"
+                  label={t("admin_reports.historical.report_mode")}
                   onChange={(e) => {
                     setReportMode(e.target.value);
                     if (e.target.value === "historical") {
@@ -1443,18 +1588,18 @@ export default function AdminReports() {
                     }
                   }}
                 >
-                  <MenuItem value="current">2026 Current</MenuItem>
-                  <MenuItem value="historical">2025 & Earlier</MenuItem>
-                  <MenuItem value="compare">Compare Seasons</MenuItem>
+                  <MenuItem value="current">{t("admin_reports.historical.mode_current")}</MenuItem>
+                  <MenuItem value="historical">{t("admin_reports.historical.mode_historical")}</MenuItem>
+                  <MenuItem value="compare">{t("admin_reports.historical.mode_compare")}</MenuItem>
                 </Select>
               </FormControl>
 
               {reportMode === "historical" && historicalPeriods.length > 0 && (
                 <FormControl size="small" sx={{ minWidth: 200 }}>
-                  <InputLabel>Select Season</InputLabel>
+                  <InputLabel>{t("admin_reports.historical.select_season")}</InputLabel>
                   <Select
                     value={selectedPeriod}
-                    label="Select Season"
+                    label={t("admin_reports.historical.select_season")}
                     onChange={(e) => {
                       setSelectedPeriod(e.target.value);
                       loadHistoricalReport(e.target.value);
@@ -1472,10 +1617,10 @@ export default function AdminReports() {
               {reportMode === "compare" && historicalPeriods.length > 0 && (
                 <>
                   <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <InputLabel>Season 1</InputLabel>
+                    <InputLabel>{t("admin_reports.historical.season_1")}</InputLabel>
                     <Select
                       value={comparePeriod1}
-                      label="Season 1"
+                      label={t("admin_reports.historical.season_1")}
                       onChange={(e) => setComparePeriod1(e.target.value)}
                     >
                       {historicalPeriods.map((period) => (
@@ -1487,10 +1632,10 @@ export default function AdminReports() {
                   </FormControl>
 
                   <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <InputLabel>Season 2</InputLabel>
+                    <InputLabel>{t("admin_reports.historical.season_2")}</InputLabel>
                     <Select
                       value={comparePeriod2}
-                      label="Season 2"
+                      label={t("admin_reports.historical.season_2")}
                       onChange={(e) => setComparePeriod2(e.target.value)}
                     >
                       {historicalPeriods.map((period) => (
@@ -1508,26 +1653,52 @@ export default function AdminReports() {
                       if (comparePeriod1 && comparePeriod2) {
                         compareSeasonReports(comparePeriod1, comparePeriod2);
                       } else {
-                        showToast("Please select both seasons to compare", "warning");
+                        showToast(t("admin_reports.messages.select_both_seasons"), "warning");
                       }
                     }}
                   >
-                    Compare
+                    {t("admin_reports.historical.compare_action")}
                   </Button>
                 </>
               )}
 
+              <Button variant="outlined" size="small" onClick={openArchiveDialog}>
+                {t("admin_reports.historical.archive_action")}
+              </Button>
+
               {historicalPeriods.length === 0 && reportMode !== "current" && (
                 <Typography variant="body2" color="text.secondary">
-                  No historical data available. Archive seasons to enable historical analysis.
+                  {t("admin_reports.historical.no_data")}
                 </Typography>
               )}
             </Stack>
 
+            <Divider />
+            <Stack spacing={1}>
+              <Typography variant="subtitle2" fontWeight={600}>
+                {t("admin_reports.historical.guide_title")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.historical.guide_step_1")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.historical.guide_step_2")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.historical.guide_step_3")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.historical.guide_step_4")}
+              </Typography>
+            </Stack>
+
             {selectedPeriod && historicalData && (
               <Alert severity="info">
-                Viewing historical data for {selectedPeriod}: {historicalData.totals?.orders || 0} orders,{" "}
-                €{(historicalData.totals?.revenue || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {t("admin_reports.historical.viewing_historical", {
+                  season: selectedPeriod,
+                  orders: historicalData.totals?.orders || 0,
+                  revenue: (historicalData.totals?.revenue || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                })}
               </Alert>
             )}
           </Stack>
@@ -1551,55 +1722,65 @@ export default function AdminReports() {
             scrollButtons="auto"
             sx={{ borderBottom: 1, borderColor: "divider" }}
           >
-            <Tab label="Overview" value="overview" />
-            <Tab label="Costs" value="costs" />
-            <Tab label="Inventory" value="inventory" />
-            <Tab label="Statements" value="statements" />
-            <Tab label="Orders" value="orders" />
+            <Tab label={t("admin_reports.tabs.overview")} value="overview" />
+            <Tab label={t("admin_reports.tabs.costs")} value="costs" />
+            <Tab label={t("admin_reports.tabs.inventory")} value="inventory" />
+            <Tab label={t("admin_reports.tabs.statements")} value="statements" />
           </Tabs>
 
           <TabPanel value={activeTab} tab="overview">
             <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.overview.description")}
+              </Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12} md={6} lg={3}>
                   <KpiCard
-                    title="Total Kilos Produced"
+                    title={t("admin_reports.overview.kpis.total_kilos")}
                     value={`${formatNumber(report.totals.kilos)} kg`}
                   />
                 </Grid>
                 <Grid item xs={12} md={6} lg={3}>
                   <KpiCard
-                    title="Pouches Produced"
+                    title={t("admin_reports.overview.kpis.pouches_produced")}
                     value={formatNumber(report.totals.pouches)}
-                    subtext={`Average weight per pouch: ${report.totals.avg_weight_per_pouch_g} g`}
+                    subtext={t("admin_reports.overview.kpis.avg_weight_per_pouch", {
+                      value: report.totals.avg_weight_per_pouch_g,
+                    })}
                   />
                 </Grid>
                 <Grid item xs={12} md={6} lg={3}>
                   <KpiCard
-                    title="Revenue from Pouches"
+                    title={t("admin_reports.overview.kpis.revenue_from_pouches")}
                     value={formatCurrency(report.totals.revenue)}
-                    subtext="Collected: €— | Outstanding: €—"
+                    subtext={t("admin_reports.overview.kpis.revenue_collected_outstanding")}
                   />
                 </Grid>
                 <Grid item xs={12} md={6} lg={3}>
                   <KpiCard
-                    title="Gross Profit"
+                    title={t("admin_reports.overview.kpis.gross_profit")}
                     value={formatCurrency(report.totals.gross_profit)}
-                    subtext={`Gross margin: ${report.totals.gross_margin_pct}%`}
+                    subtext={t("admin_reports.overview.kpis.gross_margin", {
+                      value: report.totals.gross_margin_pct,
+                    })}
                   />
                 </Grid>
                 <Grid item xs={12} md={6} lg={3}>
                   <KpiCard
-                    title="Net Profit"
+                    title={t("admin_reports.overview.kpis.net_profit")}
                     value={formatCurrency(report.totals.net_profit)}
-                    subtext={`Net margin: ${report.totals.net_margin_pct}%`}
+                    subtext={t("admin_reports.overview.kpis.net_margin", {
+                      value: report.totals.net_margin_pct,
+                    })}
                   />
                 </Grid>
                 <Grid item xs={12} md={6} lg={3}>
                   <KpiCard
-                    title="Yield"
+                    title={t("admin_reports.overview.kpis.yield")}
                     value={`${report.totals.yield_pct}%`}
-                    subtext={`Expected pouches: ${formatNumber(report.totals.expected_pouches)}`}
+                    subtext={t("admin_reports.overview.kpis.expected_pouches", {
+                      value: formatNumber(report.totals.expected_pouches),
+                    })}
                   />
                 </Grid>
               </Grid>
@@ -1607,20 +1788,26 @@ export default function AdminReports() {
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1.5 }}>
-                    Operational Insights
+                    {t("admin_reports.overview.insights_title")}
                   </Typography>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
                     <Typography variant="body2">
-                      Orders in range: <strong>{formatNumber(report.totals.orders)}</strong>
+                      {t("admin_reports.overview.insights.orders_in_range")}{" "}
+                      <strong>{formatNumber(report.totals.orders)}</strong>
                     </Typography>
                     <Typography variant="body2">
-                      Avg order value: <strong>{formatCurrency(report.totals.avg_order_value)}</strong>
+                      {t("admin_reports.overview.insights.avg_order_value")}{" "}
+                      <strong>{formatCurrency(report.totals.avg_order_value)}</strong>
                     </Typography>
                     <Typography variant="body2">
-                      Top city: <strong>{report.topCity}</strong>
+                      {t("admin_reports.overview.insights.top_city")}{" "}
+                      <strong>{report.topCity || "—"}</strong>
                     </Typography>
                     <Typography variant="body2">
-                      Avg revenue per kg: <strong>{report.totals.kilos ? formatCurrency(report.totals.revenue / report.totals.kilos) : "€0.00"}</strong>
+                      {t("admin_reports.overview.insights.avg_revenue_per_kg")}{" "}
+                      <strong>
+                        {report.totals.kilos ? formatCurrency(report.totals.revenue / report.totals.kilos) : "€0.00"}
+                      </strong>
                     </Typography>
                   </Stack>
                 </CardContent>
@@ -1629,7 +1816,7 @@ export default function AdminReports() {
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                    Production vs Sales Over Time
+                    {t("admin_reports.charts.production_vs_sales")}
                   </Typography>
                   <ResponsiveContainer width="100%" height={280}>
                     <LineChart data={report.timeSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
@@ -1637,10 +1824,28 @@ export default function AdminReports() {
                       <XAxis dataKey="date" stroke={theme.palette.text.secondary} />
                       <YAxis stroke={theme.palette.text.secondary} />
                       <ReTooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Line type="monotone" dataKey="kilos" stroke={theme.palette.primary.main} name="Kilos produced" strokeWidth={2} />
-                      <Line type="monotone" dataKey="pouches" stroke="#ef6c00" name="Pouches sold" strokeWidth={2} />
-                      <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Sales revenue (€)" strokeWidth={2} />
+                      <Legend formatter={legendFormatter} />
+                      <Line
+                        type="monotone"
+                        dataKey="kilos"
+                        stroke={chartColors.kilos}
+                        name={t("admin_reports.charts.legend.kilos_produced")}
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="pouches"
+                        stroke={chartColors.pouches}
+                        name={t("admin_reports.charts.legend.pouches_sold")}
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="revenue"
+                        stroke={chartColors.revenue}
+                        name={t("admin_reports.charts.legend.sales_revenue")}
+                        strokeWidth={2}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -1649,7 +1854,7 @@ export default function AdminReports() {
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                    Performance by City
+                    {t("admin_reports.charts.performance_by_city")}
                   </Typography>
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={report.citySeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
@@ -1657,10 +1862,10 @@ export default function AdminReports() {
                       <XAxis dataKey="city" stroke={theme.palette.text.secondary} />
                       <YAxis stroke={theme.palette.text.secondary} />
                       <ReTooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="kilos" fill={theme.palette.primary.main} name="Kilos produced" />
-                      <Bar dataKey="pouches" fill="#ef6c00" name="Pouches sold" />
-                      <Bar dataKey="revenue" fill="#1976d2" name="Revenue (€)" />
+                      <Legend formatter={legendFormatter} />
+                      <Bar dataKey="kilos" fill={chartColors.kilos} name={t("admin_reports.charts.legend.kilos_produced")} />
+                      <Bar dataKey="pouches" fill={chartColors.pouches} name={t("admin_reports.charts.legend.pouches_sold")} />
+                      <Bar dataKey="revenue" fill={chartColors.revenue} name={t("admin_reports.charts.legend.sales_revenue")} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -1669,7 +1874,7 @@ export default function AdminReports() {
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                    Yield Variance (Monthly)
+                    {t("admin_reports.charts.yield_variance")}
                   </Typography>
                   <ResponsiveContainer width="100%" height={280}>
                     <LineChart data={report.varianceSeries} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
@@ -1677,10 +1882,28 @@ export default function AdminReports() {
                       <XAxis dataKey="period" stroke={theme.palette.text.secondary} />
                       <YAxis stroke={theme.palette.text.secondary} />
                       <ReTooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Line type="monotone" dataKey="pouches" stroke={theme.palette.primary.main} name="Actual pouches" strokeWidth={2} />
-                      <Line type="monotone" dataKey="expected_pouches" stroke="#9e9e9e" name="Expected pouches" strokeWidth={2} />
-                      <Line type="monotone" dataKey="variance_pct" stroke="#d32f2f" name="Variance (%)" strokeWidth={2} />
+                      <Legend formatter={legendFormatter} />
+                      <Line
+                        type="monotone"
+                        dataKey="pouches"
+                        stroke={chartColors.pouches}
+                        name={t("admin_reports.charts.legend.actual_pouches")}
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="expected_pouches"
+                        stroke={chartColors.expected}
+                        name={t("admin_reports.charts.legend.expected_pouches")}
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="variance_pct"
+                        stroke={chartColors.variance}
+                        name={t("admin_reports.charts.legend.variance_pct")}
+                        strokeWidth={2}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -1690,6 +1913,9 @@ export default function AdminReports() {
 
           <TabPanel value={activeTab} tab="costs">
             <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.costs.description")}
+              </Typography>
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Stack spacing={2}>
@@ -1700,56 +1926,43 @@ export default function AdminReports() {
                       spacing={1}
                     >
                       <Typography variant="subtitle1" fontWeight={800}>
-                        Cost Centers & Expenses
+                        {t("admin_reports.costs.title")}
                       </Typography>
                       <Stack direction="row" spacing={1} flexWrap="wrap">
-                        <Chip size="small" label={`Direct: ${formatCurrency(costTotals.direct)}`} />
-                        <Chip size="small" label={`Overhead: ${formatCurrency(costTotals.overhead)}`} />
-                        <Chip size="small" variant="outlined" label={`Total costs: ${formatCurrency(costTotals.total)}`} />
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.costs.direct_label", { value: formatCurrency(costTotals.direct) })}
+                        />
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.costs.overhead_label", { value: formatCurrency(costTotals.overhead) })}
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={t("admin_reports.costs.total_label", { value: formatCurrency(costTotals.total) })}
+                        />
                       </Stack>
                     </Stack>
 
                     <Grid container spacing={2}>
                       <Grid item xs={12} lg={5}>
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            Cost Centers
-                          </Typography>
-                          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                            <TextField
-                              label="Center name"
-                              size="small"
-                              value={centerForm.name}
-                              onChange={(e) => setCenterForm((prev) => ({ ...prev, name: e.target.value }))}
-                              fullWidth
-                            />
-                            <FormControl size="small" sx={{ minWidth: 160 }}>
-                              <InputLabel id="center-category-label">Category</InputLabel>
-                              <Select
-                                labelId="center-category-label"
-                                label="Category"
-                                value={centerForm.category}
-                                onChange={(e) => setCenterForm((prev) => ({ ...prev, category: e.target.value }))}
-                              >
-                                <MenuItem value="direct">Direct</MenuItem>
-                                <MenuItem value="overhead">Overhead</MenuItem>
-                              </Select>
-                            </FormControl>
-                          </Stack>
-                          <Stack direction="row" spacing={1}>
-                            <Button variant="contained" onClick={handleSaveCenter}>
-                              {editingCenterId ? "Update center" : "Add center"}
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.costs.centers_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openCenterDialog}>
+                              {t("admin_reports.costs.add_center")}
                             </Button>
-                            {editingCenterId && (
-                              <Button variant="text" onClick={resetCenterForm} startIcon={<CloseIcon />}>
-                                Cancel
-                              </Button>
-                            )}
                           </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.costs.center_help")}
+                          </Typography>
                           <Divider />
                           {costCenters.length === 0 ? (
                             <Typography variant="body2" color="text.secondary">
-                              No cost centers yet.
+                              {t("admin_reports.costs.no_centers")}
                             </Typography>
                           ) : (
                             <Stack spacing={1}>
@@ -1767,16 +1980,18 @@ export default function AdminReports() {
                                     </Typography>
                                     <Chip
                                       size="small"
-                                      label={center.category === "overhead" ? "Overhead / expense" : "Direct cost"}
+                                      label={center.category === "overhead"
+                                        ? t("admin_reports.costs.center_overhead_expense")
+                                        : t("admin_reports.costs.center_direct_cost")}
                                     />
                                   </Stack>
                                   <Stack direction="row" spacing={0.5}>
-                                    <Tooltip title="Edit">
+                                    <Tooltip title={t("common.edit")}>
                                       <IconButton size="small" onClick={() => handleEditCenter(center)}>
                                         <EditIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
-                                    <Tooltip title="Delete">
+                                    <Tooltip title={t("common.delete")}>
                                       <IconButton size="small" onClick={() => handleDeleteCenter(center.center_id)}>
                                         <DeleteIcon fontSize="small" />
                                       </IconButton>
@@ -1790,76 +2005,37 @@ export default function AdminReports() {
                       </Grid>
                       <Grid item xs={12} lg={7}>
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            Costs / Expenses
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Entries are filtered to the selected date range.
-                          </Typography>
-                          <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
-                            <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
-                              <InputLabel id="entry-center-label">Cost center</InputLabel>
-                              <Select
-                                labelId="entry-center-label"
-                                label="Cost center"
-                                value={entryForm.center_id}
-                                onChange={(e) => setEntryForm((prev) => ({ ...prev, center_id: e.target.value }))}
-                              >
-                                {costCenters.map((center) => (
-                                  <MenuItem key={center.center_id} value={center.center_id}>
-                                    {center.name} ({center.category})
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                            </FormControl>
-                            <TextField
-                              label="Amount (€)"
-                              size="small"
-                              type="number"
-                              value={entryForm.amount}
-                              onChange={(e) => setEntryForm((prev) => ({ ...prev, amount: e.target.value }))}
-                              inputProps={{ min: 0, step: "0.01" }}
-                            />
-                            <TextField
-                              label="Date"
-                              size="small"
-                              type="date"
-                              value={entryForm.incurred_date}
-                              onChange={(e) => setEntryForm((prev) => ({ ...prev, incurred_date: e.target.value }))}
-                              InputLabelProps={{ shrink: true }}
-                            />
-                            <TextField
-                              label="Notes"
-                              size="small"
-                              value={entryForm.notes}
-                              onChange={(e) => setEntryForm((prev) => ({ ...prev, notes: e.target.value }))}
-                              sx={{ flex: 1 }}
-                            />
-                          </Stack>
-                          <Stack direction="row" spacing={1}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Box>
+                              <Typography variant="subtitle2" fontWeight={700}>
+                                {t("admin_reports.costs.entries_title")}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {t("admin_reports.costs.entries_help")}
+                              </Typography>
+                            </Box>
                             <Button
                               variant="contained"
-                              onClick={handleSaveEntry}
+                              size="small"
+                              onClick={openEntryDialog}
                               disabled={!costCenters.length}
                             >
-                              {editingEntryId ? "Update entry" : "Add entry"}
+                              {t("admin_reports.costs.add_entry")}
                             </Button>
-                            {editingEntryId && (
-                              <Button variant="text" onClick={resetEntryForm} startIcon={<CloseIcon />}>
-                                Cancel
-                              </Button>
-                            )}
                           </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.costs.entries_note")}
+                          </Typography>
                           <Divider />
                           <Table size="small" sx={{ tableLayout: "fixed" }}>
                             <TableHead>
                               <TableRow>
-                                <TableCell sx={{ width: 110 }}>Date</TableCell>
-                                <TableCell sx={{ width: 170 }}>Center</TableCell>
-                                <TableCell sx={{ width: 130 }}>Category</TableCell>
-                                <TableCell align="right" sx={{ width: 110 }}>Amount</TableCell>
-                                <TableCell>Notes</TableCell>
-                                <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
+                                <TableCell sx={{ width: 110 }}>{t("admin_reports.costs.table.date")}</TableCell>
+                                <TableCell sx={{ width: 170 }}>{t("admin_reports.costs.table.center")}</TableCell>
+                                <TableCell sx={{ width: 130 }}>{t("admin_reports.costs.table.category")}</TableCell>
+                                <TableCell align="right" sx={{ width: 110 }}>{t("admin_reports.costs.table.amount")}</TableCell>
+                                <TableCell>{t("admin_reports.costs.table.notes")}</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>{t("admin_reports.costs.table.actions")}</TableCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -1867,7 +2043,7 @@ export default function AdminReports() {
                                 <TableRow>
                                   <TableCell colSpan={6} align="center">
                                     <Typography variant="body2" color="text.secondary">
-                                      No cost entries for this range.
+                                      {t("admin_reports.costs.no_entries")}
                                     </Typography>
                                   </TableCell>
                                 </TableRow>
@@ -1879,18 +2055,20 @@ export default function AdminReports() {
                                     <TableCell>
                                       <Chip
                                         size="small"
-                                        label={entry.center_category === "overhead" ? "Overhead" : "Direct"}
+                                        label={entry.center_category === "overhead"
+                                          ? t("admin_reports.costs.entry_overhead")
+                                          : t("admin_reports.costs.entry_direct")}
                                       />
                                     </TableCell>
                                     <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.notes || "—"}</TableCell>
                                     <TableCell align="right">
-                                      <Tooltip title="Edit">
+                                      <Tooltip title={t("common.edit")}>
                                         <IconButton size="small" onClick={() => handleEditEntry(entry)}>
                                           <EditIcon fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Delete">
+                                      <Tooltip title={t("common.delete")}>
                                         <IconButton size="small" onClick={() => handleDeleteEntry(entry.entry_id)}>
                                           <DeleteIcon fontSize="small" />
                                         </IconButton>
@@ -1912,6 +2090,9 @@ export default function AdminReports() {
 
           <TabPanel value={activeTab} tab="inventory">
             <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.inventory.description")}
+              </Typography>
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Stack spacing={2}>
@@ -1922,24 +2103,32 @@ export default function AdminReports() {
                       spacing={1}
                     >
                       <Typography variant="subtitle1" fontWeight={800}>
-                        Inventory & Stock
+                        {t("admin_reports.inventory.title")}
                       </Typography>
                       <Stack direction="row" spacing={1} flexWrap="wrap">
-                        <Chip size="small" label={`On hand: ${formatNumber(inventoryTotals.onHandCount)}`} />
-                        <Chip size="small" label={`Inventory value: ${formatCurrency(inventoryTotals.inventoryValue)}`} />
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.inventory.on_hand", { value: formatNumber(inventoryTotals.onHandCount) })}
+                        />
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.inventory.inventory_value", {
+                            value: formatCurrency(inventoryTotals.inventoryValue),
+                          })}
+                        />
                       </Stack>
                     </Stack>
                     <Typography variant="caption" color="text.secondary">
-                      Purchases and adjustments can sync to direct cost centers when an item is linked to a cost center.
+                      {t("admin_reports.inventory.summary_help")}
                     </Typography>
                     <Table size="small" sx={{ tableLayout: "fixed" }}>
                       <TableHead>
                         <TableRow>
-                          <TableCell>Item</TableCell>
-                          <TableCell align="right">On hand</TableCell>
-                          <TableCell>Unit</TableCell>
-                          <TableCell align="right">Last unit cost</TableCell>
-                          <TableCell align="right">Inventory value</TableCell>
+                          <TableCell>{t("admin_reports.inventory.summary_table.item")}</TableCell>
+                          <TableCell align="right">{t("admin_reports.inventory.summary_table.on_hand")}</TableCell>
+                          <TableCell>{t("admin_reports.inventory.summary_table.unit")}</TableCell>
+                          <TableCell align="right">{t("admin_reports.inventory.summary_table.last_unit_cost")}</TableCell>
+                          <TableCell align="right">{t("admin_reports.inventory.summary_table.inventory_value")}</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1947,7 +2136,7 @@ export default function AdminReports() {
                           <TableRow>
                             <TableCell colSpan={5} align="center">
                               <Typography variant="body2" color="text.secondary">
-                                No inventory data yet.
+                                {t("admin_reports.inventory.no_inventory")}
                               </Typography>
                             </TableCell>
                           </TableRow>
@@ -1956,7 +2145,7 @@ export default function AdminReports() {
                             <TableRow key={item.item_id}>
                               <TableCell>{item.name}</TableCell>
                               <TableCell align="right">{formatNumber(item.on_hand)}</TableCell>
-                              <TableCell>{item.unit}</TableCell>
+                              <TableCell>{resolveUnitLabel(item.unit)}</TableCell>
                               <TableCell align="right">
                                 {item.last_unit_cost != null ? formatCurrency(item.last_unit_cost) : "—"}
                               </TableCell>
@@ -1970,81 +2159,21 @@ export default function AdminReports() {
                     <Grid container spacing={2}>
                       <Grid item xs={12} lg={5}>
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            Inventory Items
-                          </Typography>
-                          <Stack spacing={1}>
-                            <TextField
-                              label="Item name"
-                              size="small"
-                              value={itemForm.name}
-                              onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))}
-                              fullWidth
-                            />
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                              <TextField
-                                label="SKU"
-                                size="small"
-                                value={itemForm.sku}
-                                onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))}
-                                fullWidth
-                              />
-                              <TextField
-                                label="Unit"
-                                size="small"
-                                value={itemForm.unit}
-                                onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
-                                sx={{ minWidth: 120 }}
-                              />
-                            </Stack>
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                                <InputLabel id="item-category-label">Category</InputLabel>
-                                <Select
-                                  labelId="item-category-label"
-                                  label="Category"
-                                  value={itemForm.category}
-                                  onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
-                                >
-                                  {inventoryCategoryOptions.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                      {option}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                              <FormControl size="small" sx={{ minWidth: 180 }}>
-                                <InputLabel id="item-cost-center-label">Cost center</InputLabel>
-                                <Select
-                                  labelId="item-cost-center-label"
-                                  label="Cost center"
-                                  value={itemForm.cost_center_id}
-                                  onChange={(e) => setItemForm((prev) => ({ ...prev, cost_center_id: e.target.value }))}
-                                >
-                                  <MenuItem value="">None</MenuItem>
-                                  {costCenters.map((center) => (
-                                    <MenuItem key={center.center_id} value={center.center_id}>
-                                      {center.name} ({center.category})
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                            </Stack>
-                          </Stack>
-                          <Stack direction="row" spacing={1}>
-                            <Button variant="contained" onClick={handleSaveItem}>
-                              {editingItemId ? "Update item" : "Add item"}
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.inventory.items_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openItemDialog}>
+                              {t("admin_reports.inventory.add_item")}
                             </Button>
-                            {editingItemId && (
-                              <Button variant="text" onClick={resetItemForm} startIcon={<CloseIcon />}>
-                                Cancel
-                              </Button>
-                            )}
                           </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.inventory.items_help")}
+                          </Typography>
                           <Divider />
                           {inventoryItems.length === 0 ? (
                             <Typography variant="body2" color="text.secondary">
-                              No inventory items yet.
+                              {t("admin_reports.inventory.no_items")}
                             </Typography>
                           ) : (
                             <Stack spacing={1}>
@@ -2063,16 +2192,20 @@ export default function AdminReports() {
                                         {item.name}
                                       </Typography>
                                       <Typography variant="caption" color="text.secondary">
-                                        Unit: {item.unit || "unit"} · Category: {item.category || "—"} · Cost center: {center?.name || "—"}
+                                        {t("admin_reports.inventory.item_meta", {
+                                          unit: resolveUnitLabel(item.unit || "unit"),
+                                          category: resolveCategoryLabel(inventoryCategoryMap, item.category),
+                                          center: center?.name || "—",
+                                        })}
                                       </Typography>
                                     </Stack>
                                     <Stack direction="row" spacing={0.5}>
-                                      <Tooltip title="Edit">
+                                      <Tooltip title={t("common.edit")}>
                                         <IconButton size="small" onClick={() => handleEditItem(item)}>
                                           <EditIcon fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Delete">
+                                      <Tooltip title={t("common.delete")}>
                                         <IconButton size="small" onClick={() => handleDeleteItem(item.item_id)}>
                                           <DeleteIcon fontSize="small" />
                                         </IconButton>
@@ -2087,99 +2220,39 @@ export default function AdminReports() {
                       </Grid>
                       <Grid item xs={12} lg={7}>
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            Inventory Transactions
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Transactions are filtered to the selected date range.
-                          </Typography>
-                          <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems="center">
-                            <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}>
-                              <InputLabel id="tx-item-label">Item</InputLabel>
-                              <Select
-                                labelId="tx-item-label"
-                                label="Item"
-                                value={txForm.item_id}
-                                onChange={(e) => setTxForm((prev) => ({ ...prev, item_id: e.target.value }))}
-                              >
-                                {inventoryItems.map((item) => (
-                                  <MenuItem key={item.item_id} value={item.item_id}>
-                                    {item.name}
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                            </FormControl>
-                            <FormControl size="small" sx={{ minWidth: 150 }}>
-                              <InputLabel id="tx-type-label">Type</InputLabel>
-                              <Select
-                                labelId="tx-type-label"
-                                label="Type"
-                                value={txForm.tx_type}
-                                onChange={(e) => setTxForm((prev) => ({ ...prev, tx_type: e.target.value }))}
-                              >
-                                <MenuItem value="purchase">Purchase</MenuItem>
-                                <MenuItem value="usage">Usage</MenuItem>
-                                <MenuItem value="adjustment">Adjustment</MenuItem>
-                              </Select>
-                            </FormControl>
-                            <TextField
-                              label="Quantity"
-                              size="small"
-                              type="number"
-                              value={txForm.quantity}
-                              onChange={(e) => setTxForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                              inputProps={{ step: "0.01" }}
-                            />
-                            <TextField
-                              label="Unit cost (€)"
-                              size="small"
-                              type="number"
-                              value={txForm.unit_cost}
-                              onChange={(e) => setTxForm((prev) => ({ ...prev, unit_cost: e.target.value }))}
-                              inputProps={{ step: "0.01" }}
-                            />
-                            <TextField
-                              label="Date"
-                              size="small"
-                              type="date"
-                              value={txForm.tx_date}
-                              onChange={(e) => setTxForm((prev) => ({ ...prev, tx_date: e.target.value }))}
-                              InputLabelProps={{ shrink: true }}
-                            />
-                          </Stack>
-                          <TextField
-                            label="Notes"
-                            size="small"
-                            value={txForm.notes}
-                            onChange={(e) => setTxForm((prev) => ({ ...prev, notes: e.target.value }))}
-                            fullWidth
-                          />
-                          <Stack direction="row" spacing={1}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Box>
+                              <Typography variant="subtitle2" fontWeight={700}>
+                                {t("admin_reports.inventory.transactions_title")}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {t("admin_reports.inventory.transactions_help")}
+                              </Typography>
+                            </Box>
                             <Button
                               variant="contained"
-                              onClick={handleSaveTx}
+                              size="small"
+                              onClick={openTxDialog}
                               disabled={!inventoryItems.length}
                             >
-                              {editingTxId ? "Update transaction" : "Add transaction"}
+                              {t("admin_reports.inventory.add_transaction")}
                             </Button>
-                            {editingTxId && (
-                              <Button variant="text" onClick={resetTxForm} startIcon={<CloseIcon />}>
-                                Cancel
-                              </Button>
-                            )}
                           </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.inventory.transactions_note")}
+                          </Typography>
                           <Divider />
                           <Table size="small" sx={{ tableLayout: "fixed" }}>
                             <TableHead>
                               <TableRow>
-                                <TableCell sx={{ width: 100 }}>Date</TableCell>
-                                <TableCell sx={{ width: 140 }}>Item</TableCell>
-                                <TableCell sx={{ width: 110 }}>Type</TableCell>
-                                <TableCell align="right" sx={{ width: 90 }}>Qty</TableCell>
-                                <TableCell align="right" sx={{ width: 110 }}>Unit cost</TableCell>
-                                <TableCell align="right" sx={{ width: 120 }}>Total</TableCell>
-                                <TableCell>Notes</TableCell>
-                                <TableCell align="right" sx={{ width: 90 }}>Actions</TableCell>
+                                <TableCell sx={{ width: 100 }}>{t("admin_reports.inventory.transactions_table.date")}</TableCell>
+                                <TableCell sx={{ width: 140 }}>{t("admin_reports.inventory.transactions_table.item")}</TableCell>
+                                <TableCell sx={{ width: 110 }}>{t("admin_reports.inventory.transactions_table.type")}</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>{t("admin_reports.inventory.transactions_table.qty")}</TableCell>
+                                <TableCell align="right" sx={{ width: 110 }}>{t("admin_reports.inventory.transactions_table.unit_cost")}</TableCell>
+                                <TableCell align="right" sx={{ width: 120 }}>{t("admin_reports.inventory.transactions_table.total")}</TableCell>
+                                <TableCell>{t("admin_reports.inventory.transactions_table.notes")}</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>{t("admin_reports.inventory.transactions_table.actions")}</TableCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -2187,7 +2260,7 @@ export default function AdminReports() {
                                 <TableRow>
                                   <TableCell colSpan={8} align="center">
                                     <Typography variant="body2" color="text.secondary">
-                                      No inventory transactions for this range.
+                                      {t("admin_reports.inventory.no_transactions")}
                                     </Typography>
                                   </TableCell>
                                 </TableRow>
@@ -2196,7 +2269,7 @@ export default function AdminReports() {
                                   <TableRow key={tx.tx_id}>
                                     <TableCell>{tx.tx_date}</TableCell>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
-                                    <TableCell>{tx.tx_type}</TableCell>
+                                    <TableCell>{resolveTxTypeLabel(tx.tx_type)}</TableCell>
                                     <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
                                     <TableCell align="right">
                                       {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
@@ -2206,12 +2279,12 @@ export default function AdminReports() {
                                     </TableCell>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.notes || "—"}</TableCell>
                                     <TableCell align="right">
-                                      <Tooltip title="Edit">
+                                      <Tooltip title={t("common.edit")}>
                                         <IconButton size="small" onClick={() => handleEditTx(tx)}>
                                           <EditIcon fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Delete">
+                                      <Tooltip title={t("common.delete")}>
                                         <IconButton size="small" onClick={() => handleDeleteTx(tx.tx_id)}>
                                           <DeleteIcon fontSize="small" />
                                         </IconButton>
@@ -2226,22 +2299,22 @@ export default function AdminReports() {
                           {/* NEW: Auto-Generated Transactions Section */}
                           <Divider sx={{ my: 3 }} />
                           <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2 }}>
-                            Automatically Generated Transactions
+                            {t("admin_reports.inventory.auto_title")}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
-                            These transactions are automatically created when orders are completed. They track pouch usage for proper COGS accounting.
+                            {t("admin_reports.inventory.auto_help")}
                           </Typography>
                           <Table size="small" sx={{ tableLayout: "fixed" }}>
                             <TableHead>
-                              <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
-                                <TableCell sx={{ width: 100 }}>Date</TableCell>
-                                <TableCell sx={{ width: 120 }}>Item</TableCell>
-                                <TableCell sx={{ width: 100 }}>Type</TableCell>
-                                <TableCell align="right" sx={{ width: 80 }}>Qty</TableCell>
-                                <TableCell align="right" sx={{ width: 100 }}>Unit cost</TableCell>
-                                <TableCell align="right" sx={{ width: 100 }}>Total</TableCell>
-                                <TableCell sx={{ width: 120 }}>Order ID</TableCell>
-                                <TableCell>Notes</TableCell>
+                              <TableRow sx={{ backgroundColor: theme.palette.action.hover }}>
+                                <TableCell sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.date")}</TableCell>
+                                <TableCell sx={{ width: 120 }}>{t("admin_reports.inventory.auto_table.item")}</TableCell>
+                                <TableCell sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.type")}</TableCell>
+                                <TableCell align="right" sx={{ width: 80 }}>{t("admin_reports.inventory.auto_table.qty")}</TableCell>
+                                <TableCell align="right" sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.unit_cost")}</TableCell>
+                                <TableCell align="right" sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.total")}</TableCell>
+                                <TableCell sx={{ width: 120 }}>{t("admin_reports.inventory.auto_table.order_id")}</TableCell>
+                                <TableCell>{t("admin_reports.inventory.auto_table.notes")}</TableCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -2249,7 +2322,7 @@ export default function AdminReports() {
                                 <TableRow>
                                   <TableCell colSpan={8} align="center">
                                     <Typography variant="body2" color="text.secondary">
-                                      No automatic transactions yet. They will appear here when orders are completed.
+                                      {t("admin_reports.inventory.auto_no_transactions")}
                                     </Typography>
                                   </TableCell>
                                 </TableRow>
@@ -2257,12 +2330,12 @@ export default function AdminReports() {
                                 inventoryTransactions
                                   .filter(tx => tx.is_auto_generated === 1)
                                   .map((tx) => (
-                                    <TableRow key={tx.tx_id} sx={{ backgroundColor: "#fafafa" }}>
+                                    <TableRow key={tx.tx_id} sx={{ backgroundColor: theme.palette.action.selected }}>
                                       <TableCell>{tx.tx_date}</TableCell>
                                       <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
                                       <TableCell>
                                         <Chip 
-                                          label={tx.tx_type} 
+                                          label={resolveTxTypeLabel(tx.tx_type)} 
                                           size="small" 
                                           color="primary" 
                                           variant="outlined"
@@ -2295,12 +2368,15 @@ export default function AdminReports() {
 
           <TabPanel value={activeTab} tab="statements">
             <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.statements.description")}
+              </Typography>
               <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
                 <CardContent>
                   <Stack spacing={1.5}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between">
                       <Typography variant="subtitle1" fontWeight={800}>
-                        Income Statement
+                        {t("admin_reports.statements.income_statement")}
                       </Typography>
                       <Button
                         variant="outlined"
@@ -2308,34 +2384,34 @@ export default function AdminReports() {
                         startIcon={<FileText size={16} />}
                         onClick={handleExportIncomeStatement}
                       >
-                        Export statement
+                        {t("admin_reports.statements.export_statement")}
                       </Button>
                     </Stack>
                     <Typography variant="caption" color="text.secondary">
-                      Updated for the selected date range and city filters.
+                      {t("admin_reports.statements.statement_help")}
                     </Typography>
                     <Table size="small">
                       <TableBody>
                         <TableRow>
-                          <TableCell>Revenue</TableCell>
+                          <TableCell>{t("admin_reports.statements.revenue")}</TableCell>
                           <TableCell align="right">{formatCurrency(incomeStatement.revenue)}</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell>Direct costs</TableCell>
+                          <TableCell>{t("admin_reports.statements.direct_costs")}</TableCell>
                           <TableCell align="right">{formatCurrency(incomeStatement.directCosts)}</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell sx={{ fontWeight: 700 }}>Gross profit</TableCell>
+                          <TableCell sx={{ fontWeight: 700 }}>{t("admin_reports.statements.gross_profit")}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: 700 }}>
                             {formatCurrency(incomeStatement.grossProfit)}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell>Overhead / expenses</TableCell>
+                          <TableCell>{t("admin_reports.statements.overhead_expenses")}</TableCell>
                           <TableCell align="right">{formatCurrency(incomeStatement.overheadCosts)}</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell sx={{ fontWeight: 700 }}>Net profit</TableCell>
+                          <TableCell sx={{ fontWeight: 700 }}>{t("admin_reports.statements.net_profit")}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: 700 }}>
                             {formatCurrency(incomeStatement.netProfit)}
                           </TableCell>
@@ -2351,7 +2427,7 @@ export default function AdminReports() {
                   <Stack spacing={2}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between">
                       <Typography variant="subtitle1" fontWeight={800}>
-                        Statement of Financial Position
+                        {t("admin_reports.statements.balance_sheet")}
                       </Typography>
                       <Button
                         variant="outlined"
@@ -2359,96 +2435,67 @@ export default function AdminReports() {
                         startIcon={<FileText size={16} />}
                         onClick={handleExportBalanceSheet}
                       >
-                        Export statement
+                        {t("admin_reports.statements.export_statement")}
                       </Button>
                     </Stack>
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap">
-                      <Chip size="small" label={`Total assets: ${formatCurrency(balanceSheet.totalAssets)}`} />
-                      <Chip size="small" label={`Total liabilities: ${formatCurrency(balanceSheet.totalLiabilities)}`} />
-                      <Chip size="small" variant="outlined" label={`Equity: ${formatCurrency(balanceSheet.equity)}`} />
+                      <Chip
+                        size="small"
+                        label={t("admin_reports.statements.total_assets", { value: formatCurrency(balanceSheet.totalAssets) })}
+                      />
+                      <Chip
+                        size="small"
+                        label={t("admin_reports.statements.total_liabilities", {
+                          value: formatCurrency(balanceSheet.totalLiabilities),
+                        })}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={t("admin_reports.statements.equity", { value: formatCurrency(balanceSheet.equity) })}
+                      />
                     </Stack>
                     <Grid container spacing={2}>
                       <Grid item xs={12} lg={6}>
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            Assets
-                          </Typography>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.statements.assets_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openAssetDialog}>
+                              {t("admin_reports.statements.add_asset")}
+                            </Button>
+                          </Stack>
                           <Typography variant="caption" color="text.secondary">
-                            Inventory value is computed from on-hand stock as of the selected end date.
+                            {t("admin_reports.statements.assets_help")}
                           </Typography>
                           <Stack direction="row" spacing={1} flexWrap="wrap">
-                            <Chip size="small" label={`Inventory: ${formatCurrency(balanceSheet.inventoryValue)}`} />
-                            <Chip size="small" label={`Fixed assets: ${formatCurrency(balanceSheet.fixedAssets)}`} />
-                          </Stack>
-                          <Stack spacing={1}>
-                            <TextField
-                              label="Asset name"
+                            <Chip
                               size="small"
-                              value={assetForm.name}
-                              onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
-                              fullWidth
+                              label={t("admin_reports.statements.inventory_value", {
+                                value: formatCurrency(balanceSheet.inventoryValue),
+                              })}
                             />
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                                <InputLabel id="asset-category-label">Category</InputLabel>
-                                <Select
-                                  labelId="asset-category-label"
-                                  label="Category"
-                                  value={assetForm.category}
-                                  onChange={(e) => setAssetForm((prev) => ({ ...prev, category: e.target.value }))}
-                                >
-                                  {assetCategoryOptions.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                      {option}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                              <TextField
-                                label="Value (€)"
-                                size="small"
-                                type="number"
-                                value={assetForm.value}
-                                onChange={(e) => setAssetForm((prev) => ({ ...prev, value: e.target.value }))}
-                                inputProps={{ step: "0.01" }}
-                              />
-                              <TextField
-                                label="Acquired date"
-                                size="small"
-                                type="date"
-                                value={assetForm.acquired_date}
-                                onChange={(e) => setAssetForm((prev) => ({ ...prev, acquired_date: e.target.value }))}
-                                InputLabelProps={{ shrink: true }}
-                              />
-                            </Stack>
-                            <TextField
-                              label="Notes"
+                            <Chip
                               size="small"
-                              value={assetForm.notes}
-                              onChange={(e) => setAssetForm((prev) => ({ ...prev, notes: e.target.value }))}
-                              fullWidth
+                              label={t("admin_reports.statements.fixed_assets", {
+                                value: formatCurrency(balanceSheet.fixedAssets),
+                              })}
                             />
                           </Stack>
-                          <Stack direction="row" spacing={1}>
-                            <Button variant="contained" onClick={handleSaveAsset}>
-                              {editingAssetId ? "Update asset" : "Add asset"}
-                            </Button>
-                            {editingAssetId && (
-                              <Button variant="text" onClick={resetAssetForm} startIcon={<CloseIcon />}>
-                                Cancel
-                              </Button>
-                            )}
-                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.statements.assets_note")}
+                          </Typography>
                           <Divider />
                           <Table size="small" sx={{ tableLayout: "fixed" }}>
                             <TableHead>
                               <TableRow>
-                                <TableCell>Asset</TableCell>
-                                <TableCell>Category</TableCell>
-                                <TableCell align="right">Value</TableCell>
-                                <TableCell>Date</TableCell>
-                                <TableCell>Notes</TableCell>
-                                <TableCell align="right">Actions</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.asset")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.category")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.asset_table.value")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.date")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.notes")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.asset_table.actions")}</TableCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -2456,7 +2503,7 @@ export default function AdminReports() {
                                 <TableRow>
                                   <TableCell colSpan={6} align="center">
                                     <Typography variant="body2" color="text.secondary">
-                                      No assets yet.
+                                      {t("admin_reports.statements.no_assets")}
                                     </Typography>
                                   </TableCell>
                                 </TableRow>
@@ -2464,17 +2511,17 @@ export default function AdminReports() {
                                 assets.map((asset) => (
                                   <TableRow key={asset.asset_id}>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.name}</TableCell>
-                                    <TableCell>{asset.category || "—"}</TableCell>
+                                    <TableCell>{resolveCategoryLabel(assetCategoryMap, asset.category)}</TableCell>
                                     <TableCell align="right">{formatCurrency(asset.value)}</TableCell>
                                     <TableCell>{asset.acquired_date}</TableCell>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.notes || "—"}</TableCell>
                                     <TableCell align="right">
-                                      <Tooltip title="Edit">
+                                      <Tooltip title={t("common.edit")}>
                                         <IconButton size="small" onClick={() => handleEditAsset(asset)}>
                                           <EditIcon fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Delete">
+                                      <Tooltip title={t("common.delete")}>
                                         <IconButton size="small" onClick={() => handleDeleteAsset(asset.asset_id)}>
                                           <DeleteIcon fontSize="small" />
                                         </IconButton>
@@ -2489,78 +2536,27 @@ export default function AdminReports() {
                       </Grid>
                       <Grid item xs={12} lg={6}>
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" fontWeight={700}>
-                            Liabilities
-                          </Typography>
-                          <Stack spacing={1}>
-                            <TextField
-                              label="Liability name"
-                              size="small"
-                              value={liabilityForm.name}
-                              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, name: e.target.value }))}
-                              fullWidth
-                            />
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                                <InputLabel id="liability-category-label">Category</InputLabel>
-                                <Select
-                                  labelId="liability-category-label"
-                                  label="Category"
-                                  value={liabilityForm.category}
-                                  onChange={(e) => setLiabilityForm((prev) => ({ ...prev, category: e.target.value }))}
-                                >
-                                  {liabilityCategoryOptions.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                      {option}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                              <TextField
-                                label="Value (€)"
-                                size="small"
-                                type="number"
-                                value={liabilityForm.value}
-                                onChange={(e) => setLiabilityForm((prev) => ({ ...prev, value: e.target.value }))}
-                                inputProps={{ step: "0.01" }}
-                              />
-                              <TextField
-                                label="As of date"
-                                size="small"
-                                type="date"
-                                value={liabilityForm.as_of_date}
-                                onChange={(e) => setLiabilityForm((prev) => ({ ...prev, as_of_date: e.target.value }))}
-                                InputLabelProps={{ shrink: true }}
-                              />
-                            </Stack>
-                            <TextField
-                              label="Notes"
-                              size="small"
-                              value={liabilityForm.notes}
-                              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, notes: e.target.value }))}
-                              fullWidth
-                            />
-                          </Stack>
-                          <Stack direction="row" spacing={1}>
-                            <Button variant="contained" onClick={handleSaveLiability}>
-                              {editingLiabilityId ? "Update liability" : "Add liability"}
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.statements.liabilities_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openLiabilityDialog}>
+                              {t("admin_reports.statements.add_liability")}
                             </Button>
-                            {editingLiabilityId && (
-                              <Button variant="text" onClick={resetLiabilityForm} startIcon={<CloseIcon />}>
-                                Cancel
-                              </Button>
-                            )}
                           </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.statements.liabilities_help")}
+                          </Typography>
                           <Divider />
                           <Table size="small" sx={{ tableLayout: "fixed" }}>
                             <TableHead>
                               <TableRow>
-                                <TableCell>Liability</TableCell>
-                                <TableCell>Category</TableCell>
-                                <TableCell align="right">Value</TableCell>
-                                <TableCell>Date</TableCell>
-                                <TableCell>Notes</TableCell>
-                                <TableCell align="right">Actions</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.liability")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.category")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.liability_table.value")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.date")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.notes")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.liability_table.actions")}</TableCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -2568,7 +2564,7 @@ export default function AdminReports() {
                                 <TableRow>
                                   <TableCell colSpan={6} align="center">
                                     <Typography variant="body2" color="text.secondary">
-                                      No liabilities yet.
+                                      {t("admin_reports.statements.no_liabilities")}
                                     </Typography>
                                   </TableCell>
                                 </TableRow>
@@ -2576,17 +2572,17 @@ export default function AdminReports() {
                                 liabilities.map((liability) => (
                                   <TableRow key={liability.liability_id}>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.name}</TableCell>
-                                    <TableCell>{liability.category || "—"}</TableCell>
+                                    <TableCell>{resolveCategoryLabel(liabilityCategoryMap, liability.category)}</TableCell>
                                     <TableCell align="right">{formatCurrency(liability.value)}</TableCell>
                                     <TableCell>{liability.as_of_date}</TableCell>
                                     <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.notes || "—"}</TableCell>
                                     <TableCell align="right">
-                                      <Tooltip title="Edit">
+                                      <Tooltip title={t("common.edit")}>
                                         <IconButton size="small" onClick={() => handleEditLiability(liability)}>
                                           <EditIcon fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Delete">
+                                      <Tooltip title={t("common.delete")}>
                                         <IconButton size="small" onClick={() => handleDeleteLiability(liability.liability_id)}>
                                           <DeleteIcon fontSize="small" />
                                         </IconButton>
@@ -2606,65 +2602,428 @@ export default function AdminReports() {
             </Stack>
           </TabPanel>
 
-          <TabPanel value={activeTab} tab="orders">
-            <Stack spacing={2}>
-              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-                <CardContent>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                    <Typography variant="subtitle1" fontWeight={800}>Detailed Orders</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {startDate} → {endDate}
-                    </Typography>
-                  </Stack>
-                  <Divider sx={{ mb: 2 }} />
-                  <DataGrid
-                    autoHeight
-                    rows={report.rows.map((r) => ({ id: r.order_id, ...r }))}
-                    columns={columns}
-                    pageSizeOptions={[10, 25, 50]}
-                    initialState={{
-                      pagination: { paginationModel: { pageSize: 10 } },
-                      sorting: { sortModel: [{ field: "production_date", sort: "desc" }] },
-                    }}
-                    disableRowSelectionOnClick
-                    sx={{
-                      width: "100%",
-                      "& .MuiDataGrid-columnHeaderTitle": {
-                        whiteSpace: "normal",
-                        lineHeight: 1.2,
-                      },
-                    }}
-                  />
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }}>
-                    <Typography variant="body2">
-                      Total kilos: <strong>{formatNumber(report.totals.kilos)}</strong>
-                    </Typography>
-                    <Typography variant="body2">
-                      Total pouches: <strong>{formatNumber(report.totals.pouches)}</strong>
-                    </Typography>
-                    <Typography variant="body2">
-                      Total revenue: <strong>{formatCurrency(report.totals.revenue)}</strong>
-                    </Typography>
-                    <Typography variant="body2">
-                      Total gross profit: <strong>{formatCurrency(report.totals.gross_profit)}</strong>
-                    </Typography>
-                    <Typography variant="body2">
-                      Total net profit: <strong>{formatCurrency(report.totals.net_profit)}</strong>
-                    </Typography>
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Stack>
-          </TabPanel>
         </>
       )}
+
+      <Dialog open={centerDialogOpen} onClose={closeCenterDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {editingCenterId ? t("admin_reports.dialogs.edit_cost_center") : t("admin_reports.dialogs.add_cost_center")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label={t("admin_reports.dialogs.center_name")}
+              size="small"
+              value={centerForm.name}
+              onChange={(e) => setCenterForm((prev) => ({ ...prev, name: e.target.value }))}
+              fullWidth
+            />
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel id="center-category-label">{t("admin_reports.dialogs.category")}</InputLabel>
+              <Select
+                labelId="center-category-label"
+                label={t("admin_reports.dialogs.category")}
+                value={centerForm.category}
+                onChange={(e) => setCenterForm((prev) => ({ ...prev, category: e.target.value }))}
+              >
+                <MenuItem value="direct">{t("admin_reports.dialogs.category_direct")}</MenuItem>
+                <MenuItem value="overhead">{t("admin_reports.dialogs.category_overhead")}</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCenterDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleSaveCenter}>
+            {editingCenterId ? t("admin_reports.dialogs.update_center") : t("admin_reports.dialogs.add_center")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={entryDialogOpen} onClose={closeEntryDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {editingEntryId ? t("admin_reports.dialogs.edit_cost_entry") : t("admin_reports.dialogs.add_cost_entry")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel id="entry-center-label">{t("admin_reports.dialogs.cost_center")}</InputLabel>
+              <Select
+                labelId="entry-center-label"
+                label={t("admin_reports.dialogs.cost_center")}
+                value={entryForm.center_id}
+                onChange={(e) => setEntryForm((prev) => ({ ...prev, center_id: e.target.value }))}
+              >
+                {costCenters.map((center) => (
+                  <MenuItem key={center.center_id} value={center.center_id}>
+                    {center.name} ({center.category === "overhead"
+                      ? t("admin_reports.costs.center_overhead")
+                      : t("admin_reports.costs.center_direct")})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              label={t("admin_reports.dialogs.amount_eur")}
+              size="small"
+              type="number"
+              value={entryForm.amount}
+              onChange={(e) => setEntryForm((prev) => ({ ...prev, amount: e.target.value }))}
+              inputProps={{ min: 0, step: "0.01" }}
+            />
+            <TextField
+              label={t("admin_reports.dialogs.date")}
+              size="small"
+              type="date"
+              value={entryForm.incurred_date}
+              onChange={(e) => setEntryForm((prev) => ({ ...prev, incurred_date: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label={t("admin_reports.dialogs.notes")}
+              size="small"
+              value={entryForm.notes}
+              onChange={(e) => setEntryForm((prev) => ({ ...prev, notes: e.target.value }))}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEntryDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleSaveEntry} disabled={!costCenters.length}>
+            {editingEntryId ? t("admin_reports.dialogs.update_entry") : t("admin_reports.dialogs.add_entry")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={itemDialogOpen} onClose={closeItemDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {editingItemId ? t("admin_reports.dialogs.edit_inventory_item") : t("admin_reports.dialogs.add_inventory_item")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label={t("admin_reports.dialogs.item_name")}
+              size="small"
+              value={itemForm.name}
+              onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))}
+              fullWidth
+            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label={t("admin_reports.dialogs.sku")}
+                size="small"
+                value={itemForm.sku}
+                onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))}
+                fullWidth
+              />
+              <TextField
+                label={t("admin_reports.dialogs.unit")}
+                size="small"
+                value={itemForm.unit}
+                onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
+                sx={{ minWidth: 120 }}
+              />
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                <InputLabel id="item-category-label">{t("admin_reports.dialogs.category")}</InputLabel>
+                <Select
+                  labelId="item-category-label"
+                  label={t("admin_reports.dialogs.category")}
+                  value={itemForm.category}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, category: e.target.value }))}
+                >
+                  {inventoryCategoryOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {t(option.labelKey)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel id="item-cost-center-label">{t("admin_reports.dialogs.cost_center")}</InputLabel>
+                <Select
+                  labelId="item-cost-center-label"
+                  label={t("admin_reports.dialogs.cost_center")}
+                  value={itemForm.cost_center_id}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, cost_center_id: e.target.value }))}
+                >
+                  <MenuItem value="">{t("admin_reports.dialogs.cost_center_none")}</MenuItem>
+                  {costCenters.map((center) => (
+                    <MenuItem key={center.center_id} value={center.center_id}>
+                      {center.name} ({center.category === "overhead"
+                        ? t("admin_reports.costs.center_overhead")
+                        : t("admin_reports.costs.center_direct")})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeItemDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleSaveItem}>
+            {editingItemId ? t("admin_reports.dialogs.update_item") : t("admin_reports.dialogs.add_item")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={txDialogOpen} onClose={closeTxDialog} fullWidth maxWidth="md">
+        <DialogTitle>
+          {editingTxId ? t("admin_reports.dialogs.edit_inventory_tx") : t("admin_reports.dialogs.add_inventory_tx")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel id="tx-item-label">{t("admin_reports.dialogs.item")}</InputLabel>
+              <Select
+                labelId="tx-item-label"
+                label={t("admin_reports.dialogs.item")}
+                value={txForm.item_id}
+                onChange={(e) => setTxForm((prev) => ({ ...prev, item_id: e.target.value }))}
+              >
+                {inventoryItems.map((item) => (
+                  <MenuItem key={item.item_id} value={item.item_id}>
+                    {item.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <FormControl size="small" sx={{ minWidth: 160 }}>
+                <InputLabel id="tx-type-label">{t("admin_reports.dialogs.type")}</InputLabel>
+                <Select
+                  labelId="tx-type-label"
+                  label={t("admin_reports.dialogs.type")}
+                  value={txForm.tx_type}
+                  onChange={(e) => setTxForm((prev) => ({ ...prev, tx_type: e.target.value }))}
+                >
+                  <MenuItem value="purchase">{t("admin_reports.inventory.tx_type.purchase")}</MenuItem>
+                  <MenuItem value="usage">{t("admin_reports.inventory.tx_type.usage")}</MenuItem>
+                  <MenuItem value="adjustment">{t("admin_reports.inventory.tx_type.adjustment")}</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                label={t("admin_reports.dialogs.quantity")}
+                size="small"
+                type="number"
+                value={txForm.quantity}
+                onChange={(e) => setTxForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                inputProps={{ step: "0.01" }}
+              />
+              <TextField
+                label={t("admin_reports.dialogs.unit_cost_eur")}
+                size="small"
+                type="number"
+                value={txForm.unit_cost}
+                onChange={(e) => setTxForm((prev) => ({ ...prev, unit_cost: e.target.value }))}
+                inputProps={{ step: "0.01" }}
+              />
+            </Stack>
+            <TextField
+              label={t("admin_reports.dialogs.date")}
+              size="small"
+              type="date"
+              value={txForm.tx_date}
+              onChange={(e) => setTxForm((prev) => ({ ...prev, tx_date: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label={t("admin_reports.dialogs.notes")}
+              size="small"
+              value={txForm.notes}
+              onChange={(e) => setTxForm((prev) => ({ ...prev, notes: e.target.value }))}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeTxDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleSaveTx} disabled={!inventoryItems.length}>
+            {editingTxId ? t("admin_reports.dialogs.update_transaction") : t("admin_reports.dialogs.add_transaction")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={assetDialogOpen} onClose={closeAssetDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {editingAssetId ? t("admin_reports.dialogs.edit_asset") : t("admin_reports.dialogs.add_asset")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label={t("admin_reports.dialogs.asset_name")}
+              size="small"
+              value={assetForm.name}
+              onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
+              fullWidth
+            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                <InputLabel id="asset-category-label">{t("admin_reports.dialogs.category")}</InputLabel>
+                <Select
+                  labelId="asset-category-label"
+                  label={t("admin_reports.dialogs.category")}
+                  value={assetForm.category}
+                  onChange={(e) => setAssetForm((prev) => ({ ...prev, category: e.target.value }))}
+                >
+                  {assetCategoryOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {t(option.labelKey)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label={t("admin_reports.dialogs.value_eur")}
+                size="small"
+                type="number"
+                value={assetForm.value}
+                onChange={(e) => setAssetForm((prev) => ({ ...prev, value: e.target.value }))}
+                inputProps={{ step: "0.01" }}
+              />
+              <TextField
+                label={t("admin_reports.dialogs.acquired_date")}
+                size="small"
+                type="date"
+                value={assetForm.acquired_date}
+                onChange={(e) => setAssetForm((prev) => ({ ...prev, acquired_date: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Stack>
+            <TextField
+              label={t("admin_reports.dialogs.notes")}
+              size="small"
+              value={assetForm.notes}
+              onChange={(e) => setAssetForm((prev) => ({ ...prev, notes: e.target.value }))}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeAssetDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleSaveAsset}>
+            {editingAssetId ? t("admin_reports.dialogs.update_asset") : t("admin_reports.dialogs.add_asset")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={liabilityDialogOpen} onClose={closeLiabilityDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {editingLiabilityId ? t("admin_reports.dialogs.edit_liability") : t("admin_reports.dialogs.add_liability")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label={t("admin_reports.dialogs.liability_name")}
+              size="small"
+              value={liabilityForm.name}
+              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, name: e.target.value }))}
+              fullWidth
+            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                <InputLabel id="liability-category-label">{t("admin_reports.dialogs.category")}</InputLabel>
+                <Select
+                  labelId="liability-category-label"
+                  label={t("admin_reports.dialogs.category")}
+                  value={liabilityForm.category}
+                  onChange={(e) => setLiabilityForm((prev) => ({ ...prev, category: e.target.value }))}
+                >
+                  {liabilityCategoryOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {t(option.labelKey)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label={t("admin_reports.dialogs.value_eur")}
+                size="small"
+                type="number"
+                value={liabilityForm.value}
+                onChange={(e) => setLiabilityForm((prev) => ({ ...prev, value: e.target.value }))}
+                inputProps={{ step: "0.01" }}
+              />
+              <TextField
+                label={t("admin_reports.dialogs.as_of_date")}
+                size="small"
+                type="date"
+                value={liabilityForm.as_of_date}
+                onChange={(e) => setLiabilityForm((prev) => ({ ...prev, as_of_date: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Stack>
+            <TextField
+              label={t("admin_reports.dialogs.notes")}
+              size="small"
+              value={liabilityForm.notes}
+              onChange={(e) => setLiabilityForm((prev) => ({ ...prev, notes: e.target.value }))}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeLiabilityDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleSaveLiability}>
+            {editingLiabilityId ? t("admin_reports.dialogs.update_liability") : t("admin_reports.dialogs.add_liability")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={archiveDialogOpen} onClose={closeArchiveDialog} fullWidth maxWidth="sm">
+        <DialogTitle>{t("admin_reports.dialogs.archive_season")}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {t("admin_reports.dialogs.archive_help")}
+            </Typography>
+            <TextField
+              label={t("admin_reports.dialogs.season_name")}
+              size="small"
+              value={archiveForm.seasonName}
+              onChange={(e) => setArchiveForm((prev) => ({ ...prev, seasonName: e.target.value }))}
+              fullWidth
+            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label={t("admin_reports.dialogs.season_start")}
+                size="small"
+                type="date"
+                value={archiveForm.periodStart}
+                onChange={(e) => setArchiveForm((prev) => ({ ...prev, periodStart: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                label={t("admin_reports.dialogs.season_end")}
+                size="small"
+                type="date"
+                value={archiveForm.periodEnd}
+                onChange={(e) => setArchiveForm((prev) => ({ ...prev, periodEnd: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeArchiveDialog}>{t("common.cancel")}</Button>
+          <Button variant="contained" onClick={handleArchiveSeason}>
+            {t("admin_reports.dialogs.archive_action")}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Season Comparison Results */}
       {reportMode === "compare" && comparisonResult && (
         <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
           <CardContent>
             <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-              Season Comparison: {comparisonResult.season1} vs {comparisonResult.season2}
+              {t("admin_reports.comparison.title", {
+                season1: comparisonResult.season1,
+                season2: comparisonResult.season2,
+              })}
             </Typography>
             <Divider sx={{ mb: 2 }} />
             
@@ -2673,7 +3032,7 @@ export default function AdminReports() {
               <Grid item xs={12} sm={6} md={3}>
                 <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
                   <CardContent>
-                    <Typography variant="body2" color="text.secondary">Orders</Typography>
+                    <Typography variant="body2" color="text.secondary">{t("admin_reports.comparison.orders")}</Typography>
                     <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
                       <Typography variant="h5">{comparisonResult.metrics.orders.season2}</Typography>
                       <Typography variant="body2" color={comparisonResult.metrics.orders.change >= 0 ? "success.main" : "error.main"}>
@@ -2681,7 +3040,9 @@ export default function AdminReports() {
                         ({comparisonResult.metrics.orders.changePercent}%)
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary">vs {comparisonResult.metrics.orders.season1}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("admin_reports.comparison.vs", { value: comparisonResult.metrics.orders.season1 })}
+                    </Typography>
                   </CardContent>
                 </Card>
               </Grid>
@@ -2690,7 +3051,7 @@ export default function AdminReports() {
               <Grid item xs={12} sm={6} md={3}>
                 <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
                   <CardContent>
-                    <Typography variant="body2" color="text.secondary">Kilos</Typography>
+                    <Typography variant="body2" color="text.secondary">{t("admin_reports.comparison.kilos")}</Typography>
                     <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
                       <Typography variant="h5">{comparisonResult.metrics.kilos.season2.toFixed(0)}</Typography>
                       <Typography variant="body2" color={comparisonResult.metrics.kilos.change >= 0 ? "success.main" : "error.main"}>
@@ -2698,7 +3059,9 @@ export default function AdminReports() {
                         ({comparisonResult.metrics.kilos.changePercent}%)
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary">vs {comparisonResult.metrics.kilos.season1.toFixed(0)}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("admin_reports.comparison.vs", { value: comparisonResult.metrics.kilos.season1.toFixed(0) })}
+                    </Typography>
                   </CardContent>
                 </Card>
               </Grid>
@@ -2707,7 +3070,7 @@ export default function AdminReports() {
               <Grid item xs={12} sm={6} md={3}>
                 <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
                   <CardContent>
-                    <Typography variant="body2" color="text.secondary">Pouches</Typography>
+                    <Typography variant="body2" color="text.secondary">{t("admin_reports.comparison.pouches")}</Typography>
                     <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
                       <Typography variant="h5">{comparisonResult.metrics.pouches.season2.toFixed(0)}</Typography>
                       <Typography variant="body2" color={comparisonResult.metrics.pouches.change >= 0 ? "success.main" : "error.main"}>
@@ -2715,7 +3078,9 @@ export default function AdminReports() {
                         ({comparisonResult.metrics.pouches.changePercent}%)
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary">vs {comparisonResult.metrics.pouches.season1.toFixed(0)}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("admin_reports.comparison.vs", { value: comparisonResult.metrics.pouches.season1.toFixed(0) })}
+                    </Typography>
                   </CardContent>
                 </Card>
               </Grid>
@@ -2724,7 +3089,7 @@ export default function AdminReports() {
               <Grid item xs={12} sm={6} md={3}>
                 <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
                   <CardContent>
-                    <Typography variant="body2" color="text.secondary">Revenue</Typography>
+                    <Typography variant="body2" color="text.secondary">{t("admin_reports.comparison.revenue")}</Typography>
                     <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>
                       <Typography variant="h5">€{comparisonResult.metrics.revenue.season2.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Typography>
                       <Typography variant="body2" color={comparisonResult.metrics.revenue.change >= 0 ? "success.main" : "error.main"}>
@@ -2732,7 +3097,11 @@ export default function AdminReports() {
                         ({comparisonResult.metrics.revenue.changePercent}%)
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary">vs €{comparisonResult.metrics.revenue.season1.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("admin_reports.comparison.vs_currency", {
+                        value: comparisonResult.metrics.revenue.season1.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+                      })}
+                    </Typography>
                   </CardContent>
                 </Card>
               </Grid>
@@ -2745,7 +3114,7 @@ export default function AdminReports() {
         open={saveNotice}
         autoHideDuration={2500}
         onClose={() => setSaveNotice(false)}
-        message="View saved"
+        message={t("admin_reports.messages.view_saved")}
       />
 
       <Snackbar

@@ -12,6 +12,7 @@
   "booking": {
     "title": "Book a Reservation",
     "subtitle": "Fill out the form below to book your juice pickup appointment.",
+    "kuopio_notice": "This booking is exclusively for customers who will bring their orders to our Kuopio branch location only.",
     "price_info": "Price: €8.00 / 3-liter package (incl. VAT 25.5%)",
     "name": "Full Name",
     "phone": "Phone Number",
@@ -29,7 +30,13 @@
     "system_locked": "The reservation system is currently locked. Please contact us for assistance.",
     "submitting": "Submitting...",
     "submission_success": "Reservation submitted successfully! We look forward to seeing you.",
-    "submission_error": "Failed to submit reservation. Please try again."
+    "submission_error": "Failed to submit reservation. Please try again.",
+    "success_title": "Booking Confirmed!",
+    "success_message": "Your reservation has been successfully submitted.",
+    "tracking_notice": "A tracking number will be provided when you arrive at our Kuopio location.",
+    "countdown_title": "Your appointment is in:",
+    "book_another": "Book Another",
+    "close": "Close"
   },
   "tracking": {
     "title": "Track Your Order",
@@ -44,6 +51,7 @@
     "status_subtitle": "Enter your tracking number above to view order details",
     "current_status": "Current status: {{status}}",
     "status_unknown": "Unknown",
+    "no_history": "Order details loading...",
     "step_received": "Order Received",
     "step_received_desc": "Your order has been confirmed and is being processed",
     "step_processing": "Processing",

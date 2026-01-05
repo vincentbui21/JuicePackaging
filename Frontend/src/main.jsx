@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom"
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./i18n"; // Initialize i18n
+import "./css/animations.css"; // Import animations
 import { ThemeModeProvider } from "./contexts/ThemeContext.jsx";
 
 /** Layout & components */

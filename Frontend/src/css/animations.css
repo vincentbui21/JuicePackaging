@@ -1,21 +1,3 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-#root {
-  width: 100%;
-  min-height: 100vh;
-}
 /* Animation definitions */
 @keyframes fadeIn {
   from {
@@ -99,6 +81,15 @@ body {
   }
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
 /* Utility animation classes */
 .animate-fade-in {
   animation: fadeIn 0.5s ease-in-out;
@@ -130,4 +121,60 @@ body {
 
 .animate-bounce {
   animation: bounce 1s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* MUI component animation overrides */
+.MuiCard-root {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.MuiCard-root:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.15) !important;
+}
+
+.MuiButton-root {
+  transition: all 0.2s ease-in-out;
+}
+
+.MuiButton-contained:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.MuiChip-root {
+  animation: slideInUp 0.3s ease-in-out;
+}
+
+.MuiDialog-root .MuiDialog-paper {
+  animation: scaleIn 0.3s ease-in-out;
+}
+
+.MuiAlert-root {
+  animation: slideInDown 0.3s ease-in-out;
+}
+
+.MuiDrawer-root {
+  animation: slideInLeft 0.3s ease-in-out;
+}
+
+/* Table row animations */
+.MuiDataGrid-row {
+  animation: fadeIn 0.3s ease-in-out;
+  transition: background-color 0.2s ease;
+}
+
+.MuiDataGrid-row:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Smooth page transitions */
+.page-transition {
+  animation: fadeIn 0.3s ease-in-out;
 }

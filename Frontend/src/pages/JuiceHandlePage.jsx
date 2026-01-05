@@ -21,7 +21,7 @@ import {
   ToggleButtonGroup,
   ToggleButton,
 } from "@mui/material";
-import { Print, QrCode, CheckCircle, Save, Delete, ViewList, ViewModule } from "@mui/icons-material";
+import { Print, QrCode, CheckCircle, Save, Delete, ViewList, ViewModule, Star } from "@mui/icons-material";
 import { useEffect, useState } from "react";
 import api from "../services/axios";
 import { io } from "socket.io-client";
@@ -465,9 +465,16 @@ function JuiceHandlePage() {
                       spacing={2}
                     >
                       <Box>
-                        <Typography variant="h6" fontWeight={700}>
-                          {order.name || t('juice_processing.unknown')}
-                        </Typography>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Typography variant="h6" fontWeight={700}>
+                            {order.name || t('juice_processing.unknown')}
+                          </Typography>
+                          {order.is_from_reservation ? (
+                            <Tooltip title={t('juice_processing.reservation_tooltip')}>
+                              <Star sx={{ color: '#FFB300' }} fontSize="small" />
+                            </Tooltip>
+                          ) : null}
+                        </Stack>
                         <Typography variant="body2" color="text.secondary">
                           <strong>{t('juice_processing.city')}:</strong> {order.city || "—"} • <strong>{t('juice_processing.order_id')}:</strong> {order.order_id}
                         </Typography>
@@ -683,9 +690,16 @@ function JuiceHandlePage() {
                       }}
                     >
                       <CardContent sx={{ flexGrow: 1 }}>
-                        <Typography variant="h6" fontWeight={700} gutterBottom noWrap>
-                          {order.name || "Unknown"}
-                        </Typography>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Typography variant="h6" fontWeight={700} gutterBottom noWrap>
+                            {order.name || "Unknown"}
+                          </Typography>
+                          {order.is_from_reservation ? (
+                            <Tooltip title={t('juice_processing.reservation_tooltip')}>
+                              <Star sx={{ color: '#FFB300' }} fontSize="small" />
+                            </Tooltip>
+                          ) : null}
+                        </Stack>
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                           {t('juice_processing.city')}: {order.city || "—"}
                         </Typography>

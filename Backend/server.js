@@ -708,7 +708,13 @@ const markDoneHandler = async (req, res) => {
     // Update order status + create BOX_* entries
     const result = await database.markOrderAsDone(order_id, comment);
 
-    // AUTO-DEDUCT INVENTORY: When order is marked "Processing complete"
+    // Get the updated order to determine actual status (for reservations it's "Ready for pickup")
+    const [[updatedOrder]] = await database.pool.query(
+      `SELECT status, is_from_reservation FROM Orders WHERE order_id = ?`,
+      [order_id]
+    );
+
+    // AUTO-DEDUCT INVENTORY: When order is marked done
     // Automatically reduce pouch inventory and create COGS entry
     try {
       const [[order]] = await database.pool.query(
@@ -729,9 +735,10 @@ const markDoneHandler = async (req, res) => {
       console.warn(`[Auto-Deduction Warning] Could not auto-deduct for ${order_id}:`, autoDeductError.message);
     }
 
-    // Broadcast
-    io.emit("order-status-updated", { order_id, status: "processing complete" });
-    emitActivity('processing', `Order ${order_id} processing completed`, { order_id });
+    // Broadcast with the actual status
+    const actualStatus = updatedOrder?.status || 'Processing complete';
+    io.emit("order-status-updated", { order_id, status: actualStatus });
+    emitActivity('processing', `Order ${order_id} processing completed (status: ${actualStatus})`, { order_id });
 
     res.status(200).json({
       message: "Order marked as done",
@@ -1425,6 +1432,39 @@ app.post("/printer/print-pouch", async (req, res) => {
   }
 });
 
+app.post("/printer/print-reservation-tracking", async (req, res) => {
+  try {
+    const { trackingNumber, customerName, reservationDate, appleWeight, orderDate, weight, phone } = req.body || {};
+
+    // Use either reservation or order date fields
+    const dateDisplay = reservationDate || orderDate || new Date().toLocaleString();
+    const weightDisplay = appleWeight || weight || 'N/A';
+
+    // dynamic IP from settings file
+    const { printer_ip = "192.168.1.139" } = await getCurrentSettings();
+
+    // Format: simple text-based label with tracking info
+    // Since this is for label printing, we'll create a simple format
+    const result = await printImage({
+      host: printer_ip,
+      port: 3003,
+      job: "Mehustaja-Reservation",
+      data: [
+        `TRACKING: ${trackingNumber}`,
+        `Customer: ${customerName}`,
+        `Date: ${dateDisplay}`,
+        `Weight: ${weightDisplay}`,
+        `Phone: ${phone || 'N/A'}`,
+      ].join('\n'),
+    });
+
+    console.log("Reservation tracking sent to printer:", result);
+    res.json({ status: "ok", ...result });
+  } catch (err) {
+    console.error("print-reservation-tracking failed:", err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
 
 app.get('/dashboard/summary', async (req, res) => {
   try {
@@ -1495,6 +1535,17 @@ app.get('/dashboard/historical-metrics', async (req, res) => {
   } catch (err) {
     console.error('historical-metrics error:', err);
     res.status(500).json({ error: 'Failed to fetch historical metrics' });
+  }
+});
+
+app.get('/dashboard/peak-hours', async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const data = await database.getPeakHours(days);
+    res.json(data);
+  } catch (err) {
+    console.error('peak-hours error:', err);
+    res.status(500).json({ error: 'Failed to fetch peak hours' });
   }
 });
 
@@ -2375,6 +2426,21 @@ app.get('/customers/:customerId/status-history', async (req, res) => {
   }
 });
 
+// Get order status history for a specific order
+app.get('/orders/:orderId/status-history', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const [history] = await pool.query(
+      'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY changed_at ASC',
+      [orderId]
+    );
+    return res.json({ ok: true, history });
+  } catch (err) {
+    console.error('order status-history failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch order status history' });
+  }
+});
+
 app.get("/sms-templates", async (req, res) => {
   try {
     const current = SMS_TEMPLATES_CACHE || await loadSmsTemplates();
@@ -2788,14 +2854,62 @@ app.post('/api/reservations', async (req, res) => {
 
 // Get all reservations (Admin)
 app.get('/api/reservations', async (req, res) => {
+  const connection = await pool.getConnection();
   try {
-    const [reservations] = await pool.query(
-      'SELECT * FROM Reservations ORDER BY reservation_datetime ASC'
-    );
+    let hasOrderId = false;
+    try {
+      const [columns] = await connection.query('SHOW COLUMNS FROM Reservations');
+      hasOrderId = columns.some((col) => col.Field === 'order_id');
+    } catch (error) {
+      console.warn('Failed to inspect Reservations columns:', error);
+    }
+
+    const reservationColumns = `
+      r.reservation_id,
+      r.customer_name,
+      r.phone,
+      r.email,
+      r.apple_weight_kg,
+      r.reservation_datetime,
+      r.message,
+      r.created_at,
+      r.updated_at,
+      r.checked_in_at
+    `;
+
+    const orderLookup = `
+      (
+        SELECT o.order_id
+        FROM Customers c2
+        JOIN Orders o ON o.customer_id = c2.customer_id
+        WHERE c2.phone = r.phone
+          AND r.checked_in_at IS NOT NULL
+          AND o.is_from_reservation = 1
+          AND o.weight_kg = r.apple_weight_kg
+        ORDER BY o.created_at DESC, o.order_id DESC
+        LIMIT 1
+      )
+    `;
+
+    const orderSelect = hasOrderId
+      ? `COALESCE(r.order_id, ${orderLookup}) AS order_id`
+      : `${orderLookup} AS order_id`;
+
+    const query = `
+      SELECT
+        ${reservationColumns},
+        ${orderSelect}
+      FROM Reservations r
+      ORDER BY r.reservation_datetime ASC
+    `;
+
+    const [reservations] = await connection.query(query);
     res.json({ ok: true, reservations });
   } catch (err) {
     console.error('Error fetching reservations:', err);
     res.status(500).json({ error: 'Failed to fetch reservations' });
+  } finally {
+    connection.release();
   }
 });
 
@@ -2844,71 +2958,52 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
     const order_id = uuid.generateUUID();
     const created_at = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     
-    // Check if customer already has an order (UNIQUE constraint allows only one per customer)
-    const [existingOrders] = await connection.query(
-      'SELECT order_id FROM Orders WHERE customer_id = ?',
-      [customer_id]
-    );
+    // Get pricing defaults from file (fallback to 8 if missing)
+    const settings = await getCurrentSettings();
+    const basePrice = Number.parseFloat(settings.price);
+    const pricePerPouch = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 8;
 
-    let finalOrderId = order_id;
+    // Calculate estimated pouches (65% yield, 3L per pouch)
+    const weight = Number.parseFloat(reservation.apple_weight_kg);
+    const safeWeight = Number.isFinite(weight) ? weight : 0;
+    const estimatedPouches = Math.floor((safeWeight * 0.65) / 3);
+    const totalCost = Number((estimatedPouches * pricePerPouch).toFixed(2));
     
-    if (existingOrders.length > 0) {
-      // Order already exists for this customer - update it instead of creating duplicate
-      finalOrderId = existingOrders[0].order_id;
-      
-      // Get pricing defaults from file (fallback to 8 if missing)
-      const settings = await getCurrentSettings();
-      const basePrice = Number.parseFloat(settings.price);
-      const pricePerPouch = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 8;
-
-      // Calculate estimated pouches (65% yield, 3L per pouch)
-      const weight = Number.parseFloat(reservation.apple_weight_kg);
-      const safeWeight = Number.isFinite(weight) ? weight : 0;
-      const estimatedPouches = Math.floor((safeWeight * 0.65) / 3);
-      const totalCost = Number((estimatedPouches * pricePerPouch).toFixed(2));
-      
-      // Update existing order with new details from reservation
-      await connection.query(
-        'UPDATE Orders SET weight_kg = ?, pouches_count = ?, actual_pouches = ?, total_cost = ?, notes = ?, status = ?, created_at = ? WHERE order_id = ?',
-        [reservation.apple_weight_kg, estimatedPouches, estimatedPouches, totalCost, reservation.message, 'In Progress', created_at, finalOrderId]
-      );
-    } else {
-      // Get pricing defaults from file (fallback to 8 if missing)
-      const settings = await getCurrentSettings();
-      const basePrice = Number.parseFloat(settings.price);
-      const pricePerPouch = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 8;
-
-      // Calculate estimated pouches (65% yield, 3L per pouch)
-      const weight = Number.parseFloat(reservation.apple_weight_kg);
-      const safeWeight = Number.isFinite(weight) ? weight : 0;
-      const estimatedPouches = Math.floor((safeWeight * 0.65) / 3);
-      const totalCost = Number((estimatedPouches * pricePerPouch).toFixed(2));
-      
-      // Create new order
-      await connection.query(
-        'INSERT INTO Orders (order_id, customer_id, weight_kg, status, created_at, notes, total_cost, pouches_count, actual_pouches) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [order_id, customer_id, reservation.apple_weight_kg, 'In Progress', created_at, reservation.message, totalCost, estimatedPouches, estimatedPouches]
-      );
-
-      await connection.query(
-        'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
-        [order_id, customer_id, 'In Progress']
-      );
-    }
-
-    // Delete reservation
+    // Always create a new order for each reservation
     await connection.query(
-      'DELETE FROM Reservations WHERE reservation_id = ?',
-      [id]
+      'INSERT INTO Orders (order_id, customer_id, weight_kg, status, created_at, notes, total_cost, pouches_count, actual_pouches, is_from_reservation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+      [order_id, customer_id, reservation.apple_weight_kg, 'In Progress', created_at, reservation.message, totalCost, estimatedPouches, estimatedPouches]
     );
+
+    await connection.query(
+      'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+      [order_id, customer_id, 'In Progress']
+    );
+
+    // Mark reservation as checked in and store order id when supported
+    try {
+      await connection.query(
+        'UPDATE Reservations SET checked_in_at = NOW(), order_id = ? WHERE reservation_id = ?',
+        [order_id, id]
+      );
+    } catch (error) {
+      if (error.code === 'ER_BAD_FIELD_ERROR') {
+        await connection.query(
+          'UPDATE Reservations SET checked_in_at = NOW() WHERE reservation_id = ?',
+          [id]
+        );
+      } else {
+        throw error;
+      }
+    }
 
     await connection.commit();
 
     // Emit socket event
     const io = req.app.get('io');
-    io.emit('reservation_checked_in', { reservation_id: id, customer_id, order_id: finalOrderId });
+    io.emit('reservation_checked_in', { reservation_id: id, customer_id, order_id });
     io.emit('order-status-updated');
-    emitActivity('customer', `Reservation checked in - ${reservation.customer_name}`, { customer_id, order_id: finalOrderId });
+    emitActivity('customer', `Reservation checked in - ${reservation.customer_name}`, { customer_id, order_id });
 
     res.json({ ok: true, customer_id, order_id });
   } catch (err) {

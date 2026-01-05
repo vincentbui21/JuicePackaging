@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Container,
@@ -19,6 +19,10 @@ import {
   Alert,
   InputAdornment,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   CalendarMonth,
@@ -36,9 +40,13 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
+import duration from 'dayjs/plugin/duration';
 import 'dayjs/locale/en';
 import 'dayjs/locale/fi';
 import LanguageSelector from '../components/LanguageSelector';
+import ThemeModeToggle from '../components/ThemeModeToggle';
+
+dayjs.extend(duration);
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001').replace(/\/+$/, '');
 
@@ -77,6 +85,15 @@ function CustomerPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [successReservationDate, setSuccessReservationDate] = useState(null);
+  const [countdown, setCountdown] = useState({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+  });
+  const [trackingStatusHistory, setTrackingStatusHistory] = useState([]);
 
   // Set dayjs locale based on i18n language
   React.useEffect(() => {
@@ -87,6 +104,33 @@ function CustomerPortalPage() {
   React.useEffect(() => {
     fetchBlockedTimeSlots();
   }, []);
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (!successDialogOpen || !successReservationDate) return;
+
+    const interval = setInterval(() => {
+      const now = dayjs();
+      const target = dayjs(successReservationDate);
+      const diffMs = target.diff(now, 'millisecond');
+
+      if (diffMs <= 0) {
+        setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        clearInterval(interval);
+        return;
+      }
+
+      const duration = dayjs.duration(diffMs, 'millisecond');
+      setCountdown({
+        days: Math.floor(duration.asDays()),
+        hours: duration.hours(),
+        minutes: duration.minutes(),
+        seconds: duration.seconds(),
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [successDialogOpen, successReservationDate]);
 
   const fetchBlockedTimeSlots = async () => {
     try {
@@ -280,8 +324,9 @@ function CustomerPortalPage() {
         return;
       }
       
-      // Success
-      setSubmitSuccess(true);
+      // Success - open success dialog
+      setSuccessReservationDate(formData.dateTime);
+      setSuccessDialogOpen(true);
       
       // Clear form
       setFormData({
@@ -304,6 +349,18 @@ function CustomerPortalPage() {
     }
   };
 
+  const handleBookAnother = () => {
+    setSuccessDialogOpen(false);
+    setSuccessReservationDate(null);
+    setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  };
+
+  const handleCloseDialog = () => {
+    setSuccessDialogOpen(false);
+    setSuccessReservationDate(null);
+    setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  };
+
   const normalizeStatus = (status) => String(status || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
   const getTrackingStep = (status) => {
@@ -323,6 +380,7 @@ function CustomerPortalPage() {
     if (!trimmed) {
       setTrackingError(t('tracking.input_required'));
       setTrackingResult(null);
+      setTrackingStatusHistory([]);
       return;
     }
 
@@ -330,21 +388,43 @@ function CustomerPortalPage() {
       setTrackingLoading(true);
       setTrackingError('');
 
-      const response = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(trimmed)}/status`);
-      const data = await response.json();
+      // Fetch current status
+      const statusResponse = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(trimmed)}/status`);
+      const statusData = await statusResponse.json();
 
-      if (!response.ok || !data.ok) {
-        const notFound = response.status === 404 || data?.error === 'not_found';
+      if (!statusResponse.ok || !statusData.ok) {
+        const notFound = statusResponse.status === 404 || statusData?.error === 'not_found';
         setTrackingError(notFound ? t('tracking.not_found') : t('tracking.lookup_error'));
         setTrackingResult(null);
+        setTrackingStatusHistory([]);
         return;
       }
 
-      setTrackingResult({ status: data.status || '' });
+      setTrackingResult({ status: statusData.status || '' });
+
+      // Fetch status history
+      try {
+        const historyResponse = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(trimmed)}/status-history`);
+        const historyData = await historyResponse.json();
+        
+        if (historyData.ok && historyData.history) {
+          // Sort by changed_at to show progression
+          const sortedHistory = historyData.history.sort((a, b) => {
+            return new Date(a.changed_at) - new Date(b.changed_at);
+          });
+          setTrackingStatusHistory(sortedHistory);
+        } else {
+          setTrackingStatusHistory([]);
+        }
+      } catch (historyError) {
+        console.error('Error fetching status history:', historyError);
+        setTrackingStatusHistory([]);
+      }
     } catch (error) {
       console.error('Error fetching order status:', error);
       setTrackingError(t('tracking.lookup_error'));
       setTrackingResult(null);
+      setTrackingStatusHistory([]);
     } finally {
       setTrackingLoading(false);
     }
@@ -367,13 +447,14 @@ function CustomerPortalPage() {
     <Box
       sx={{
         minHeight: '100vh',
-        bgcolor: '#f5f7fa',
+        bgcolor: 'background.default',
       }}
+      className="page-transition"
     >
       {/* Header */}
       <Box
         sx={{
-          bgcolor: 'white',
+          bgcolor: 'background.paper',
           borderBottom: '3px solid #4CAF50',
           py: 3,
           mb: 4,
@@ -386,7 +467,7 @@ function CustomerPortalPage() {
               <Typography
                 variant="h4"
                 sx={{
-                  color: '#2c3e50',
+                  color: 'text.primary',
                   fontWeight: 700,
                   mb: 0.5,
                 }}
@@ -398,12 +479,13 @@ function CustomerPortalPage() {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              <ThemeModeToggle />
               <LanguageSelector />
               <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: '#555' }}>
+                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
                   <Phone fontSize="small" /> 020 7699920
                 </Typography>
-                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: '#555' }}>
+                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
                   <Email fontSize="small" /> info@mehustaja.fi
                 </Typography>
               </Box>
@@ -444,12 +526,29 @@ function CustomerPortalPage() {
           {/* Book Reservation Tab */}
           <TabPanel value={tabValue} index={0}>
             <Box sx={{ width: "min(90%, 800px)", mx: "auto" }}>
-              <Typography variant="h5" gutterBottom sx={{ mb: 1, color: '#2c3e50', fontWeight: 600 }}>
+              <Typography variant="h5" gutterBottom sx={{ mb: 1, color: 'text.primary', fontWeight: 600 }}>
                 {t('booking.title')}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 {t('booking.subtitle')}
               </Typography>
+
+              {/* Kuopio Branch Notice */}
+              <Alert 
+                severity="info" 
+                sx={{ 
+                  mb: 4,
+                  backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                  borderLeft: '4px solid #2196F3',
+                  '& .MuiAlert-icon': {
+                    color: '#2196F3',
+                  }
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {t('booking.kuopio_notice')}
+                </Typography>
+              </Alert>
 
               <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={i18n.language}>
                 <Paper elevation={1}>
@@ -611,7 +710,7 @@ function CustomerPortalPage() {
 
           {/* Track Order Tab */}
           <TabPanel value={tabValue} index={1}>
-            <Typography variant="h5" gutterBottom sx={{ mb: 1, color: '#2c3e50', fontWeight: 600 }}>
+            <Typography variant="h5" gutterBottom sx={{ mb: 1, color: 'text.primary', fontWeight: 600 }}>
               {t('tracking.title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
@@ -662,13 +761,13 @@ function CustomerPortalPage() {
 
             <Divider sx={{ my: 4 }} />
 
-            {/* Sample Order Status Display */}
-            <Card sx={{ bgcolor: '#f9fafb', border: '1px solid #e0e0e0' }}>
+            {/* Order Status Display with History */}
+            <Card sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
               <CardContent sx={{ p: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                   <LocalShipping sx={{ fontSize: 40, color: '#4CAF50', mr: 2 }} />
                   <Box>
-                    <Typography variant="h6" sx={{ color: '#2c3e50', fontWeight: 600 }}>
+                    <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 600 }}>
                       {t('tracking.status_title')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
@@ -679,48 +778,114 @@ function CustomerPortalPage() {
                   </Box>
                 </Box>
 
-                <Stepper orientation="vertical" activeStep={trackingStep}>
-                  <Step>
-                    <StepLabel>
-                      <Typography variant="body1" fontWeight={500}>
-                        {t('tracking.step_received')}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {t('tracking.step_received_desc')}
-                      </Typography>
-                    </StepLabel>
-                  </Step>
-                  <Step>
-                    <StepLabel>
-                      <Typography variant="body1" fontWeight={500}>
-                        {t('tracking.step_processing')}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {t('tracking.step_processing_desc')}
-                      </Typography>
-                    </StepLabel>
-                  </Step>
-                  <Step>
-                    <StepLabel>
-                      <Typography variant="body1" fontWeight={500}>
-                        {t('tracking.step_ready')}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {t('tracking.step_ready_desc')}
-                      </Typography>
-                    </StepLabel>
-                  </Step>
-                  <Step>
-                    <StepLabel>
-                      <Typography variant="body1" fontWeight={500}>
-                        {t('tracking.step_completed')}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {t('tracking.step_completed_desc')}
-                      </Typography>
-                    </StepLabel>
-                  </Step>
-                </Stepper>
+                {/* Status History Timeline */}
+                {trackingStatusHistory.length > 0 ? (
+                  <Stepper orientation="vertical">
+                    {trackingStatusHistory.map((entry, idx) => (
+                      <Step key={idx} completed={true}>
+                        <StepLabel>
+                          <Typography variant="body1" fontWeight={500} sx={{ color: 'text.primary' }}>
+                            {entry.status}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {dayjs(entry.changed_at).format('LLLL')}
+                          </Typography>
+                        </StepLabel>
+                      </Step>
+                    ))}
+                  </Stepper>
+                ) : trackingResult ? (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      {t('tracking.no_history')}
+                    </Typography>
+                    <Stepper orientation="vertical" activeStep={trackingStep}>
+                      <Step>
+                        <StepLabel>
+                          <Typography variant="body1" fontWeight={500}>
+                            {t('tracking.step_received')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t('tracking.step_received_desc')}
+                          </Typography>
+                        </StepLabel>
+                      </Step>
+                      <Step>
+                        <StepLabel>
+                          <Typography variant="body1" fontWeight={500}>
+                            {t('tracking.step_processing')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t('tracking.step_processing_desc')}
+                          </Typography>
+                        </StepLabel>
+                      </Step>
+                      <Step>
+                        <StepLabel>
+                          <Typography variant="body1" fontWeight={500}>
+                            {t('tracking.step_ready')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t('tracking.step_ready_desc')}
+                          </Typography>
+                        </StepLabel>
+                      </Step>
+                      <Step>
+                        <StepLabel>
+                          <Typography variant="body1" fontWeight={500}>
+                            {t('tracking.step_completed')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t('tracking.step_completed_desc')}
+                          </Typography>
+                        </StepLabel>
+                      </Step>
+                    </Stepper>
+                  </Box>
+                ) : (
+                  <Stepper orientation="vertical" activeStep={-1}>
+                    <Step>
+                      <StepLabel>
+                        <Typography variant="body1" fontWeight={500}>
+                          {t('tracking.step_received')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('tracking.step_received_desc')}
+                        </Typography>
+                      </StepLabel>
+                    </Step>
+                    <Step>
+                      <StepLabel>
+                        <Typography variant="body1" fontWeight={500}>
+                          {t('tracking.step_processing')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('tracking.step_processing_desc')}
+                        </Typography>
+                      </StepLabel>
+                    </Step>
+                    <Step>
+                      <StepLabel>
+                        <Typography variant="body1" fontWeight={500}>
+                          {t('tracking.step_ready')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('tracking.step_ready_desc')}
+                        </Typography>
+                      </StepLabel>
+                    </Step>
+                    <Step>
+                      <StepLabel>
+                        <Typography variant="body1" fontWeight={500}>
+                          {t('tracking.step_completed')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('tracking.step_completed_desc')}
+                        </Typography>
+                      </StepLabel>
+                    </Step>
+                  </Stepper>
+                )}
               </CardContent>
             </Card>
           </TabPanel>
@@ -801,6 +966,104 @@ function CustomerPortalPage() {
           </Grid>
         </Grid>
       </Container>
+
+      {/* Success Dialog with Countdown */}
+      <Dialog
+        open={successDialogOpen}
+        onClose={handleCloseDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+          },
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', fontWeight: 700, fontSize: '1.5rem', pt: 3 }}>
+          {t('booking.success_title')}
+        </DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', py: 3 }}>
+          <Box sx={{ mb: 3 }}>
+            <CheckCircle sx={{ fontSize: 60, color: '#4CAF50', mb: 2 }} />
+            <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+              {t('booking.success_message')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {t('booking.tracking_notice')}
+            </Typography>
+          </Box>
+
+          {/* Countdown Timer */}
+          <Box sx={{ 
+            bgcolor: 'rgba(76, 175, 80, 0.1)', 
+            p: 2, 
+            borderRadius: 1, 
+            mb: 3,
+            border: '2px solid #4CAF50'
+          }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 2, color: '#4CAF50' }}>
+              {t('booking.countdown_title')}
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1 }}>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#4CAF50' }}>
+                  {countdown.days}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Days
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#4CAF50' }}>
+                  {countdown.hours}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Hours
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#4CAF50' }}>
+                  {countdown.minutes}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Minutes
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#4CAF50' }}>
+                  {countdown.seconds}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Seconds
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Reservation Date Display */}
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Reservation: {successReservationDate ? dayjs(successReservationDate).format('LLLL') : ''}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 1, justifyContent: 'center' }}>
+          <Button
+            onClick={handleBookAnother}
+            variant="contained"
+            color="primary"
+            sx={{ minWidth: 120 }}
+          >
+            {t('booking.book_another')}
+          </Button>
+          <Button
+            onClick={handleCloseDialog}
+            variant="outlined"
+            color="primary"
+            sx={{ minWidth: 120 }}
+          >
+            {t('booking.close')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Footer */}
       <Box sx={{ bgcolor: '#2c3e50', py: 4, mt: 6 }}>
