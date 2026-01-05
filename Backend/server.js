@@ -16,10 +16,18 @@ const server = http.createServer(app);
 const pool = database.pool;
 
 const settingsFilePath = path.join(__dirname, "default-setting.txt");
+const allowedOrigins = [
+  "https://system.mehustaja.fi",
+  "https://customer.mehustaja.fi",
+  "https://customer.mehustaja.fi:5174",
+  "http://localhost",
+  "http://localhost:5173",
+  "http://localhost:5174",
+];
 
 const io = new Server(server, {
   cors: {
-    origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
@@ -30,7 +38,7 @@ app.set('io', io);
 
 // REST API CORS
 app.use(cors({
-  origin: ['https://system.mehustaja.fi', 'http://localhost', 'http://localhost:5173'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires'],
   credentials: true
@@ -422,6 +430,29 @@ async function getCurrentSettings() {
   }
 }
 
+function formatDateTimeToSQL(value) {
+  if (!value) return null;
+
+  const asString = String(value);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(asString)) {
+    return asString;
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(asString)) {
+    return `${asString}:00`;
+  }
+
+  const date = value instanceof Date ? value : new Date(asString);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 // Simple test route
 app.get('/', (req, res) => {
   res.send('hi');
@@ -677,9 +708,37 @@ const markDoneHandler = async (req, res) => {
     // Update order status + create BOX_* entries
     const result = await database.markOrderAsDone(order_id, comment);
 
-    // Broadcast
-    io.emit("order-status-updated", { order_id, status: "processing complete" });
-    emitActivity('processing', `Order ${order_id} processing completed`, { order_id });
+    // Get the updated order to determine actual status (for reservations it's "Ready for pickup")
+    const [[updatedOrder]] = await database.pool.query(
+      `SELECT status, is_from_reservation FROM Orders WHERE order_id = ?`,
+      [order_id]
+    );
+
+    // AUTO-DEDUCT INVENTORY: When order is marked done
+    // Automatically reduce pouch inventory and create COGS entry
+    try {
+      const [[order]] = await database.pool.query(
+        `SELECT actual_pouches, pouches_count FROM Orders WHERE order_id = ?`,
+        [order_id]
+      );
+      
+      if (order) {
+        const pouchCount = order.actual_pouches || order.pouches_count || 0;
+        if (pouchCount > 0) {
+          // Auto-deduct with default unit cost of €0.50 per pouch
+          const deductResult = await database.createAutoInventoryDeduction(order_id, pouchCount, 0.5);
+          console.log(`[Auto-Deduction] ${deductResult.message}`);
+        }
+      }
+    } catch (autoDeductError) {
+      // Log but don't fail the order completion if auto-deduction fails
+      console.warn(`[Auto-Deduction Warning] Could not auto-deduct for ${order_id}:`, autoDeductError.message);
+    }
+
+    // Broadcast with the actual status
+    const actualStatus = updatedOrder?.status || 'Processing complete';
+    io.emit("order-status-updated", { order_id, status: actualStatus });
+    emitActivity('processing', `Order ${order_id} processing completed (status: ${actualStatus})`, { order_id });
 
     res.status(200).json({
       message: "Order marked as done",
@@ -1373,6 +1432,39 @@ app.post("/printer/print-pouch", async (req, res) => {
   }
 });
 
+app.post("/printer/print-reservation-tracking", async (req, res) => {
+  try {
+    const { trackingNumber, customerName, reservationDate, appleWeight, orderDate, weight, phone } = req.body || {};
+
+    // Use either reservation or order date fields
+    const dateDisplay = reservationDate || orderDate || new Date().toLocaleString();
+    const weightDisplay = appleWeight || weight || 'N/A';
+
+    // dynamic IP from settings file
+    const { printer_ip = "192.168.1.139" } = await getCurrentSettings();
+
+    // Format: simple text-based label with tracking info
+    // Since this is for label printing, we'll create a simple format
+    const result = await printImage({
+      host: printer_ip,
+      port: 3003,
+      job: "Mehustaja-Reservation",
+      data: [
+        `TRACKING: ${trackingNumber}`,
+        `Customer: ${customerName}`,
+        `Date: ${dateDisplay}`,
+        `Weight: ${weightDisplay}`,
+        `Phone: ${phone || 'N/A'}`,
+      ].join('\n'),
+    });
+
+    console.log("Reservation tracking sent to printer:", result);
+    res.json({ status: "ok", ...result });
+  } catch (err) {
+    console.error("print-reservation-tracking failed:", err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
 
 app.get('/dashboard/summary', async (req, res) => {
   try {
@@ -1443,6 +1535,17 @@ app.get('/dashboard/historical-metrics', async (req, res) => {
   } catch (err) {
     console.error('historical-metrics error:', err);
     res.status(500).json({ error: 'Failed to fetch historical metrics' });
+  }
+});
+
+app.get('/dashboard/peak-hours', async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const data = await database.getPeakHours(days);
+    res.json(data);
+  } catch (err) {
+    console.error('peak-hours error:', err);
+    res.status(500).json({ error: 'Failed to fetch peak hours' });
   }
 });
 
@@ -2323,6 +2426,21 @@ app.get('/customers/:customerId/status-history', async (req, res) => {
   }
 });
 
+// Get order status history for a specific order
+app.get('/orders/:orderId/status-history', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const [history] = await pool.query(
+      'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY changed_at ASC',
+      [orderId]
+    );
+    return res.json({ ok: true, history });
+  } catch (err) {
+    console.error('order status-history failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch order status history' });
+  }
+});
+
 app.get("/sms-templates", async (req, res) => {
   try {
     const current = SMS_TEMPLATES_CACHE || await loadSmsTemplates();
@@ -2659,6 +2777,552 @@ app.get('/admin/lock-status', async (req, res) => {
 });
 
 // ============== END ADVANCED ADMIN OPERATIONS ==============
+
+// ============== RESERVATION SYSTEM ==============
+
+// Create new reservation (Customer Portal)
+app.post('/api/reservations', async (req, res) => {
+  try {
+    const { customer_name, phone, email, apple_weight_kg, reservation_datetime, message } = req.body;
+
+    // Validate required fields
+    if (!customer_name || !phone || !apple_weight_kg || !reservation_datetime) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const reservationDateTime = formatDateTimeToSQL(reservation_datetime);
+    if (!reservationDateTime) {
+      return res.status(400).json({ error: 'Invalid reservation date/time' });
+    }
+
+    // Check if system is locked
+    const settings = await getCurrentSettings();
+    if (settings.reservation_system_locked === 'true') {
+      return res.status(403).json({ error: 'Reservation system is currently locked' });
+    }
+
+    // Check for overlapping locked time slots
+    const [lockedSlots] = await pool.query(
+      'SELECT * FROM LockedTimeSlots WHERE start_time <= ? AND end_time >= ?',
+      [reservationDateTime, reservationDateTime]
+    );
+
+    if (lockedSlots.length > 0) {
+      return res.status(400).json({ error: 'This time slot is locked by admin' });
+    }
+
+    // Check for existing reservations within the configured time slot window
+    const [datePart, timePart] = reservationDateTime.split(" ");
+    const [year, month, day] = datePart.split("-").map(Number);
+    const [hours, minutes, seconds] = timePart.split(":").map(Number);
+    const reservationTime = new Date(year, month - 1, day, hours, minutes, seconds);
+    const timeSlotMinutes = parseInt(settings.reservation_time_slot_minutes, 10) || 30;
+    const startWindow = formatDateTimeToSQL(new Date(reservationTime.getTime() - timeSlotMinutes * 60000));
+    const endWindow = formatDateTimeToSQL(new Date(reservationTime.getTime() + timeSlotMinutes * 60000));
+
+    const [existingReservations] = await pool.query(
+      'SELECT * FROM Reservations WHERE reservation_datetime BETWEEN ? AND ?',
+      [startWindow, endWindow]
+    );
+
+    if (existingReservations.length > 0) {
+      return res.status(400).json({ error: 'This time slot is already reserved' });
+    }
+
+    // Create reservation
+    const reservation_id = uuid.generateUUID();
+    await pool.query(
+      'INSERT INTO Reservations (reservation_id, customer_name, phone, email, apple_weight_kg, reservation_datetime, message) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [reservation_id, customer_name, phone, email || null, apple_weight_kg, reservationDateTime, message || null]
+    );
+
+    const [newReservation] = await pool.query(
+      'SELECT * FROM Reservations WHERE reservation_id = ?',
+      [reservation_id]
+    );
+
+    // Emit socket event to notify admin
+    const io = req.app.get('io');
+    io.emit('new_reservation', newReservation[0]);
+
+    res.json({ ok: true, reservation: newReservation[0] });
+  } catch (err) {
+    console.error('Error creating reservation:', err);
+    res.status(500).json({ error: 'Failed to create reservation' });
+  }
+});
+
+// Get all reservations (Admin)
+app.get('/api/reservations', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    let hasOrderId = false;
+    try {
+      const [columns] = await connection.query('SHOW COLUMNS FROM Reservations');
+      hasOrderId = columns.some((col) => col.Field === 'order_id');
+    } catch (error) {
+      console.warn('Failed to inspect Reservations columns:', error);
+    }
+
+    const reservationColumns = `
+      r.reservation_id,
+      r.customer_name,
+      r.phone,
+      r.email,
+      r.apple_weight_kg,
+      r.reservation_datetime,
+      r.message,
+      r.created_at,
+      r.updated_at,
+      r.checked_in_at
+    `;
+
+    const orderLookup = `
+      (
+        SELECT o.order_id
+        FROM Customers c2
+        JOIN Orders o ON o.customer_id = c2.customer_id
+        WHERE c2.phone = r.phone
+          AND r.checked_in_at IS NOT NULL
+          AND o.is_from_reservation = 1
+          AND o.weight_kg = r.apple_weight_kg
+        ORDER BY o.created_at DESC, o.order_id DESC
+        LIMIT 1
+      )
+    `;
+
+    const orderSelect = hasOrderId
+      ? `COALESCE(r.order_id, ${orderLookup}) AS order_id`
+      : `${orderLookup} AS order_id`;
+
+    const query = `
+      SELECT
+        ${reservationColumns},
+        ${orderSelect}
+      FROM Reservations r
+      ORDER BY r.reservation_datetime ASC
+    `;
+
+    const [reservations] = await connection.query(query);
+    res.json({ ok: true, reservations });
+  } catch (err) {
+    console.error('Error fetching reservations:', err);
+    res.status(500).json({ error: 'Failed to fetch reservations' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Check in customer (Admin) - Convert reservation to order
+app.post('/api/reservations/:id/check-in', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const { id } = req.params;
+
+    // Get reservation details
+    const [reservations] = await connection.query(
+      'SELECT * FROM Reservations WHERE reservation_id = ?',
+      [id]
+    );
+
+    if (reservations.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+
+    const reservation = reservations[0];
+
+    // Check if customer already exists by phone
+    const [existingCustomers] = await connection.query(
+      'SELECT * FROM Customers WHERE phone = ? AND is_deleted = 0',
+      [reservation.phone]
+    );
+
+    let customer_id;
+
+    if (existingCustomers.length > 0) {
+      // Use existing customer
+      customer_id = existingCustomers[0].customer_id;
+    } else {
+      // Create new customer
+      customer_id = uuid.generateUUID();
+      await connection.query(
+        'INSERT INTO Customers (customer_id, name, phone, email) VALUES (?, ?, ?, ?)',
+        [customer_id, reservation.customer_name, reservation.phone, reservation.email]
+      );
+    }
+
+    // Create order
+    const order_id = uuid.generateUUID();
+    const created_at = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // Get pricing defaults from file (fallback to 8 if missing)
+    const settings = await getCurrentSettings();
+    const basePrice = Number.parseFloat(settings.price);
+    const pricePerPouch = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 8;
+
+    // Calculate estimated pouches (65% yield, 3L per pouch)
+    const weight = Number.parseFloat(reservation.apple_weight_kg);
+    const safeWeight = Number.isFinite(weight) ? weight : 0;
+    const estimatedPouches = Math.floor((safeWeight * 0.65) / 3);
+    const totalCost = Number((estimatedPouches * pricePerPouch).toFixed(2));
+    
+    // Always create a new order for each reservation
+    await connection.query(
+      'INSERT INTO Orders (order_id, customer_id, weight_kg, status, created_at, notes, total_cost, pouches_count, actual_pouches, is_from_reservation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+      [order_id, customer_id, reservation.apple_weight_kg, 'In Progress', created_at, reservation.message, totalCost, estimatedPouches, estimatedPouches]
+    );
+
+    await connection.query(
+      'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
+      [order_id, customer_id, 'In Progress']
+    );
+
+    // Mark reservation as checked in and store order id when supported
+    try {
+      await connection.query(
+        'UPDATE Reservations SET checked_in_at = NOW(), order_id = ? WHERE reservation_id = ?',
+        [order_id, id]
+      );
+    } catch (error) {
+      if (error.code === 'ER_BAD_FIELD_ERROR') {
+        await connection.query(
+          'UPDATE Reservations SET checked_in_at = NOW() WHERE reservation_id = ?',
+          [id]
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    await connection.commit();
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('reservation_checked_in', { reservation_id: id, customer_id, order_id });
+    io.emit('order-status-updated');
+    emitActivity('customer', `Reservation checked in - ${reservation.customer_name}`, { customer_id, order_id });
+
+    res.json({ ok: true, customer_id, order_id });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error checking in reservation:', err);
+    res.status(500).json({ error: 'Failed to check in reservation' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Get all locked time slots (Admin & Customer Portal)
+app.get('/api/locked-time-slots', async (req, res) => {
+  try {
+    const [slots] = await pool.query(
+      'SELECT * FROM LockedTimeSlots ORDER BY start_time ASC'
+    );
+    res.json({ ok: true, slots });
+  } catch (err) {
+    console.error('Error fetching locked time slots:', err);
+    res.status(500).json({ error: 'Failed to fetch locked time slots' });
+  }
+});
+
+// Create locked time slot (Admin)
+app.post('/api/locked-time-slots', async (req, res) => {
+  try {
+    const { start_time, end_time, reason } = req.body;
+
+    if (!start_time || !end_time) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const startTimeSql = formatDateTimeToSQL(start_time);
+    const endTimeSql = formatDateTimeToSQL(end_time);
+    if (!startTimeSql || !endTimeSql) {
+      return res.status(400).json({ error: 'Invalid time slot range' });
+    }
+
+    // Check for overlapping slots
+    const [overlapping] = await pool.query(
+      'SELECT * FROM LockedTimeSlots WHERE (start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?) OR (start_time >= ? AND end_time <= ?)',
+      [endTimeSql, startTimeSql, endTimeSql, endTimeSql, startTimeSql, endTimeSql]
+    );
+
+    if (overlapping.length > 0) {
+      return res.status(400).json({ error: 'Time slot overlaps with existing locked slot' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO LockedTimeSlots (start_time, end_time, reason) VALUES (?, ?, ?)',
+      [startTimeSql, endTimeSql, reason || null]
+    );
+
+    const [newSlot] = await pool.query(
+      'SELECT * FROM LockedTimeSlots WHERE slot_id = ?',
+      [result.insertId]
+    );
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('locked_slot_created', newSlot[0]);
+
+    res.json({ ok: true, slot: newSlot[0] });
+  } catch (err) {
+    console.error('Error creating locked time slot:', err);
+    res.status(500).json({ error: 'Failed to create locked time slot' });
+  }
+});
+
+// Delete locked time slot (Admin)
+app.delete('/api/locked-time-slots/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.query(
+      'DELETE FROM LockedTimeSlots WHERE slot_id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Locked time slot not found' });
+    }
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('locked_slot_deleted', { slot_id: parseInt(id) });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error deleting locked time slot:', err);
+    res.status(500).json({ error: 'Failed to delete locked time slot' });
+  }
+});
+
+// Get reservation settings (Customer Portal & Admin)
+app.get('/api/reservation-settings', async (req, res) => {
+  try {
+    const settings = await getCurrentSettings();
+    res.json({
+      ok: true,
+      settings: {
+        system_locked: settings.reservation_system_locked === 'true',
+        time_slot_minutes: parseInt(settings.reservation_time_slot_minutes) || 30,
+        hours_start: parseInt(settings.reservation_hours_start) || 8,
+        hours_end: parseInt(settings.reservation_hours_end) || 20
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching reservation settings:', err);
+    res.status(500).json({ error: 'Failed to fetch reservation settings' });
+  }
+});
+
+// Toggle reservation system lock (Admin)
+app.post('/api/reservation-settings/toggle-lock', async (req, res) => {
+  try {
+    const content = await fs.readFile(settingsFilePath, 'utf8');
+    const settings = parseSettingsFile(content);
+    
+    // Toggle the lock status
+    const newLockStatus = settings.reservation_system_locked === 'true' ? 'false' : 'true';
+    settings.reservation_system_locked = newLockStatus;
+    
+    // Write back to file
+    const newContent = stringifySettings(settings);
+    await fs.writeFile(settingsFilePath, newContent, 'utf8');
+    
+    // Emit socket event
+    const io = req.app.get('io');
+    io.emit('reservation_system_lock_changed', { locked: newLockStatus === 'true' });
+    
+    res.json({ ok: true, locked: newLockStatus === 'true' });
+  } catch (err) {
+    console.error('Error toggling reservation system lock:', err);
+    res.status(500).json({ error: 'Failed to toggle lock status' });
+  }
+});
+
+// ============== HISTORICAL DATA & SNAPSHOTS ==============
+
+/**
+ * Archive a complete season's data for historical preservation
+ * Called at end of season to snapshot report state before customer deletion
+ * POST /archive-season
+ * Body: { seasonName, periodStart, periodEnd }
+ */
+app.post('/archive-season', async (req, res) => {
+  try {
+    const { seasonName, periodStart, periodEnd } = req.body;
+
+    if (!seasonName || !periodStart || !periodEnd) {
+      return res.status(400).json({
+        error: 'Missing required fields: seasonName, periodStart, periodEnd'
+      });
+    }
+
+    const result = await database.archiveSeasonData(seasonName, periodStart, periodEnd);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.message });
+    }
+
+    io.emit('season_archived', {
+      seasonName,
+      ordersArchived: result.ordersArchived,
+      costsArchived: result.costsArchived,
+      timestamp: new Date()
+    });
+
+    res.json({
+      success: true,
+      seasonName,
+      ordersArchived: result.ordersArchived,
+      costsArchived: result.costsArchived,
+      message: result.message
+    });
+  } catch (err) {
+    console.error('Error archiving season:', err);
+    res.status(500).json({ error: 'Failed to archive season' });
+  }
+});
+
+/**
+ * List available historical periods/seasons
+ * GET /historical-periods
+ */
+app.get('/historical-periods', async (req, res) => {
+  try {
+    const periods = await database.listReportSnapshots();
+    res.json({
+      success: true,
+      periods
+    });
+  } catch (err) {
+    console.error('Error fetching historical periods:', err);
+    res.status(500).json({ error: 'Failed to fetch periods' });
+  }
+});
+
+/**
+ * Get historical report data for a specific season
+ * Even if customers are deleted, archived data is preserved
+ * GET /historical-report/:seasonName
+ */
+app.get('/historical-report/:seasonName', async (req, res) => {
+  try {
+    const { seasonName } = req.params;
+    const result = await database.getHistoricalReport(seasonName);
+
+    if (!result.success) {
+      return res.status(404).json({ error: result.message });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching historical report:', err);
+    res.status(500).json({ error: 'Failed to fetch historical report' });
+  }
+});
+
+/**
+ * Compare two seasons side-by-side
+ * GET /report-comparison/:season1/:season2
+ */
+app.get('/report-comparison/:season1/:season2', async (req, res) => {
+  try {
+    const { season1, season2 } = req.params;
+    const result = await database.compareSeasons(season1, season2);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error comparing seasons:', err);
+    res.status(500).json({ error: 'Failed to compare seasons' });
+  }
+});
+
+/**
+ * Create a point-in-time snapshot of the current report
+ * Useful for monthly/quarterly snapshots or before major operations
+ * POST /create-snapshot
+ * Body: { snapshotName, periodStart, periodEnd, reportData, notes }
+ */
+app.post('/create-snapshot', async (req, res) => {
+  try {
+    const { snapshotName, periodStart, periodEnd, reportData, notes } = req.body;
+    const createdBy = req.user?.username || 'system';
+
+    if (!snapshotName || !reportData) {
+      return res.status(400).json({
+        error: 'Missing required fields: snapshotName, reportData'
+      });
+    }
+
+    const result = await database.createReportSnapshot(
+      snapshotName,
+      periodStart || new Date(),
+      periodEnd || new Date(),
+      reportData,
+      createdBy,
+      notes
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      snapshotId: result.snapshotId,
+      message: result.message
+    });
+  } catch (err) {
+    console.error('Error creating snapshot:', err);
+    res.status(500).json({ error: 'Failed to create snapshot' });
+  }
+});
+
+/**
+ * Record a report export (for compliance/audit trail)
+ * POST /record-export
+ * Body: { exportType, reportType, periodStart, periodEnd, fileName, fileSize, rowCount }
+ */
+app.post('/record-export', async (req, res) => {
+  try {
+    const { exportType, reportType, periodStart, periodEnd, fileName, fileSize, rowCount } = req.body;
+    const exportedBy = req.user?.username || 'unknown';
+
+    const result = await database.recordReportExport(
+      exportType || 'csv',
+      reportType || 'admin_report',
+      periodStart,
+      periodEnd,
+      fileName,
+      fileSize || 0,
+      rowCount || 0,
+      exportedBy
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      exportId: result.exportId,
+      message: result.message
+    });
+  } catch (err) {
+    console.error('Error recording export:', err);
+    res.status(500).json({ error: 'Failed to record export' });
+  }
+});
+
+// ============== END HISTORICAL DATA ==============
 
 // Start the HTTP server (not just Express)
 server.listen(5001, () => {

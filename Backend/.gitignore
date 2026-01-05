@@ -3,6 +3,15 @@ node_modules/
 testing/
 .vscode/
 
+# Ignore markdown files in root (summary, history, documentation)
+/*.md
+# But keep README files
+!README.md
+
+# Ignore .sql files except mehustaja_database.session.sql
+*.sql
+!mehustaja_database.session.sql
+
 # Ignore environment variables
 .env
 Backend/.env

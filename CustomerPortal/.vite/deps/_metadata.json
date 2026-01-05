@@ -2,7 +2,135 @@
   "hash": "6bb4996d",
   "configHash": "3425210b",
   "lockfileHash": "a6a3ce35",
-  "browserHash": "307cdf8f",
-  "optimized": {},
-  "chunks": {}
+  "browserHash": "70355dec",
+  "optimized": {
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "eb002919",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "c03ca7a2",
+      "needsInterop": true
+    },
+    "i18next": {
+      "src": "../../node_modules/i18next/dist/esm/i18next.js",
+      "file": "i18next.js",
+      "fileHash": "93dadcdb",
+      "needsInterop": false
+    },
+    "react-i18next": {
+      "src": "../../node_modules/react-i18next/dist/es/index.js",
+      "file": "react-i18next.js",
+      "fileHash": "34e09614",
+      "needsInterop": false
+    },
+    "i18next-browser-languagedetector": {
+      "src": "../../node_modules/i18next-browser-languagedetector/dist/esm/i18nextBrowserLanguageDetector.js",
+      "file": "i18next-browser-languagedetector.js",
+      "fileHash": "bf744d81",
+      "needsInterop": false
+    },
+    "react-router-dom": {
+      "src": "../../node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "c9c256ad",
+      "needsInterop": false
+    },
+    "@mui/material": {
+      "src": "../../node_modules/@mui/material/esm/index.js",
+      "file": "@mui_material.js",
+      "fileHash": "08ac0308",
+      "needsInterop": false
+    },
+    "@mui/icons-material": {
+      "src": "../../node_modules/@mui/icons-material/esm/index.js",
+      "file": "@mui_icons-material.js",
+      "fileHash": "5a578001",
+      "needsInterop": false
+    },
+    "@mui/x-date-pickers/LocalizationProvider": {
+      "src": "../../node_modules/@mui/x-date-pickers/esm/LocalizationProvider/index.js",
+      "file": "@mui_x-date-pickers_LocalizationProvider.js",
+      "fileHash": "d80a7eee",
+      "needsInterop": false
+    },
+    "@mui/x-date-pickers/DateTimePicker": {
+      "src": "../../node_modules/@mui/x-date-pickers/esm/DateTimePicker/index.js",
+      "file": "@mui_x-date-pickers_DateTimePicker.js",
+      "fileHash": "9be6d96d",
+      "needsInterop": false
+    },
+    "@mui/x-date-pickers/AdapterDayjs": {
+      "src": "../../node_modules/@mui/x-date-pickers/esm/AdapterDayjs/index.js",
+      "file": "@mui_x-date-pickers_AdapterDayjs.js",
+      "fileHash": "42af9f51",
+      "needsInterop": false
+    },
+    "dayjs": {
+      "src": "../../node_modules/dayjs/dayjs.min.js",
+      "file": "dayjs.js",
+      "fileHash": "903d5f21",
+      "needsInterop": true
+    },
+    "dayjs/locale/en": {
+      "src": "../../node_modules/dayjs/locale/en.js",
+      "file": "dayjs_locale_en.js",
+      "fileHash": "9fae5d32",
+      "needsInterop": true
+    },
+    "dayjs/locale/fi": {
+      "src": "../../node_modules/dayjs/locale/fi.js",
+      "file": "dayjs_locale_fi.js",
+      "fileHash": "5eab1727",
+      "needsInterop": true
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "efb4a7a4",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-2USKZGBH": {
+      "file": "chunk-2USKZGBH.js"
+    },
+    "chunk-AVBJDU3V": {
+      "file": "chunk-AVBJDU3V.js"
+    },
+    "chunk-VVYQMIU7": {
+      "file": "chunk-VVYQMIU7.js"
+    },
+    "chunk-Q76T3GGX": {
+      "file": "chunk-Q76T3GGX.js"
+    },
+    "chunk-ICOPO3T5": {
+      "file": "chunk-ICOPO3T5.js"
+    },
+    "chunk-HS4LBOZX": {
+      "file": "chunk-HS4LBOZX.js"
+    },
+    "chunk-G6WF6XAT": {
+      "file": "chunk-G6WF6XAT.js"
+    },
+    "chunk-K7DXHZGM": {
+      "file": "chunk-K7DXHZGM.js"
+    },
+    "chunk-W56MQ4XY": {
+      "file": "chunk-W56MQ4XY.js"
+    },
+    "chunk-HQ6ZTAWL": {
+      "file": "chunk-HQ6ZTAWL.js"
+    },
+    "chunk-YKHBUGD6": {
+      "file": "chunk-YKHBUGD6.js"
+    },
+    "chunk-DC5AMYBS": {
+      "file": "chunk-DC5AMYBS.js"
+    }
+  }
 }

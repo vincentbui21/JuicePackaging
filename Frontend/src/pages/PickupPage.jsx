@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DataGrid } from '@mui/x-data-grid';
-import { Box, Button, Stack, Typography, Paper, Snackbar, Alert, CircularProgress } from '@mui/material';
+import { Box, Button, Stack, Typography, Paper, Snackbar, Alert, CircularProgress, Divider, Chip } from '@mui/material';
+import { Warning } from '@mui/icons-material';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
 import SearchBar from '../components/SearchBar'; // Import the SearchBar component
@@ -40,12 +41,12 @@ export default function PickupPage() {
                 const validOrders = Array.isArray(res.data) ? res.data : [];
                 
                 // Filter by allowed cities if user has city restrictions
-                const filteredByCities = allowedCities.length > 0
+                const filteredByCity = allowedCities.length > 0
                     ? validOrders.filter(order => allowedCities.includes(order.city))
                     : validOrders;
                 
-                setOrders(filteredByCities);
-                setFilteredOrders(filteredByCities);
+                setOrders(filteredByCity);
+                setFilteredOrders(filteredByCity);
             })
             .catch((err) => {
                 console.error('Failed to fetch ready orders:', err);
@@ -54,7 +55,7 @@ export default function PickupPage() {
             .finally(() => {
                 setLoading(false);
             });
-    }, [allowedCities]);
+    }, [allowedCities, t]);
 
     useEffect(() => {
         fetchReadyOrders();
@@ -73,10 +74,6 @@ export default function PickupPage() {
             setFilteredOrders(filtered);
         }
     }, [searchTerm, orders]);
-
-    useEffect(() => {
-        console.log('orders from API:', orders);
-    }, [orders]);
 
     const handleMarkAsPickedUp = (orderId, customerName) => {
         if (!orderId) return;
@@ -98,13 +95,23 @@ export default function PickupPage() {
         { field: 'box_count', headerName: t('pickup.boxes'), type: 'number', width: 90 },
         { field: 'pouches_count', headerName: t('pickup.pouches'), type: 'number', width: 90 },
         {
-        field: 'shelf_name',
-        headerName: t('pickup.shelf'),
-        width: 150,
-        valueGetter: (value, row) => row?.shelf_name ?? t('pickup.na'),
+            field: 'shelf_name',
+            headerName: t('pickup.shelf'),
+            width: 200,
+            renderCell: (params) => {
+                if (params.row?.is_from_reservation) {
+                    return (
+                        <Stack direction="row" spacing={1} alignItems="center">
+                            <Warning sx={{ color: '#ff9800', fontSize: '20px' }} />
+                            <Typography variant="caption" color="text.secondary">
+                                N/A
+                            </Typography>
+                        </Stack>
+                    );
+                }
+                return params.row?.shelf_name ?? t('pickup.na');
+            },
         },
-
-
         {
             field: 'actions',
             headerName: t('pickup.actions'),
@@ -144,20 +151,24 @@ export default function PickupPage() {
                             </Typography>
                         </Box>
                     )}
-                    <SearchBar onSearch={setSearchTerm} /> {/* Integrate the SearchBar */}
+                    <SearchBar onSearch={setSearchTerm} />
                     {loading && (
                         <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
                             <CircularProgress />
                         </Box>
                     )}
-                    <Box sx={{ height: 600, width: '100%' }}>
-                        <DataGrid
-                            rows={filteredOrders}
-                            columns={columns}
-                            loading={loading}
-                            getRowId={(row) => row ? row.order_id : Math.random().toString()}
-                            autoHeight={false}
-                        />
+
+                    {/* Combined Orders Table */}
+                    <Box sx={{ mb: 4 }}>
+                        <Box sx={{ height: 600, width: '100%' }}>
+                            <DataGrid
+                                rows={filteredOrders}
+                                columns={columns}
+                                loading={loading}
+                                getRowId={(row) => row ? row.order_id : Math.random().toString()}
+                                autoHeight={false}
+                            />
+                        </Box>
                     </Box>
                 </Paper>
             </Box>

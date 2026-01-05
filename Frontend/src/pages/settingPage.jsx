@@ -26,6 +26,10 @@ function SettingPage() {
     price: "",
     shipping_fee: "",
     printer_ip: "192.168.1.139",
+    reservation_system_locked: false,
+    reservation_time_slot_minutes: 30,
+    reservation_hours_start: 8,
+    reservation_hours_end: 20,
   };
 
   const [settings, setSettings] = useState(initialSettings);
@@ -320,6 +324,10 @@ function SettingPage() {
           price: Number(raw.price) || "",
           shipping_fee: Number(raw.shipping_fee) || "",
           printer_ip: raw.printer_ip || "192.168.1.139",
+          reservation_system_locked: raw.reservation_system_locked === 'true' || raw.reservation_system_locked === true,
+          reservation_time_slot_minutes: Number(raw.reservation_time_slot_minutes) || 30,
+          reservation_hours_start: Number(raw.reservation_hours_start) || 8,
+          reservation_hours_end: Number(raw.reservation_hours_end) || 20,
         };
         setSettings(parsed);
       })
@@ -349,6 +357,10 @@ function SettingPage() {
       price: Number(settings.price),
       shipping_fee: Number(settings.shipping_fee),
       printer_ip: settings.printer_ip,
+      reservation_system_locked: settings.reservation_system_locked,
+      reservation_time_slot_minutes: Number(settings.reservation_time_slot_minutes),
+      reservation_hours_start: Number(settings.reservation_hours_start),
+      reservation_hours_end: Number(settings.reservation_hours_end),
       id,
       password
     };
@@ -619,6 +631,60 @@ function SettingPage() {
                     value={settings.printer_ip}
                     onChange={handleChange}
                     autoComplete="off"
+                  />
+
+                  <Divider sx={{ my: 2 }}>
+                    <Chip label={t('settings.reservation_settings_title')} />
+                  </Divider>
+
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={settings.reservation_system_locked}
+                        onChange={(e) => setSettings({ ...settings, reservation_system_locked: e.target.checked })}
+                        name="reservation_system_locked"
+                      />
+                    }
+                    label={t('settings.reservation_system_locked_label')}
+                  />
+
+                  <TextField
+                    name="reservation_time_slot_minutes"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label={t('settings.reservation_time_slot_label')}
+                    value={settings.reservation_time_slot_minutes}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    inputProps={{ min: 15, max: 120, step: 15 }}
+                  />
+
+                  <TextField
+                    name="reservation_hours_start"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label={t('settings.reservation_hours_start_label')}
+                    value={settings.reservation_hours_start}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    inputProps={{ min: 0, max: 23 }}
+                  />
+
+                  <TextField
+                    name="reservation_hours_end"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label={t('settings.reservation_hours_end_label')}
+                    value={settings.reservation_hours_end}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    inputProps={{ min: 1, max: 24 }}
                   />
 
                   <Button variant="contained" onClick={handleButtonClick} size="large">

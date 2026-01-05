@@ -3,3 +3,7 @@ no_pouches:3
 price:8
 shipping_fee:1.9
 printer_ip:192.168.8.104
+reservation_system_locked:false
+reservation_time_slot_minutes:30
+reservation_hours_start:8
+reservation_hours_end:20

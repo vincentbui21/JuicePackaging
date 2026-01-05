@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom"
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./i18n"; // Initialize i18n
+import "./css/animations.css"; // Import animations
 import { ThemeModeProvider } from "./contexts/ThemeContext.jsx";
 
 /** Layout & components */
@@ -12,7 +13,7 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import AdminRoute from "./components/AdminRoute.jsx";
 
 /** Icons */
-import { Home, Users, Package, Droplets, Boxes, Archive, MapPin, UserCog, Grid3X3, Layers, Plus, Settings as Cog } from "lucide-react";
+import { Home, Users, Package, Droplets, Boxes, Archive, MapPin, UserCog, Grid3X3, Layers, Plus, Settings as Cog, Calendar } from "lucide-react";
 
 /** Pages */
 import LoginPage from "./pages/LoginPage.jsx";
@@ -30,6 +31,7 @@ import PickupPage from "./pages/PickupPage.jsx";
 import SettingPage from "./pages/settingPage.jsx";
 import AdminReports from "./pages/AdminReports.jsx";
 import DiscountManagement from "./pages/DiscountManagement.jsx";
+import ReservationManagement from "./pages/ReservationManagement.jsx";
 
 import DeleteBinPage from "./pages/DeleteBinPage.jsx";
 
@@ -77,6 +79,9 @@ const router = createBrowserRouter([
   )},
   { path: "/discount-management", element: (
     <ProtectedRoute>{wrap(DiscountManagement, { icon: Cog, title: "Discount Management", subtitle: "Manage customer discounts for next season" })}</ProtectedRoute>
+  )},
+  { path: "/reservation-management", element: (
+    <ProtectedRoute>{wrap(ReservationManagement, { icon: Calendar, title: "Reservation Management", subtitle: "View and manage customer pickup reservations" })}</ProtectedRoute>
   )},
   { path: "/delete-bin", element: (
     <ProtectedRoute>{wrap(DeleteBinPage, { icon: UserCog, title: "Delete Bin" })}</ProtectedRoute>

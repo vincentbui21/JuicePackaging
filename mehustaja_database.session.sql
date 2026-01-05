@@ -1,4 +1,4 @@
-SELECT * FROM Accounts  
+SELECT * FROM Customers;  
 
 ALTER TABLE Orders ADD COLUMN actual_pouches INT(11) DEFAULT NULL;
 
@@ -6,6 +6,14 @@ ALTER TABLE Orders
   ADD COLUMN is_deleted TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN deleted_at DATETIME NULL;
 
+ALTER TABLE Orders
+  ADD COLUMN is_from_reservation TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE Reservations
+  ADD COLUMN checked_in_at DATETIME NULL;
+
+ALTER TABLE order_status_history
+  ADD COLUMN id INT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
 
 
 CREATE TABLE IF NOT EXISTS `InventoryItems` (
@@ -81,3 +89,34 @@ FROM (
 ) b
 JOIN Orders o ON o.order_id = b.order_id
 ORDER BY b.created_at DESC;
+
+
+ALTER TABLE Orders DROP INDEX unique_customer_id;
+
+-- Backfill Boxes.customer_id when the column is missing
+ALTER TABLE Boxes
+  ADD COLUMN customer_id VARCHAR(36) NULL;
+
+UPDATE Boxes b
+JOIN Orders o ON SUBSTRING(b.box_id, 5, 36) = o.order_id
+SET b.customer_id = o.customer_id
+WHERE b.customer_id IS NULL
+  AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)';
+
+ALTER TABLE Boxes
+  ADD INDEX idx_boxes_customer_id (customer_id);
+
+-- Add Boxes.pallet_id and Boxes.shelf_id when missing
+ALTER TABLE Boxes
+  ADD COLUMN pallet_id VARCHAR(36) NULL,
+  ADD COLUMN shelf_id VARCHAR(255) NULL;
+
+ALTER TABLE Boxes
+  ADD INDEX idx_boxes_pallet (pallet_id),
+  ADD INDEX idx_boxes_shelf_id (shelf_id);
+
+-- Add Reservations.order_id to link reservations to orders
+ALTER TABLE Reservations
+  ADD COLUMN order_id VARCHAR(36) NULL;
+
+CREATE INDEX idx_reservations_order_id ON Reservations(order_id);

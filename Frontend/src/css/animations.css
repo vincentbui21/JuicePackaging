@@ -1,0 +1,180 @@
+/* Animation definitions */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+/* Utility animation classes */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.animate-slide-in-down {
+  animation: slideInDown 0.5s ease-in-out;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.5s ease-in-out;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.5s ease-in-out;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.5s ease-in-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.4s ease-in-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.animate-bounce {
+  animation: bounce 1s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* MUI component animation overrides */
+.MuiCard-root {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.MuiCard-root:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.15) !important;
+}
+
+.MuiButton-root {
+  transition: all 0.2s ease-in-out;
+}
+
+.MuiButton-contained:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.MuiChip-root {
+  animation: slideInUp 0.3s ease-in-out;
+}
+
+.MuiDialog-root .MuiDialog-paper {
+  animation: scaleIn 0.3s ease-in-out;
+}
+
+.MuiAlert-root {
+  animation: slideInDown 0.3s ease-in-out;
+}
+
+.MuiDrawer-root {
+  animation: slideInLeft 0.3s ease-in-out;
+}
+
+/* Table row animations */
+.MuiDataGrid-row {
+  animation: fadeIn 0.3s ease-in-out;
+  transition: background-color 0.2s ease;
+}
+
+.MuiDataGrid-row:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Smooth page transitions */
+.page-transition {
+  animation: fadeIn 0.3s ease-in-out;
+}

@@ -14,5 +14,8 @@
             "database": "myjuicedatabase",
             "password": "M!hustaja-Savonia"
         }
+    ],
+    "terminal.integrated.commandsToSkipShell": [
+        ""
     ]
 }
