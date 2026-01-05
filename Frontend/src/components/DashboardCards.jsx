@@ -19,8 +19,10 @@ import {
   Chip,
   Divider,
   DialogActions,
+  Tooltip,
 } from "@mui/material";
 import { Droplets, Package, Users, Activity, TrendingUp, BarChart3, Eye, Filter, Zap, Weight } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from "recharts";
 import api from "../services/axios";
 import { socket } from "../lib/socket";
 import { useTranslation } from "react-i18next";
@@ -76,6 +78,8 @@ function StatBar({ label, value, max, color = "success.main" }) {
   );
 }
 
+const LOW_STOCK_THRESHOLD = 10;
+
 export default function DashboardCards() {
   const { t } = useTranslation();
   const [stats, setStats] = useState({
@@ -83,6 +87,13 @@ export default function DashboardCards() {
     active_orders: 0,
     customers_served: 0,
     processing_efficiency: 0,
+    revenue_today: 0,
+    customers_served_today: 0,
+    order_completion_rate: 0,
+    orders_created_today: 0,
+    orders_completed_today: 0,
+    reservation_split_today: { reservation: 0, regular: 0 },
+    orders_by_status: { pending: 0, processing: 0, ready: 0, picked_up: 0, other: 0 },
     overview: { juice_kgs: 0, crates_processed: 0, orders_fulfilled: 0 },
   });
   const [metrics, setMetrics] = useState({
@@ -91,6 +102,8 @@ export default function DashboardCards() {
     changes: { pouches_pct: 0, kg_processed_pct: 0, kg_taken_in_pct: 0 },
   });
   const [recent, setRecent] = useState([]);
+  const [peakHours, setPeakHours] = useState([]);
+  const [lowStock, setLowStock] = useState([]);
 
   // Daily totals dialog state
   const [dailyOpen, setDailyOpen] = useState(false);
@@ -107,14 +120,24 @@ export default function DashboardCards() {
 
   const load = async () => {
     try {
-      const [{ data: s }, { data: r }, { data: m }] = await Promise.all([
+      const [{ data: s }, { data: r }, { data: m }, { data: peak }, { data: inventory }] = await Promise.all([
         api.get("/dashboard/summary"),
         api.get("/dashboard/activity?limit=5"),
         api.get("/dashboard/today-metrics"),
+        api.get("/dashboard/peak-hours").catch(() => ({ data: [] })),
+        api.get("/inventory-summary").catch(() => ({ data: [] })),
       ]);
-      setStats(s || stats);
+      setStats((prev) => ({ ...prev, ...(s || {}) }));
       setRecent(r || []);
       setMetrics(m || metrics);
+      setPeakHours(Array.isArray(peak) ? peak : []);
+
+      const items = Array.isArray(inventory) ? inventory : [];
+      const lowStockItems = items
+        .filter((item) => Number(item.on_hand) <= LOW_STOCK_THRESHOLD)
+        .sort((a, b) => Number(a.on_hand) - Number(b.on_hand))
+        .slice(0, 5);
+      setLowStock(lowStockItems);
     } catch (err) {
       console.error("Error loading dashboard data:", err);
     }
@@ -166,6 +189,18 @@ export default function DashboardCards() {
     if (n == null || Number.isNaN(n)) return "0%";
     const v = Number(n);
     return `${v > 0 ? "+" : ""}${v}%`;
+  };
+  const fmtCurrency = (n) => {
+    const value = Number(n || 0);
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: "EUR",
+        maximumFractionDigits: 2,
+      }).format(value);
+    } catch {
+      return `€${value.toFixed(2)}`;
+    }
   };
   const fmtDate = (d) => {
     try {
@@ -240,6 +275,32 @@ export default function DashboardCards() {
     }
   })();
 
+  const statusCounts = stats.orders_by_status || {};
+  const statusData = [
+    { key: "pending", name: t("dashboard.status_pending"), value: Number(statusCounts.pending || 0), color: "#9e9e9e" },
+    { key: "processing", name: t("dashboard.status_processing"), value: Number(statusCounts.processing || 0), color: "#ffb300" },
+    { key: "ready", name: t("dashboard.status_ready"), value: Number(statusCounts.ready || 0), color: "#42a5f5" },
+    { key: "picked_up", name: t("dashboard.status_picked_up"), value: Number(statusCounts.picked_up || 0), color: "#2e7d32" },
+    { key: "other", name: t("dashboard.status_other"), value: Number(statusCounts.other || 0), color: "#bdbdbd" },
+  ];
+  const statusTotal = statusData.reduce((sum, item) => sum + item.value, 0);
+  const statusDataFiltered = statusData.filter((item) => item.value > 0);
+  const statusChartData = statusDataFiltered.length > 0 ? statusDataFiltered : statusData;
+
+  const reservationTotal = Number(stats?.reservation_split_today?.reservation || 0);
+  const regularTotal = Number(stats?.reservation_split_today?.regular || 0);
+  const splitMax = Math.max(reservationTotal + regularTotal, 1);
+
+  const peakData = peakHours.length === 24
+    ? peakHours
+    : Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+  const peakMax = Math.max(...peakData.map((item) => Number(item.count || 0)), 0);
+  const peakColor = (count) => {
+    const max = peakMax || 1;
+    const ratio = Math.min(1, Math.max(0, count / max));
+    return `rgba(46, 125, 50, ${0.1 + ratio * 0.8})`;
+  };
+
   return (
     <Stack spacing={2}>
       {/* Stats */}
@@ -283,7 +344,7 @@ export default function DashboardCards() {
         </Grid>
       </Grid>
 
-      {/* Second row - Original metrics */}
+      {/* Second row - Daily operations */}
       <Grid container spacing={2}>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
@@ -296,28 +357,189 @@ export default function DashboardCards() {
         </Grid>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
-            title={t('dashboard.customers_served')}
-            value={stats.customers_served}
-            change={fmt(stats?.changes?.customers_served_pct)}
+            title={t('dashboard.customers_served_today')}
+            value={stats.customers_served_today}
             Icon={Users}
             t={t}
           />
         </Grid>
         <Grid item xs={12} md={6} lg={3}>
           <StatCard
-            title={t('dashboard.processing_efficiency')}
-            value={`${stats.processing_efficiency}%`}
-            change={fmt(stats?.changes?.processing_efficiency_pct)}
+            title={t('dashboard.revenue_today')}
+            value={fmtCurrency(stats.revenue_today)}
+            Icon={BarChart3}
+            t={t}
+          />
+        </Grid>
+        <Grid item xs={12} md={6} lg={3}>
+          <StatCard
+            title={t('dashboard.order_completion_rate')}
+            value={`${stats.order_completion_rate}%`}
             Icon={Activity}
             t={t}
           />
         </Grid>
       </Grid>
 
-      {/* Activity & Today */}
+      {/* Status & Mix */}
       <Grid container spacing={2}>
-        <Grid item xs={12} lg={8}>
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+        <Grid item xs={12} md={6} lg={4}>
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
+            <CardHeader
+              title={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <BarChart3 size={18} color="#2e7d32" />
+                  <Typography variant="h6" fontWeight={800}>{t('dashboard.orders_by_status')}</Typography>
+                </Stack>
+              }
+            />
+            <CardContent>
+              {statusTotal === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t('dashboard.no_status_data')}
+                </Typography>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={statusChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={60}
+                      outerRadius={90}
+                      paddingAngle={2}
+                    >
+                      {statusChartData.map((entry) => (
+                        <Cell key={entry.key} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Legend verticalAlign="bottom" height={36} />
+                    <ReTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={6} lg={4}>
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
+            <CardHeader
+              title={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Users size={18} color="#2e7d32" />
+                  <Typography variant="h6" fontWeight={800}>{t('dashboard.reservation_vs_regular')}</Typography>
+                </Stack>
+              }
+              subheader={t('dashboard.today')}
+            />
+            <CardContent>
+              <Stack spacing={2}>
+                <StatBar
+                  label={t('dashboard.reservation_orders')}
+                  value={reservationTotal}
+                  max={splitMax}
+                  color="#ffb300"
+                />
+                <StatBar
+                  label={t('dashboard.regular_orders')}
+                  value={regularTotal}
+                  max={splitMax}
+                  color="#2e7d32"
+                />
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={6} lg={4}>
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
+            <CardHeader
+              title={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Activity size={18} color="#2e7d32" />
+                  <Typography variant="h6" fontWeight={800}>{t('dashboard.peak_hours')}</Typography>
+                </Stack>
+              }
+              subheader={t('dashboard.peak_hours_subtitle')}
+            />
+            <CardContent>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+                  gap: 1,
+                }}
+              >
+                {peakData.map((item) => (
+                  <Tooltip
+                    key={item.hour}
+                    title={`${String(item.hour).padStart(2, "0")}:00 • ${item.count} ${t('dashboard.orders')}`}
+                  >
+                    <Box
+                      sx={{
+                        borderRadius: 1,
+                        px: 1,
+                        py: 0.75,
+                        textAlign: "center",
+                        bgcolor: peakColor(Number(item.count || 0)),
+                        color: Number(item.count || 0) > 0 ? "common.white" : "text.secondary",
+                      }}
+                    >
+                      <Typography variant="caption">
+                        {String(item.hour).padStart(2, "0")}
+                      </Typography>
+                      <Typography variant="body2" fontWeight={700}>
+                        {item.count}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
+                ))}
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Inventory, Activity & Today */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={6} lg={4}>
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
+            <CardHeader
+              title={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Package size={18} color="#2e7d32" />
+                  <Typography variant="h6" fontWeight={800}>{t('dashboard.inventory_low_stock')}</Typography>
+                </Stack>
+              }
+              subheader={`${t('dashboard.low_stock_threshold')} ${LOW_STOCK_THRESHOLD}`}
+            />
+            <CardContent>
+              {lowStock.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t('dashboard.low_stock_empty')}
+                </Typography>
+              ) : (
+                <Stack spacing={1.5}>
+                  {lowStock.map((item) => (
+                    <Stack key={item.item_id} direction="row" justifyContent="space-between" alignItems="center">
+                      <Box>
+                        <Typography variant="body2" fontWeight={600}>{item.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">{item.category || "—"}</Typography>
+                      </Box>
+                      <Chip
+                        label={`${item.on_hand} ${item.unit}`}
+                        color="warning"
+                        variant="outlined"
+                        size="small"
+                      />
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={6} lg={4}>
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
             <CardHeader
               title={
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -359,8 +581,8 @@ export default function DashboardCards() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} lg={4}>
-          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+        <Grid item xs={12} md={6} lg={4}>
+          <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, height: "100%" }}>
             <CardHeader
               title={
                 <Stack direction="row" spacing={1} alignItems="center">

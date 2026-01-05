@@ -18,6 +18,56 @@ const pool = mysql.createPool({
     queueLimit: 0
 }).promise();
 
+async function getBoxesColumns(connection) {
+    const now = Date.now();
+    if (boxesColumnsCache && (now - boxesColumnsCheckedAt) < BOX_COLUMNS_TTL_MS) {
+        return boxesColumnsCache;
+    }
+    try {
+        const [cols] = await connection.query("SHOW COLUMNS FROM Boxes");
+        boxesColumnsCache = cols.map((col) => col.Field);
+        boxesColumnsCheckedAt = now;
+        return boxesColumnsCache;
+    } catch (error) {
+        console.error("Failed to read Boxes columns:", error);
+        return [];
+    }
+}
+
+async function getOrdersCreatedAtType() {
+    const now = Date.now();
+    if (ordersCreatedAtTypeCache && (now - ordersCreatedAtCheckedAt) < ORDER_COLUMNS_TTL_MS) {
+        return ordersCreatedAtTypeCache;
+    }
+    try {
+        const [cols] = await pool.query("SHOW COLUMNS FROM Orders LIKE 'created_at'");
+        const type = String(cols?.[0]?.Type || '').toLowerCase();
+        ordersCreatedAtTypeCache = type;
+        ordersCreatedAtCheckedAt = now;
+        return ordersCreatedAtTypeCache;
+    } catch (error) {
+        console.error("Failed to read Orders.created_at type:", error);
+        return '';
+    }
+}
+
+function formatDateOnly(date) {
+    if (!(date instanceof Date)) {
+        return '';
+    }
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+let boxesColumnsCache = null;
+let boxesColumnsCheckedAt = 0;
+const BOX_COLUMNS_TTL_MS = 60_000;
+let ordersCreatedAtTypeCache = null;
+let ordersCreatedAtCheckedAt = 0;
+const ORDER_COLUMNS_TTL_MS = 60_000;
+
 // Helper function to get connection with timezone set
 async function getConnectionWithTimezone() {
     const connection = await pool.getConnection();
@@ -266,12 +316,40 @@ async function getCustomers(customerName, page, limit) {
         const countQuery = `SELECT COUNT(*) AS total FROM Customers AS c ${where}`;
         const [[{ total }]] = await connection.query(countQuery, params);
 
+        const boxesColumns = await getBoxesColumns(connection);
+        const hasPalletId = boxesColumns.includes('pallet_id');
+        const hasShelfId = boxesColumns.includes('shelf_id');
+
+        const shelfSelect = hasPalletId && hasShelfId
+            ? 'COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name)) AS shelf_name'
+            : hasPalletId
+                ? 'MAX(sp.shelf_name) AS shelf_name'
+                : hasShelfId
+                    ? 'MAX(sb.shelf_name) AS shelf_name'
+                    : 'NULL AS shelf_name';
+
+        const palletJoin = hasPalletId
+            ? `
+                    /* Normal flow: boxes -> pallet -> shelf */
+                    LEFT JOIN Pallets p
+                      ON p.pallet_id = b.pallet_id
+                    LEFT JOIN Shelves sp
+                      ON sp.shelf_id = p.shelf_id`
+            : '';
+
+        const shelfJoin = hasShelfId
+            ? `
+                    /* Kuopio flow: boxes -> shelf directly */
+                    LEFT JOIN Shelves sb
+                      ON sb.shelf_id = b.shelf_id`
+            : '';
+
         // Get paginated rows, starting from customers
-                const dataQuery = `
+        const dataQuery = `
                     SELECT 
                         c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
                         o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id, o.boxes_count, o.pouches_count, o.actual_pouches,
-                        COALESCE(MAX(sp.shelf_name), MAX(sb.shelf_name)) AS shelf_name
+                        ${shelfSelect}
                     FROM Customers AS c
                     LEFT JOIN (
                         SELECT 
@@ -283,23 +361,16 @@ async function getCustomers(customerName, page, limit) {
                     /* Link boxes that belong to the order */
                     LEFT JOIN Boxes b
                       ON SUBSTRING(b.box_id, 5, 36) = o.order_id
-                    
-                    /* Normal flow: boxes -> pallet -> shelf */
-                    LEFT JOIN Pallets p
-                      ON p.pallet_id = b.pallet_id
-                    LEFT JOIN Shelves sp
-                      ON sp.shelf_id = p.shelf_id
-                    
-                    /* Kuopio flow: boxes -> shelf directly */
-                    LEFT JOIN Shelves sb
-                      ON sb.shelf_id = b.shelf_id
+                    ${palletJoin}
+                    ${shelfJoin}
                     
                     ${where}
                     GROUP BY c.customer_id, c.created_at, c.name, c.email, c.phone, c.city,
                              o.total_cost, o.weight_kg, o.status, o.crate_count, o.notes, o.order_id, o.boxes_count, o.pouches_count, o.actual_pouches
                     ORDER BY c.created_at DESC
                     LIMIT ? OFFSET ?
-                `;        const [rows] = await connection.query(
+                `;
+        const [rows] = await connection.query(
             dataQuery,
             [...params, parsedLimit, offset]
         );
@@ -635,6 +706,7 @@ async function getOrdersByStatus(status) {
             o.customer_id,
             o.weight_kg,
             o.status,
+            o.is_from_reservation,
             o.notes,
             o.boxes_count AS box_count,
             o.boxes_count,
@@ -664,7 +736,7 @@ async function getOrdersByStatus(status) {
         WHERE o.status = ?
           AND COALESCE(c.is_deleted, 0) = 0
         GROUP BY o.order_id, o.customer_id, o.weight_kg, o.status, o.notes, 
-                 o.boxes_count, o.pouches_count, o.actual_pouches, o.created_at,
+                 o.is_from_reservation, o.boxes_count, o.pouches_count, o.actual_pouches, o.created_at,
                  c.name, c.phone, c.city
         ORDER BY o.created_at ASC
     `, [status]);
@@ -688,6 +760,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
             o.customer_id,
             o.weight_kg,
             o.status,
+            o.is_from_reservation,
             o.notes,
             o.boxes_count AS box_count,
             o.boxes_count,
@@ -717,7 +790,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
         WHERE o.status = ?
           AND COALESCE(c.is_deleted, 0) = 0
         GROUP BY o.order_id, o.customer_id, o.weight_kg, o.status, o.notes, 
-                 o.boxes_count, o.pouches_count, o.actual_pouches, o.created_at,
+                 o.is_from_reservation, o.boxes_count, o.pouches_count, o.actual_pouches, o.created_at,
                  c.name, c.phone, c.city
         ORDER BY o.created_at ASC
         LIMIT ? OFFSET ?
@@ -891,9 +964,9 @@ async function markOrderAsReady(order_id) {
   try {
     await conn.beginTransaction();
 
-    // Lock order row and get boxes_count
+    // Lock order row and get boxes_count and is_from_reservation flag
     const [[o]] = await conn.query(
-      `SELECT order_id, customer_id, weight_kg, boxes_count
+      `SELECT order_id, customer_id, weight_kg, boxes_count, is_from_reservation
          FROM Orders
         WHERE order_id = ?
         FOR UPDATE`,
@@ -928,21 +1001,22 @@ async function markOrderAsReady(order_id) {
     // Authoritative count saved on Orders
     const actualCount = await updateBoxesCountForOrder(order_id, conn);
 
-    // Status update
+    // Status update: Reservation orders go to "Ready for pickup", others to "Processing complete"
+    const finalStatus = o.is_from_reservation ? 'Ready for pickup' : 'Processing complete';
     await conn.query(
       `UPDATE Orders SET status = ? WHERE order_id = ?`,
-      ["Processing complete", order_id]
+      [finalStatus, order_id]
     );
     
     // Track status change in history
     await conn.query(
       'INSERT INTO order_status_history (order_id, customer_id, status) VALUES (?, ?, ?)',
-      [order_id, o.customer_id, 'Processing complete']
+      [order_id, o.customer_id, finalStatus]
     );
 
     await conn.commit();
 
-    console.log(`[markOrderAsDone] order=${order_id} intended=${boxCount} saved=${actualCount}`);
+    console.log(`[markOrderAsDone] order=${order_id} intended=${boxCount} saved=${actualCount} status=${finalStatus}`);
 
     return {
       created: rows.length,
@@ -995,6 +1069,12 @@ async function updateOrderInfo(order_id, data = {}) {
         }
         const customer_id = order.customer_id;
 
+        const boxesColumns = await getBoxesColumns(conn);
+        const hasOrderId = boxesColumns.includes('order_id');
+        const hasPalletId = boxesColumns.includes('pallet_id');
+        const hasShelfId = boxesColumns.includes('shelf_id');
+        const hasBoxNumber = boxesColumns.includes('box_number');
+
         const [existingBoxes] = await conn.query("SELECT box_id FROM Boxes WHERE box_id LIKE ?", [`BOX_${order_id}_%`]);
         const existingCount = existingBoxes.length;
         
@@ -1002,9 +1082,21 @@ async function updateOrderInfo(order_id, data = {}) {
         if (newBoxCount !== existingCount) {
             if (newBoxCount < existingCount) {
                 // Reducing box count - check if any boxes are placed
-                const [placedBoxes] = await conn.query("SELECT COUNT(*) as count FROM Boxes WHERE box_id LIKE ? AND (pallet_id IS NOT NULL OR shelf_id IS NOT NULL)", [`BOX_${order_id}_%`]);
-                if (placedBoxes[0].count > 0) {
-                     throw new Error('Cannot reduce box count because one or more boxes for this order are already placed on a pallet or shelf.');
+                const placementChecks = [];
+                if (hasPalletId) {
+                    placementChecks.push('pallet_id IS NOT NULL');
+                }
+                if (hasShelfId) {
+                    placementChecks.push('shelf_id IS NOT NULL');
+                }
+                if (placementChecks.length > 0) {
+                    const [placedBoxes] = await conn.query(
+                        `SELECT COUNT(*) as count FROM Boxes WHERE box_id LIKE ? AND (${placementChecks.join(' OR ')})`,
+                        [`BOX_${order_id}_%`]
+                    );
+                    if (placedBoxes[0].count > 0) {
+                        throw new Error('Cannot reduce box count because one or more boxes for this order are already placed on a pallet or shelf.');
+                    }
                 }
             }
             
@@ -1013,14 +1105,30 @@ async function updateOrderInfo(order_id, data = {}) {
 
             // Create new boxes
             if (newBoxCount > 0) {
+                const boxColumns = ['box_id'];
+                if (hasOrderId) {
+                    boxColumns.push('order_id');
+                }
+                if (hasBoxNumber) {
+                    boxColumns.push('box_number');
+                }
+                boxColumns.push('customer_id', 'created_at');
                 const boxRows = [];
                 const now = new Date();
                 for (let i = 1; i <= newBoxCount; i++) {
-                    boxRows.push([`BOX_${order_id}_${i}`, customer_id, now]);
+                    const row = [`BOX_${order_id}_${i}`];
+                    if (hasOrderId) {
+                        row.push(order_id);
+                    }
+                    if (hasBoxNumber) {
+                        row.push(i);
+                    }
+                    row.push(customer_id, now);
+                    boxRows.push(row);
                 }
                 if (boxRows.length > 0) {
                     await conn.query(
-                        `INSERT INTO Boxes (box_id, customer_id, created_at) VALUES ?`,
+                        `INSERT INTO Boxes (${boxColumns.join(', ')}) VALUES ?`,
                         [boxRows]
                     );
                 }
@@ -1908,7 +2016,45 @@ async function getDashboardSummary() {
     `SELECT COUNT(*) AS customers_today FROM Customers WHERE DATE(created_at) = CURDATE()`
   );
   const [[{ orders_new_today }]] = await pool.query(
-    `SELECT COUNT(*) AS orders_new_today FROM Orders WHERE DATE(created_at) = CURDATE()`
+    `SELECT COUNT(*) AS orders_new_today
+       FROM Orders
+      WHERE DATE(created_at) = CURDATE()
+        AND COALESCE(is_deleted, 0) = 0`
+  );
+  const [[{ orders_completed_today }]] = await pool.query(
+    `SELECT COUNT(*) AS orders_completed_today
+       FROM Orders
+      WHERE DATE(created_at) = CURDATE()
+        AND COALESCE(is_deleted, 0) = 0
+        AND LOWER(status) IN ('processing complete','ready for pickup','picked up')`
+  );
+  const [[{ revenue_today }]] = await pool.query(
+    `SELECT COALESCE(SUM(total_cost), 0) AS revenue_today
+       FROM Orders
+      WHERE DATE(created_at) = CURDATE()
+        AND COALESCE(is_deleted, 0) = 0
+        AND LOWER(status) IN ('processing complete','ready for pickup','picked up')`
+  );
+  const [[{ customers_served_today }]] = await pool.query(
+    `SELECT COUNT(DISTINCT customer_id) AS customers_served_today
+       FROM Orders
+      WHERE DATE(created_at) = CURDATE()
+        AND COALESCE(is_deleted, 0) = 0
+        AND LOWER(status) IN ('processing complete','ready for pickup','picked up')`
+  );
+  const [[{ reservation_orders_today }]] = await pool.query(
+    `SELECT COUNT(*) AS reservation_orders_today
+       FROM Orders
+      WHERE DATE(created_at) = CURDATE()
+        AND COALESCE(is_deleted, 0) = 0
+        AND COALESCE(is_from_reservation, 0) = 1`
+  );
+  const [[{ regular_orders_today }]] = await pool.query(
+    `SELECT COUNT(*) AS regular_orders_today
+       FROM Orders
+      WHERE DATE(created_at) = CURDATE()
+        AND COALESCE(is_deleted, 0) = 0
+        AND COALESCE(is_from_reservation, 0) = 0`
   );
   const [[{ daily_kgs_today }]] = await pool.query(
     `
@@ -1934,7 +2080,10 @@ async function getDashboardSummary() {
     `SELECT COUNT(*) AS customers_yesterday FROM Customers WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
   );
   const [[{ orders_new_yesterday }]] = await pool.query(
-    `SELECT COUNT(*) AS orders_new_yesterday FROM Orders WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)`
+    `SELECT COUNT(*) AS orders_new_yesterday
+       FROM Orders
+      WHERE DATE(created_at) = (CURDATE() - INTERVAL 1 DAY)
+        AND COALESCE(is_deleted, 0) = 0`
   );
   const [[{ daily_kgs_yesterday }]] = await pool.query(
     `
@@ -1959,6 +2108,23 @@ async function getDashboardSummary() {
     `SELECT COUNT(*) AS customers_served FROM Customers`
   );
 
+  const [[statusCounts]] = await pool.query(
+    `
+    SELECT
+      SUM(CASE
+        WHEN status IS NULL OR LOWER(status) IN ('pending','received','in queue','created') THEN 1 ELSE 0 END
+      ) AS pending,
+      SUM(CASE WHEN LOWER(status) IN ('in progress','processing complete') THEN 1 ELSE 0 END) AS processing,
+      SUM(CASE WHEN LOWER(status) = 'ready for pickup' THEN 1 ELSE 0 END) AS ready,
+      SUM(CASE WHEN LOWER(status) = 'picked up' THEN 1 ELSE 0 END) AS picked_up,
+      SUM(CASE
+        WHEN status IS NOT NULL AND LOWER(status) NOT IN ('pending','received','in queue','created','in progress','processing complete','ready for pickup','picked up') THEN 1 ELSE 0 END
+      ) AS other
+    FROM Orders
+    WHERE COALESCE(is_deleted, 0) = 0
+    `
+  );
+
   // Uses ready_at if present, else updated_at, else created_at
   const [[{ orders_fulfilled_today }]] = await pool.query(
     `SELECT COUNT(*) AS orders_fulfilled_today
@@ -1980,11 +2146,33 @@ async function getDashboardSummary() {
     processing_efficiency_pct: Number((eff_today - eff_yday).toFixed(1)),
   };
 
+  const ordersCreatedToday = Number(orders_new_today || 0);
+  const ordersCompletedToday = Number(orders_completed_today || 0);
+  const orderCompletionRate = ordersCreatedToday > 0
+    ? Number(((ordersCompletedToday / ordersCreatedToday) * 100).toFixed(1))
+    : 0;
+
   return {
     daily_production_kgs,
     active_orders: Number(active_orders || 0),
     customers_served: Number(customers_served || 0),
     processing_efficiency: Number(eff_today.toFixed(1)),
+    revenue_today: Number(Number(revenue_today || 0).toFixed(2)),
+    customers_served_today: Number(customers_served_today || 0),
+    order_completion_rate: orderCompletionRate,
+    orders_created_today: ordersCreatedToday,
+    orders_completed_today: ordersCompletedToday,
+    reservation_split_today: {
+      reservation: Number(reservation_orders_today || 0),
+      regular: Number(regular_orders_today || 0),
+    },
+    orders_by_status: {
+      pending: Number(statusCounts?.pending || 0),
+      processing: Number(statusCounts?.processing || 0),
+      ready: Number(statusCounts?.ready || 0),
+      picked_up: Number(statusCounts?.picked_up || 0),
+      other: Number(statusCounts?.other || 0),
+    },
     overview: {
       juice_kgs: daily_production_kgs,
       crates_processed: Number(crates_today || 0),
@@ -2019,10 +2207,13 @@ async function getRecentActivity(limit = 20) {
       UNION ALL
       -- processing completed (boxes created)
       SELECT b.created_at AS ts,
-             CONCAT('Juice processing completed - ', cu.name) AS message,
+             CONCAT('Juice processing completed - ', COALESCE(cu.name, 'Unknown')) AS message,
              'processing' AS type
         FROM Boxes b
-        LEFT JOIN Customers cu ON b.customer_id = cu.customer_id
+        LEFT JOIN Orders o
+          ON SUBSTRING(b.box_id, 5, 36) = o.order_id
+         AND b.box_id REGEXP '^BOX_[0-9A-Fa-f-]{36}(_|$)'
+        LEFT JOIN Customers cu ON o.customer_id = cu.customer_id
 
       UNION ALL
       -- order picked up (based on ready_at timestamp when status changed to Picked up)
@@ -2563,26 +2754,38 @@ function getProductionDayBoundaries(date = null) {
 // Get today's production metrics (6am to 6am logic)
 async function getTodayMetrics() {
   const { start, end } = getProductionDayBoundaries();
+  const createdAtType = await getOrdersCreatedAtType();
+  const isDateOnly = createdAtType.startsWith('date') && !createdAtType.startsWith('datetime');
+  const startParam = isDateOnly ? formatDateOnly(start) : start;
+  const endParam = isDateOnly ? formatDateOnly(end) : end;
   
   try {
+    // Count actual pouches from COMPLETED orders only
     const [pouchesResult] = await pool.query(
       `SELECT COALESCE(SUM(COALESCE(actual_pouches, pouches_count)), 0) AS pouches_made FROM Orders 
-       WHERE created_at >= ? AND created_at < ?`,
-      [start, end]
+       WHERE created_at >= ? AND created_at < ?
+         AND COALESCE(is_deleted, 0) = 0
+         AND LOWER(status) IN ('processing complete', 'ready for pickup', 'picked up')`,
+      [startParam, endParam]
     );
     const pouches_made = pouchesResult[0]?.pouches_made || 0;
     
+    // kg processed = weight of COMPLETED orders
     const [processedResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_processed FROM Orders 
-       WHERE created_at >= ? AND created_at < ?`,
-      [start, end]
+       WHERE created_at >= ? AND created_at < ?
+         AND COALESCE(is_deleted, 0) = 0
+         AND LOWER(status) IN ('processing complete', 'ready for pickup', 'picked up')`,
+      [startParam, endParam]
     );
     const kg_processed = processedResult[0]?.kg_processed || 0;
     
+    // kg taken in = total weight of orders created in the window
     const [takenResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_taken_in FROM Orders 
-       WHERE created_at >= ? AND created_at < ?`,
-      [start, end]
+       WHERE created_at >= ? AND created_at < ?
+         AND COALESCE(is_deleted, 0) = 0`,
+      [startParam, endParam]
     );
     const kg_taken_in = takenResult[0]?.kg_taken_in || 0;
     
@@ -2607,26 +2810,38 @@ async function getYesterdayMetrics() {
   const yesterday = new Date(start);
   yesterday.setDate(yesterday.getDate() - 1);
   const { start: yStart, end: yEnd } = getProductionDayBoundaries(yesterday);
+  const createdAtType = await getOrdersCreatedAtType();
+  const isDateOnly = createdAtType.startsWith('date') && !createdAtType.startsWith('datetime');
+  const startParam = isDateOnly ? formatDateOnly(yStart) : yStart;
+  const endParam = isDateOnly ? formatDateOnly(yEnd) : yEnd;
   
   try {
+    // Count actual pouches from COMPLETED orders only
     const [pouchesResult] = await pool.query(
       `SELECT COALESCE(SUM(COALESCE(actual_pouches, pouches_count)), 0) AS pouches_made FROM Orders 
-       WHERE created_at >= ? AND created_at < ?`,
-      [yStart, yEnd]
+       WHERE created_at >= ? AND created_at < ?
+         AND COALESCE(is_deleted, 0) = 0
+         AND LOWER(status) IN ('processing complete', 'ready for pickup', 'picked up')`,
+      [startParam, endParam]
     );
     const pouches_made = pouchesResult[0]?.pouches_made || 0;
     
+    // kg processed = weight of COMPLETED orders
     const [processedResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_processed FROM Orders 
-       WHERE created_at >= ? AND created_at < ?`,
-      [yStart, yEnd]
+       WHERE created_at >= ? AND created_at < ?
+         AND COALESCE(is_deleted, 0) = 0
+         AND LOWER(status) IN ('processing complete', 'ready for pickup', 'picked up')`,
+      [startParam, endParam]
     );
     const kg_processed = processedResult[0]?.kg_processed || 0;
     
+    // kg taken in = total weight of orders created in the window
     const [takenResult] = await pool.query(
       `SELECT COALESCE(SUM(weight_kg), 0) AS kg_taken_in FROM Orders 
-       WHERE created_at >= ? AND created_at < ?`,
-      [yStart, yEnd]
+       WHERE created_at >= ? AND created_at < ?
+         AND COALESCE(is_deleted, 0) = 0`,
+      [startParam, endParam]
     );
     const kg_taken_in = takenResult[0]?.kg_taken_in || 0;
     
@@ -2694,6 +2909,35 @@ async function getHistoricalMetrics(period = 'daily', days = 30) {
   } catch (err) {
     console.error('getHistoricalMetrics error:', err);
     return [];
+  }
+}
+
+async function getPeakHours(days = 7) {
+  const n = Math.max(1, Math.min(365, Number(days) || 7));
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT HOUR(changed_at) AS hour, COUNT(*) AS count
+      FROM order_status_history
+      WHERE changed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        AND LOWER(status) IN ('processing complete','ready for pickup','picked up')
+      GROUP BY hour
+      ORDER BY hour
+      `,
+      [n]
+    );
+
+    const counts = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+    rows.forEach((row) => {
+      const hour = Number(row.hour);
+      if (Number.isInteger(hour) && hour >= 0 && hour <= 23) {
+        counts[hour].count = Number(row.count || 0);
+      }
+    });
+    return counts;
+  } catch (err) {
+    console.error("getPeakHours error:", err);
+    return Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
   }
 }
 
@@ -3394,9 +3638,15 @@ async function getOrderStatusHistory(customer_id) {
     const connection = await getConnectionWithTimezone();
     
     try {
+        const [columns] = await connection.query("SHOW COLUMNS FROM order_status_history");
+        const hasId = columns.some((col) => col.Field === 'id');
+        const idSelect = hasId
+            ? 'osh.id'
+            : 'ROW_NUMBER() OVER (ORDER BY osh.changed_at ASC, osh.order_id ASC, osh.status ASC) AS id';
+
         const query = `
             SELECT 
-                osh.id,
+                ${idSelect},
                 osh.order_id,
                 osh.status,
                 osh.changed_at
@@ -3492,6 +3742,7 @@ assignBoxesToPallet,
     getTodayMetrics,
     getYesterdayMetrics,
     getHistoricalMetrics,
+    getPeakHours,
     getProductionDayBoundaries,
     getAdminReportRows,
     pctChange,

@@ -14,10 +14,11 @@ import {
   Button,
   Card,
   CardContent,
-  MenuItem
+  MenuItem,
+  Tooltip
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Edit, QrCode, Delete, Print } from "@mui/icons-material";
+import { Edit, QrCode, Delete, Print, Star } from "@mui/icons-material";
 import api from "../services/axios";
 import generateSmallPngQRCode from "../services/qrcodGenerator";
 import DrawerComponent from "../components/drawer";
@@ -63,8 +64,20 @@ function JuiceProcessingManagement() {
 
   const fetchOrders = async () => {
     try {
-      const res = await api.get("/orders?status=processing complete&is_deleted=0");
-      const enriched = (res.data || []).map((order) => {
+      const [processingRes, inProgressRes] = await Promise.all([
+        api.get("/orders", { params: { status: "processing complete", is_deleted: 0 } }),
+        api.get("/orders", { params: { status: "In Progress", is_deleted: 0 } }),
+      ]);
+      const processingRows = Array.isArray(processingRes.data) ? processingRes.data : [];
+      const inProgressRows = Array.isArray(inProgressRes.data) ? inProgressRes.data : [];
+      const merged = [...processingRows, ...inProgressRows];
+      const deduped = Array.from(new Map(merged.map((order) => [order.order_id, order])).values());
+      const sorted = deduped.sort((a, b) => {
+        const aDate = new Date(a?.created_at || 0).getTime();
+        const bDate = new Date(b?.created_at || 0).getTime();
+        return aDate - bDate;
+      });
+      const enriched = sorted.map((order) => {
         const { estimatedPouches, estimatedBoxes } = computeFromWeight(order.weight_kg);
         return {
           ...order,
@@ -254,6 +267,18 @@ function JuiceProcessingManagement() {
     { field: "estimated_boxes", headerName: "Boxes", flex: 1 },
     { field: "status", headerName: "Status", flex: 1 },
     {
+      field: "reservation",
+      headerName: "Reservation",
+      sortable: false,
+      flex: 0.5,
+      renderCell: (params) => 
+        params.row.is_from_reservation ? (
+          <Tooltip title="From reservation, process now.">
+            <Star sx={{ color: '#FFB300' }} fontSize="small" />
+          </Tooltip>
+        ) : null
+    },
+    {
       field: "actions",
       headerName: "Actions",
       sortable: false,
@@ -304,6 +329,7 @@ function JuiceProcessingManagement() {
           justifyContent: "center",
           overflowX: "auto",
         }}
+        className="page-transition"
       >
         <Paper
           elevation={3}
@@ -313,8 +339,9 @@ function JuiceProcessingManagement() {
             backgroundColor: "#ffffff",
             borderRadius: 2,
           }}
+          className="animate-scale-in"
         >
-          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }}>
+          <Typography variant="h4" sx={{ textAlign: "center", mb: 3, fontWeight: "bold" }} className="animate-slide-in-down">
             Juice Processing Management
           </Typography>
 
@@ -325,6 +352,7 @@ function JuiceProcessingManagement() {
             onChange={(e) => setSearch(e.target.value)}
             fullWidth
             sx={{ mb: 2, backgroundColor: "white", borderRadius: 1 }}
+            className="animate-slide-in-up"
           />
 
           <DataGrid

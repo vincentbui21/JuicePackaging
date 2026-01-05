@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import dayjs from 'dayjs';
 import { DataGrid } from '@mui/x-data-grid';
 import {
   Box, TextField, Stack, Button, Tooltip, Chip, CircularProgress, Dialog,
@@ -543,6 +544,30 @@ function SmsStatusChip({ customerId, refreshKey }) {
         }
     };
 
+    const handlePrintTrackingNumber = (row) => {
+        if (!row || !row.is_from_reservation) return;
+
+        // Use order ID directly as tracking number
+        const trackingNumber = row.order_id;
+        const printData = {
+            trackingNumber,
+            customerName: row.name,
+            orderDate: dayjs(row.created_at).format('MMMM D, YYYY [at] HH:mm'),
+            weight: `${row.weight_kg} kg`,
+            phone: row.phone,
+        };
+
+        // Send to backend for printing
+        api.post('/printer/print-reservation-tracking', printData)
+            .then(() => {
+                setSnackbarMsg('Tracking number sent to printer');
+            })
+            .catch((error) => {
+                console.error('Failed to print tracking number:', error);
+                setSnackbarMsg('Failed to print tracking number');
+            });
+    };
+
     // Menu handlers for row actions
     const handleMenuOpen = (event, row) => {
         setMenuAnchorEl(event.currentTarget);
@@ -577,6 +602,11 @@ function SmsStatusChip({ customerId, refreshKey }) {
 
     const printPouchLabelsAction = () => {
         if (activeRow) printPouchLabels(activeRow);
+        handleMenuClose();
+    };
+
+    const handlePrintTrackingNumberAction = () => {
+        if (activeRow) handlePrintTrackingNumber(activeRow);
         handleMenuClose();
     };
 
@@ -818,6 +848,11 @@ function SmsStatusChip({ customerId, refreshKey }) {
             <MenuItem onClick={printPouchLabelsAction}>
             <Print fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.print_pouch_label')}
             </MenuItem>
+            {activeRow && activeRow.is_from_reservation && (
+            <MenuItem onClick={handlePrintTrackingNumberAction}>
+                <Print fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.print_tracking_number')}
+            </MenuItem>
+            )}
             {activeRow && isReadyForPickup(activeRow.status) && (
             <MenuItem onClick={handleNotifySMSAction}>
                 <Send fontSize="small" sx={{ mr: 1 }} /> {t('unified_mgmt.send_sms')}

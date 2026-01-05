@@ -58,6 +58,13 @@ export default function ProductionChart() {
     }
   };
 
+  const efficiencyData = data.map((entry) => {
+    const processed = Number(entry.kg_processed || 0);
+    const takenIn = Number(entry.kg_taken_in || 0);
+    const efficiencyPct = takenIn > 0 ? Number(((processed / takenIn) * 100).toFixed(1)) : 0;
+    return { ...entry, efficiency_pct: efficiencyPct };
+  });
+
   return (
     <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, mt: 2 }}>
       <CardHeader
@@ -129,6 +136,28 @@ export default function ProductionChart() {
                     dataKey="kg_taken_in"
                     stroke="#1976d2"
                     name={t('dashboard.kg_taken_in_label')}
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </Stack>
+
+            {/* Efficiency Trend */}
+            <Stack>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                {t('dashboard.production_efficiency_trend')}
+              </Typography>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={efficiencyData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis unit="%" />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="efficiency_pct"
+                    stroke="#2e7d32"
+                    name={t('dashboard.efficiency_pct')}
                     strokeWidth={2}
                   />
                 </LineChart>

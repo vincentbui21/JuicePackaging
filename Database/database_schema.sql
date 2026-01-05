@@ -107,14 +107,15 @@ CREATE TABLE `Orders` (
     `total_cost` decimal(10,2) DEFAULT NULL,
     `pouches_count` int(11) DEFAULT NULL,
     `actual_pouches` int(11) DEFAULT NULL,
+    `is_from_reservation` tinyint(1) NOT NULL DEFAULT 0,
     `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
     `deleted_at` datetime DEFAULT NULL,
     `notes` text DEFAULT NULL,
     `created_at` date DEFAULT NULL,
     `ready_at` datetime DEFAULT NULL,
     PRIMARY KEY (`order_id`),
-    UNIQUE KEY `unique_customer_id` (`customer_id`),
     KEY `idx_orders_ready_at` (`ready_at`),
+    KEY `idx_orders_customer_id` (`customer_id`),
     CONSTRAINT `Orders_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `Customers` (`customer_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -281,6 +282,7 @@ CREATE TABLE `Reservations` (
     `message` TEXT DEFAULT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+    `checked_in_at` DATETIME DEFAULT NULL,
     PRIMARY KEY (`reservation_id`),
     KEY `idx_reservations_datetime` (`reservation_datetime`),
     KEY `idx_reservations_phone` (`phone`),
