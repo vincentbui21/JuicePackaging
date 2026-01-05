@@ -2953,8 +2953,8 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
       // Create new customer
       customer_id = uuid.generateUUID();
       await connection.query(
-        'INSERT INTO Customers (customer_id, name, phone, email) VALUES (?, ?, ?, ?)',
-        [customer_id, reservation.customer_name, reservation.phone, reservation.email]
+        'INSERT INTO Customers (customer_id, name, phone, email, city) VALUES (?, ?, ?, ?, ?)',
+        [customer_id, reservation.customer_name, reservation.phone, reservation.email, 'Kuopio']
       );
     }
 

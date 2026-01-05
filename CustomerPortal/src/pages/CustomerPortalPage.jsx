@@ -45,6 +45,7 @@ import 'dayjs/locale/en';
 import 'dayjs/locale/fi';
 import LanguageSelector from '../components/LanguageSelector';
 import ThemeModeToggle from '../components/ThemeModeToggle';
+import { useTheme as useCustomTheme } from '../contexts/ThemeContext';
 
 dayjs.extend(duration);
 
@@ -60,6 +61,7 @@ function TabPanel({ children, value, index }) {
 
 function CustomerPortalPage() {
   const { t, i18n } = useTranslation();
+  const { isDarkMode } = useCustomTheme();
   const [tabValue, setTabValue] = useState(0);
   const [trackingNumber, setTrackingNumber] = useState('');
   const [trackingResult, setTrackingResult] = useState(null);
@@ -503,18 +505,19 @@ function CustomerPortalPage() {
             sx={{
               borderBottom: 1,
               borderColor: 'divider',
-              bgcolor: '#f8f9fa',
+              bgcolor: isDarkMode ? 'background.paper' : '#f8f9fa',
               '& .MuiTab-root': {
                 fontWeight: 600,
                 fontSize: '1rem',
                 textTransform: 'none',
                 minHeight: 64,
+                color: isDarkMode ? 'text.secondary' : 'text.primary',
               },
               '& .Mui-selected': {
-                color: '#4CAF50 !important',
+                color: isDarkMode ? 'primary.light !important' : 'primary.main !important',
               },
               '& .MuiTabs-indicator': {
-                backgroundColor: '#4CAF50',
+                backgroundColor: isDarkMode ? 'primary.light' : 'primary.main',
                 height: 3,
               },
             }}
