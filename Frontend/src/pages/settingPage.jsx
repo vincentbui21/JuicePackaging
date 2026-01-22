@@ -328,6 +328,7 @@ function SettingPage() {
           reservation_time_slot_minutes: Number(raw.reservation_time_slot_minutes) || 30,
           reservation_hours_start: Number(raw.reservation_hours_start) || 8,
           reservation_hours_end: Number(raw.reservation_hours_end) || 20,
+          reservation_advance_booking_days: Number(raw.reservation_advance_booking_days) || 14,
         };
         setSettings(parsed);
       })
@@ -361,6 +362,7 @@ function SettingPage() {
       reservation_time_slot_minutes: Number(settings.reservation_time_slot_minutes),
       reservation_hours_start: Number(settings.reservation_hours_start),
       reservation_hours_end: Number(settings.reservation_hours_end),
+      reservation_advance_booking_days: Number(settings.reservation_advance_booking_days),
       id,
       password
     };
@@ -685,6 +687,20 @@ function SettingPage() {
                     onChange={handleChange}
                     autoComplete="off"
                     inputProps={{ min: 1, max: 24 }}
+                  />
+
+                  <TextField
+                    name="reservation_advance_booking_days"
+                    type="number"
+                    required
+                    fullWidth
+                    variant="filled"
+                    label={t('settings.reservation_advance_booking_days_label')}
+                    value={settings.reservation_advance_booking_days}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    inputProps={{ min: 1, max: 90 }}
+                    helperText={t('settings.reservation_advance_booking_days_helper')}
                   />
 
                   <Button variant="contained" onClick={handleButtonClick} size="large">

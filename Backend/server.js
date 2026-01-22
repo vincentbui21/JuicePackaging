@@ -2221,7 +2221,7 @@ app.get("/default-setting", async (req, res) => {
 
 app.post("/default-setting", async (req, res) => {
   
-  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword, reservation_system_locked, reservation_time_slot_minutes, reservation_hours_start, reservation_hours_end} = req.body;
+  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword, reservation_system_locked, reservation_time_slot_minutes, reservation_hours_start, reservation_hours_end, reservation_advance_booking_days} = req.body;
   console.log(req.body);
 
   console.log("Received body:", req.body);
@@ -2253,6 +2253,7 @@ app.post("/default-setting", async (req, res) => {
     if (reservation_time_slot_minutes !== undefined) settings.reservation_time_slot_minutes = reservation_time_slot_minutes;
     if (reservation_hours_start !== undefined) settings.reservation_hours_start = reservation_hours_start;
     if (reservation_hours_end !== undefined) settings.reservation_hours_end = reservation_hours_end;
+    if (reservation_advance_booking_days !== undefined) settings.reservation_advance_booking_days = reservation_advance_booking_days;
 
 
     await fs.writeFile(settingsFilePath, stringifySettings(settings), "utf8");
@@ -3101,7 +3102,8 @@ app.get('/api/reservation-settings', async (req, res) => {
         system_locked: settings.reservation_system_locked === 'true',
         time_slot_minutes: parseInt(settings.reservation_time_slot_minutes) || 30,
         hours_start: parseInt(settings.reservation_hours_start) || 8,
-        hours_end: parseInt(settings.reservation_hours_end) || 20
+        hours_end: parseInt(settings.reservation_hours_end) || 20,
+        advance_booking_days: parseInt(settings.reservation_advance_booking_days) || 14
       }
     });
   } catch (err) {

@@ -82,7 +82,8 @@ function CustomerPortalPage() {
   const [reservationSettings, setReservationSettings] = useState({
     time_slot_minutes: 30,
     hours_start: 8,
-    hours_end: 20
+    hours_end: 20,
+    advance_booking_days: 14
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -148,7 +149,8 @@ function CustomerPortalPage() {
         setReservationSettings({
           time_slot_minutes: timeSlotMinutes,
           hours_start: settingsData.settings.hours_start,
-          hours_end: settingsData.settings.hours_end
+          hours_end: settingsData.settings.hours_end,
+          advance_booking_days: settingsData.settings.advance_booking_days || 14
         });
       }
       
@@ -635,13 +637,13 @@ function CustomerPortalPage() {
                         value={formData.dateTime}
                         onChange={handleDateTimeChange}
                         minDateTime={dayjs().add(1, 'hour')}
-                        maxDateTime={dayjs().add(14, 'day')}
+                        maxDateTime={dayjs().add(reservationSettings.advance_booking_days, 'day')}
                         minTime={dayjs().hour(reservationSettings.hours_start).minute(0)}
                         maxTime={dayjs().hour(reservationSettings.hours_end - 1).minute(59)}
                         shouldDisableTime={shouldDisableTime}
                         shouldDisableDate={(date) => {
                           const minDate = dayjs().add(1, 'hour').startOf('day');
-                          const maxDate = dayjs().add(14, 'day').endOf('day');
+                          const maxDate = dayjs().add(reservationSettings.advance_booking_days, 'day').endOf('day');
                           return date.isBefore(minDate) || date.isAfter(maxDate);
                         }}
                         timeSteps={{ minutes: reservationSettings.time_slot_minutes }}

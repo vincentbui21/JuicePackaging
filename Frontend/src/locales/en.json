@@ -525,6 +525,8 @@
     "reservation_time_slot_label": "Time Slot Interval (minutes)",
     "reservation_hours_start_label": "Reservation Hours Start (0-23)",
     "reservation_hours_end_label": "Reservation Hours End (1-24)",
+    "reservation_advance_booking_days_label": "Advance Booking Period (days)",
+    "reservation_advance_booking_days_helper": "Number of days customers can book in advance",
     "save_defaults": "Save Default Values",
     "saving": "Saving...",
     "add_city_title": "Add a New City",
