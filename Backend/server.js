@@ -2938,25 +2938,13 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
 
     const reservation = reservations[0];
 
-    // Check if customer already exists by phone
-    const [existingCustomers] = await connection.query(
-      'SELECT * FROM Customers WHERE phone = ? AND is_deleted = 0',
-      [reservation.phone]
+    // Always create a new customer for each reservation check-in
+    // This ensures the reservation customer name and details are preserved
+    const customer_id = uuid.generateUUID();
+    await connection.query(
+      'INSERT INTO Customers (customer_id, name, phone, email) VALUES (?, ?, ?, ?)',
+      [customer_id, reservation.customer_name, reservation.phone, reservation.email]
     );
-
-    let customer_id;
-
-    if (existingCustomers.length > 0) {
-      // Use existing customer
-      customer_id = existingCustomers[0].customer_id;
-    } else {
-      // Create new customer
-      customer_id = uuid.generateUUID();
-      await connection.query(
-        'INSERT INTO Customers (customer_id, name, phone, email, city) VALUES (?, ?, ?, ?, ?)',
-        [customer_id, reservation.customer_name, reservation.phone, reservation.email, 'Kuopio']
-      );
-    }
 
     // Create order
     const order_id = uuid.generateUUID();
