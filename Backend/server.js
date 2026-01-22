@@ -1245,24 +1245,30 @@ app.post('/cities', async (req, res) => {
 app.delete('/cities', async (req, res) => {
     try {
         const { name } = req.body;
+        console.log('DELETE /cities request received:', { name });
+        
         if (!name) {
             return res.status(400).json({ error: 'City name is required' });
         }
         
-        // Check if any customers are using this city
+        // Check if any active customers are using this city
+        console.log('Checking for customers using city:', name);
         const [customers] = await pool.query(
-            'SELECT COUNT(*) as count FROM Customers WHERE city = ? AND customer_id NOT IN (SELECT customer_id FROM Orders WHERE is_deleted = 1)',
+            'SELECT COUNT(*) as count FROM Customers WHERE city = ? AND is_deleted = 0',
             [name]
         );
+        console.log('Customer count:', customers[0].count);
         
-        // Check if any boxes are using this city (both directly and through customer relationship)
+        // Check if any boxes belong to customers in this city
+        console.log('Checking for boxes linked to customers in city:', name);
         const [boxes] = await pool.query(
             `SELECT COUNT(DISTINCT b.box_id) as count 
              FROM Boxes b 
-             LEFT JOIN Customers c ON b.customer_id = c.customer_id 
-             WHERE b.city = ? OR c.city = ?`,
-            [name, name]
+             INNER JOIN Customers c ON b.customer_id = c.customer_id 
+             WHERE c.city = ?`,
+            [name]
         );
+        console.log('Box count:', boxes[0].count);
         
         const customerCount = customers[0].count;
         const boxCount = boxes[0].count;
@@ -1276,11 +1282,14 @@ app.delete('/cities', async (req, res) => {
             });
         }
         
+        console.log('Attempting to delete city:', name);
         await database.deleteCity(name);
+        console.log('City deleted successfully:', name);
         res.status(200).json({ ok: true, message: 'City deleted successfully' });
     } catch (err) {
         console.error('Error deleting city:', err);
-        res.status(500).json({ error: 'Server error' });
+        console.error('Error stack:', err.stack);
+        res.status(500).json({ error: 'Server error', details: err.message, stack: err.stack });
     }
 });
 
