@@ -85,6 +85,7 @@
     "management": "Management",
     "shelves_pallets": "Shelves & Pallets Management",
     "unified_management": "Unified Management",
+    "container_tracking": "Container Tracking",
     "reservation_management": "Reservation Management",
     "discount_management": "Discount Management",
     "delete_bin": "Delete Bin",

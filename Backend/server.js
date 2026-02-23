@@ -1293,6 +1293,212 @@ app.delete('/cities', async (req, res) => {
     }
 });
 
+// ===== CONTAINER TRACKING ROUTES =====
+
+// Get container inventory for all cities
+app.get('/containers/inventory', async (req, res) => {
+    try {
+        const inventory = await database.getContainerInventory();
+        res.json(inventory);
+    } catch (err) {
+        console.error('Error fetching container inventory:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update container totals for a city
+app.put('/containers/inventory/:cityName', async (req, res) => {
+    try {
+        const { cityName } = req.params;
+        const { containers_total, containers_in_use } = req.body;
+        
+        if (containers_total === undefined || containers_in_use === undefined) {
+            return res.status(400).json({ error: 'Both containers_total and containers_in_use are required' });
+        }
+        
+        const result = await database.updateCityContainers(
+            cityName, 
+            Number(containers_total), 
+            Number(containers_in_use)
+        );
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error updating container inventory:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Create a container movement
+app.post('/containers/movements', async (req, res) => {
+    try {
+        const { from_city, to_city, quantity, notes } = req.body;
+        
+        if (!from_city || !to_city || !quantity) {
+            return res.status(400).json({ error: 'from_city, to_city, and quantity are required' });
+        }
+        
+        if (from_city === to_city) {
+            return res.status(400).json({ error: 'Source and destination cities must be different' });
+        }
+        
+        // Get employee info from auth header/session (placeholder for now)
+        const created_by = req.body.created_by || 'employee';
+        const created_by_name = req.body.created_by_name || 'Employee';
+        
+        // Validate that user has permission for the from_city
+        if (created_by) {
+            const [accounts] = await pool.query(
+                'SELECT allowed_cities, role FROM Accounts WHERE id = ?',
+                [created_by]
+            );
+            
+            if (accounts.length > 0) {
+                const account = accounts[0];
+                const allowedCities = account.allowed_cities ? JSON.parse(account.allowed_cities) : [];
+                
+                // If allowed_cities has entries, user is restricted to those cities
+                // If allowed_cities is empty array, user has access to all cities (or is admin)
+                if (allowedCities.length > 0 && !allowedCities.includes(from_city)) {
+                    return res.status(403).json({ 
+                        error: `You do not have permission to create movements from ${from_city}. Your allowed cities: ${allowedCities.join(', ')}`
+                    });
+                }
+            }
+        }
+        
+        const result = await database.createContainerMovement({
+            from_city,
+            to_city,
+            quantity: Number(quantity),
+            created_by,
+            created_by_name,
+            notes: notes || null
+        });
+        
+        if (result.success) {
+            res.status(201).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error creating container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get all container movements (with optional status filter)
+app.get('/containers/movements', async (req, res) => {
+    try {
+        const { status } = req.query;
+        const movements = await database.getContainerMovements(status || null);
+        res.json(movements);
+    } catch (err) {
+        console.error('Error fetching container movements:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get container movement by ID
+app.get('/containers/movements/:movementId', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        const movement = await database.getContainerMovementById(movementId);
+        
+        if (movement) {
+            res.json(movement);
+        } else {
+            res.status(404).json({ error: 'Movement not found' });
+        }
+    } catch (err) {
+        console.error('Error fetching container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Confirm a container movement
+app.post('/containers/movements/:movementId/confirm', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        
+        // Get employee info from auth header/session (placeholder for now)
+        const confirmed_by = req.body.confirmed_by || 'employee';
+        const confirmed_by_name = req.body.confirmed_by_name || 'Employee';
+        
+        const result = await database.confirmContainerMovement(
+            movementId,
+            confirmed_by,
+            confirmed_by_name
+        );
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error confirming container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Cancel a container movement
+app.post('/containers/movements/:movementId/cancel', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        
+        const result = await database.cancelContainerMovement(movementId);
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error cancelling container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete a container movement (admin only)
+app.delete('/containers/movements/:movementId', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        const { userId } = req.body;
+        
+        // Check if user is admin
+        if (userId) {
+            const [accounts] = await pool.query(
+                'SELECT role FROM Accounts WHERE id = ?',
+                [userId]
+            );
+            
+            if (accounts.length === 0 || accounts[0].role !== 'admin') {
+                return res.status(403).json({ 
+                    error: 'Only administrators can delete movement records' 
+                });
+            }
+        } else {
+            return res.status(401).json({ error: 'User authentication required' });
+        }
+        
+        const result = await database.deleteContainerMovement(movementId);
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error deleting container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 app.get('/shelves/:shelf_id/contents', async (req, res) => {
     const { shelf_id } = req.params;
     try {

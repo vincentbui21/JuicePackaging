@@ -51,18 +51,21 @@ dayjs.extend(duration);
 
 // Auto-detect API URL based on environment
 const getApiBaseUrl = () => {
+  // Temporarily hardcoded to localhost for development
+  return 'http://localhost:5001';
+  
   // If explicitly set, use that
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
+  // if (import.meta.env.VITE_API_BASE_URL) {
+  //   return import.meta.env.VITE_API_BASE_URL;
+  // }
   
   // If running on production domain, use production API
-  if (window.location.hostname === 'customer.mehustaja.fi') {
-    return 'https://api.mehustaja.fi';
-  }
+  // if (window.location.hostname === 'customer.mehustaja.fi') {
+  //   return 'https://api.mehustaja.fi';
+  // }
   
   // Default to localhost for development
-  return 'http://localhost:5001';
+  // return 'http://localhost:5001';
 };
 
 const API_BASE_URL = getApiBaseUrl().replace(/\/+$/, '');
