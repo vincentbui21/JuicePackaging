@@ -45,10 +45,30 @@ import 'dayjs/locale/en';
 import 'dayjs/locale/fi';
 import LanguageSelector from '../components/LanguageSelector';
 import ThemeModeToggle from '../components/ThemeModeToggle';
+import { useTheme as useCustomTheme } from '../contexts/ThemeContext';
 
 dayjs.extend(duration);
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001').replace(/\/+$/, '');
+// Auto-detect API URL based on environment
+const getApiBaseUrl = () => {
+  // Temporarily hardcoded to localhost for development
+  return 'http://localhost:5001';
+  
+  // If explicitly set, use that
+  // if (import.meta.env.VITE_API_BASE_URL) {
+  //   return import.meta.env.VITE_API_BASE_URL;
+  // }
+  
+  // If running on production domain, use production API
+  // if (window.location.hostname === 'customer.mehustaja.fi') {
+  //   return 'https://api.mehustaja.fi';
+  // }
+  
+  // Default to localhost for development
+  // return 'http://localhost:5001';
+};
+
+const API_BASE_URL = getApiBaseUrl().replace(/\/+$/, '');
 
 function TabPanel({ children, value, index }) {
   return (
@@ -60,6 +80,7 @@ function TabPanel({ children, value, index }) {
 
 function CustomerPortalPage() {
   const { t, i18n } = useTranslation();
+  const { isDarkMode } = useCustomTheme();
   const [tabValue, setTabValue] = useState(0);
   const [trackingNumber, setTrackingNumber] = useState('');
   const [trackingResult, setTrackingResult] = useState(null);
@@ -80,7 +101,8 @@ function CustomerPortalPage() {
   const [reservationSettings, setReservationSettings] = useState({
     time_slot_minutes: 30,
     hours_start: 8,
-    hours_end: 20
+    hours_end: 20,
+    advance_booking_days: 14
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -146,7 +168,8 @@ function CustomerPortalPage() {
         setReservationSettings({
           time_slot_minutes: timeSlotMinutes,
           hours_start: settingsData.settings.hours_start,
-          hours_end: settingsData.settings.hours_end
+          hours_end: settingsData.settings.hours_end,
+          advance_booking_days: settingsData.settings.advance_booking_days || 14
         });
       }
       
@@ -503,18 +526,19 @@ function CustomerPortalPage() {
             sx={{
               borderBottom: 1,
               borderColor: 'divider',
-              bgcolor: '#f8f9fa',
+              bgcolor: isDarkMode ? 'background.paper' : '#f8f9fa',
               '& .MuiTab-root': {
                 fontWeight: 600,
                 fontSize: '1rem',
                 textTransform: 'none',
                 minHeight: 64,
+                color: isDarkMode ? 'text.secondary' : 'text.primary',
               },
               '& .Mui-selected': {
-                color: '#4CAF50 !important',
+                color: isDarkMode ? 'primary.light !important' : 'primary.main !important',
               },
               '& .MuiTabs-indicator': {
-                backgroundColor: '#4CAF50',
+                backgroundColor: isDarkMode ? 'primary.light' : 'primary.main',
                 height: 3,
               },
             }}
@@ -632,13 +656,13 @@ function CustomerPortalPage() {
                         value={formData.dateTime}
                         onChange={handleDateTimeChange}
                         minDateTime={dayjs().add(1, 'hour')}
-                        maxDateTime={dayjs().add(14, 'day')}
+                        maxDateTime={dayjs().add(reservationSettings.advance_booking_days, 'day')}
                         minTime={dayjs().hour(reservationSettings.hours_start).minute(0)}
                         maxTime={dayjs().hour(reservationSettings.hours_end - 1).minute(59)}
                         shouldDisableTime={shouldDisableTime}
                         shouldDisableDate={(date) => {
                           const minDate = dayjs().add(1, 'hour').startOf('day');
-                          const maxDate = dayjs().add(14, 'day').endOf('day');
+                          const maxDate = dayjs().add(reservationSettings.advance_booking_days, 'day').endOf('day');
                           return date.isBefore(minDate) || date.isAfter(maxDate);
                         }}
                         timeSteps={{ minutes: reservationSettings.time_slot_minutes }}

@@ -1245,24 +1245,30 @@ app.post('/cities', async (req, res) => {
 app.delete('/cities', async (req, res) => {
     try {
         const { name } = req.body;
+        console.log('DELETE /cities request received:', { name });
+        
         if (!name) {
             return res.status(400).json({ error: 'City name is required' });
         }
         
-        // Check if any customers are using this city
+        // Check if any active customers are using this city
+        console.log('Checking for customers using city:', name);
         const [customers] = await pool.query(
-            'SELECT COUNT(*) as count FROM Customers WHERE city = ? AND customer_id NOT IN (SELECT customer_id FROM Orders WHERE is_deleted = 1)',
+            'SELECT COUNT(*) as count FROM Customers WHERE city = ? AND is_deleted = 0',
             [name]
         );
+        console.log('Customer count:', customers[0].count);
         
-        // Check if any boxes are using this city (both directly and through customer relationship)
+        // Check if any boxes belong to customers in this city
+        console.log('Checking for boxes linked to customers in city:', name);
         const [boxes] = await pool.query(
             `SELECT COUNT(DISTINCT b.box_id) as count 
              FROM Boxes b 
-             LEFT JOIN Customers c ON b.customer_id = c.customer_id 
-             WHERE b.city = ? OR c.city = ?`,
-            [name, name]
+             INNER JOIN Customers c ON b.customer_id = c.customer_id 
+             WHERE c.city = ?`,
+            [name]
         );
+        console.log('Box count:', boxes[0].count);
         
         const customerCount = customers[0].count;
         const boxCount = boxes[0].count;
@@ -1276,10 +1282,219 @@ app.delete('/cities', async (req, res) => {
             });
         }
         
+        console.log('Attempting to delete city:', name);
         await database.deleteCity(name);
+        console.log('City deleted successfully:', name);
         res.status(200).json({ ok: true, message: 'City deleted successfully' });
     } catch (err) {
         console.error('Error deleting city:', err);
+        console.error('Error stack:', err.stack);
+        res.status(500).json({ error: 'Server error', details: err.message, stack: err.stack });
+    }
+});
+
+// ===== CONTAINER TRACKING ROUTES =====
+
+// Get container inventory for all cities
+app.get('/containers/inventory', async (req, res) => {
+    try {
+        const inventory = await database.getContainerInventory();
+        res.json(inventory);
+    } catch (err) {
+        console.error('Error fetching container inventory:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update container totals for a city
+app.put('/containers/inventory/:cityName', async (req, res) => {
+    try {
+        const { cityName } = req.params;
+        const { containers_total, containers_in_use } = req.body;
+        
+        if (containers_total === undefined || containers_in_use === undefined) {
+            return res.status(400).json({ error: 'Both containers_total and containers_in_use are required' });
+        }
+        
+        const result = await database.updateCityContainers(
+            cityName, 
+            Number(containers_total), 
+            Number(containers_in_use)
+        );
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error updating container inventory:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Create a container movement
+app.post('/containers/movements', async (req, res) => {
+    try {
+        const { from_city, to_city, quantity, notes } = req.body;
+        
+        if (!from_city || !to_city || !quantity) {
+            return res.status(400).json({ error: 'from_city, to_city, and quantity are required' });
+        }
+        
+        if (from_city === to_city) {
+            return res.status(400).json({ error: 'Source and destination cities must be different' });
+        }
+        
+        // Get employee info from auth header/session (placeholder for now)
+        const created_by = req.body.created_by || 'employee';
+        const created_by_name = req.body.created_by_name || 'Employee';
+        
+        // Validate that user has permission for the from_city
+        if (created_by) {
+            const [accounts] = await pool.query(
+                'SELECT allowed_cities, role FROM Accounts WHERE id = ?',
+                [created_by]
+            );
+            
+            if (accounts.length > 0) {
+                const account = accounts[0];
+                const allowedCities = account.allowed_cities ? JSON.parse(account.allowed_cities) : [];
+                
+                // If allowed_cities has entries, user is restricted to those cities
+                // If allowed_cities is empty array, user has access to all cities (or is admin)
+                if (allowedCities.length > 0 && !allowedCities.includes(from_city)) {
+                    return res.status(403).json({ 
+                        error: `You do not have permission to create movements from ${from_city}. Your allowed cities: ${allowedCities.join(', ')}`
+                    });
+                }
+            }
+        }
+        
+        const result = await database.createContainerMovement({
+            from_city,
+            to_city,
+            quantity: Number(quantity),
+            created_by,
+            created_by_name,
+            notes: notes || null
+        });
+        
+        if (result.success) {
+            res.status(201).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error creating container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get all container movements (with optional status filter)
+app.get('/containers/movements', async (req, res) => {
+    try {
+        const { status } = req.query;
+        const movements = await database.getContainerMovements(status || null);
+        res.json(movements);
+    } catch (err) {
+        console.error('Error fetching container movements:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get container movement by ID
+app.get('/containers/movements/:movementId', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        const movement = await database.getContainerMovementById(movementId);
+        
+        if (movement) {
+            res.json(movement);
+        } else {
+            res.status(404).json({ error: 'Movement not found' });
+        }
+    } catch (err) {
+        console.error('Error fetching container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Confirm a container movement
+app.post('/containers/movements/:movementId/confirm', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        
+        // Get employee info from auth header/session (placeholder for now)
+        const confirmed_by = req.body.confirmed_by || 'employee';
+        const confirmed_by_name = req.body.confirmed_by_name || 'Employee';
+        
+        const result = await database.confirmContainerMovement(
+            movementId,
+            confirmed_by,
+            confirmed_by_name
+        );
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error confirming container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Cancel a container movement
+app.post('/containers/movements/:movementId/cancel', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        
+        const result = await database.cancelContainerMovement(movementId);
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error cancelling container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete a container movement (admin only)
+app.delete('/containers/movements/:movementId', async (req, res) => {
+    try {
+        const { movementId } = req.params;
+        const { userId } = req.body;
+        
+        // Check if user is admin
+        if (userId) {
+            const [accounts] = await pool.query(
+                'SELECT role FROM Accounts WHERE id = ?',
+                [userId]
+            );
+            
+            if (accounts.length === 0 || accounts[0].role !== 'admin') {
+                return res.status(403).json({ 
+                    error: 'Only administrators can delete movement records' 
+                });
+            }
+        } else {
+            return res.status(401).json({ error: 'User authentication required' });
+        }
+        
+        const result = await database.deleteContainerMovement(movementId);
+        
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error deleting container movement:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
@@ -2221,7 +2436,7 @@ app.get("/default-setting", async (req, res) => {
 
 app.post("/default-setting", async (req, res) => {
   
-  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword} = req.body;
+  const { juice_quantity, no_pouches, price, shipping_fee, id, password, newCities, newAdminPassword, printer_ip, newEmployeePassword, reservation_system_locked, reservation_time_slot_minutes, reservation_hours_start, reservation_hours_end, reservation_advance_booking_days} = req.body;
   console.log(req.body);
 
   console.log("Received body:", req.body);
@@ -2249,6 +2464,11 @@ app.post("/default-setting", async (req, res) => {
     if (price !== undefined) settings.price = price;
     if (shipping_fee !== undefined) settings.shipping_fee = shipping_fee;
     if (printer_ip !== undefined) settings.printer_ip = printer_ip;
+    if (reservation_system_locked !== undefined) settings.reservation_system_locked = reservation_system_locked;
+    if (reservation_time_slot_minutes !== undefined) settings.reservation_time_slot_minutes = reservation_time_slot_minutes;
+    if (reservation_hours_start !== undefined) settings.reservation_hours_start = reservation_hours_start;
+    if (reservation_hours_end !== undefined) settings.reservation_hours_end = reservation_hours_end;
+    if (reservation_advance_booking_days !== undefined) settings.reservation_advance_booking_days = reservation_advance_booking_days;
 
 
     await fs.writeFile(settingsFilePath, stringifySettings(settings), "utf8");
@@ -2671,7 +2891,7 @@ app.get('/api/discounts/search/by-code', async (req, res) => {
 
 // Delete all customer data (EXTREMELY DANGEROUS)
 app.post('/admin/delete-all-customer-data', async (req, res) => {
-  const connection = await pool.getConnection();
+  const connection = await database.getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
     
@@ -2904,7 +3124,7 @@ app.get('/api/reservations', async (req, res) => {
 
 // Check in customer (Admin) - Convert reservation to order
 app.post('/api/reservations/:id/check-in', async (req, res) => {
-  const connection = await pool.getConnection();
+  const connection = await database.getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
 
@@ -3086,7 +3306,8 @@ app.get('/api/reservation-settings', async (req, res) => {
         system_locked: settings.reservation_system_locked === 'true',
         time_slot_minutes: parseInt(settings.reservation_time_slot_minutes) || 30,
         hours_start: parseInt(settings.reservation_hours_start) || 8,
-        hours_end: parseInt(settings.reservation_hours_end) || 20
+        hours_end: parseInt(settings.reservation_hours_end) || 20,
+        advance_booking_days: parseInt(settings.reservation_advance_booking_days) || 14
       }
     });
   } catch (err) {

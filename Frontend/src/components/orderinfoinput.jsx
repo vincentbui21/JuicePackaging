@@ -38,6 +38,14 @@ function OrderInfoInput({data, setdata, city}) {
         setdata({... data, [e.target.name]:e.target.value})
     }
 
+    const handleCrateCountUpdate = (e) => {
+        const value = e.target.value;
+        // Allow empty string for editing, or only positive integers
+        if (value === '' || (Number(value) > 0 && Number.isInteger(Number(value)))) {
+            setdata({...data, No_of_Crates: value});
+        }
+    }
+
     const handleWeightInfoInput = (e)=>{
         console.log(settings);
         setdata({... data, 
@@ -119,12 +127,15 @@ function OrderInfoInput({data, setdata, city}) {
 
                         <Grid item size={8} display="flex" alignItems="center" >
                             <TextField name="No_of_Crates" type="number" variant='filled' label={t('customer_info_entry.number_of_crates_placeholder')} required
-                            onChange={handleCustomerInfoUpdate} value={data.No_of_Crates}
+                            onChange={handleCrateCountUpdate} value={data.No_of_Crates}
                             sx={
                                 {
                                     width: "min(600px, 90%)"
                                 }
                             }
+                            inputProps={{
+                                min: 1
+                            }}
                             slotProps={
                                 {
                                     input: {

@@ -42,6 +42,7 @@ export default function AppSidebar({
   const management = [
     { label: t('sidebar.shelves_pallets'), to: "/shelves-pallets-management", icon: <Grid3X3 size={18} /> },
     { label: t('sidebar.unified_management'), to: "/unified-management", icon: <UserCog size={18} /> },
+    { label: t('sidebar.container_tracking'), to: "/container-tracking", icon: <Package size={18} /> },
     { label: t('sidebar.reservation_management'), to: "/reservation-management", icon: <Calendar size={18} /> },
     { label: t('sidebar.discount_management'), to: "/discount-management", icon: <Percent size={18} /> },
     { label: t('sidebar.delete_bin'), to: "/delete-bin", icon: <Archive size={18} /> },

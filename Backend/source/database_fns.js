@@ -18,13 +18,6 @@ const pool = mysql.createPool({
     queueLimit: 0
 }).promise();
 
-let boxesColumnsCache = null;
-let boxesColumnsCheckedAt = 0;
-const BOX_COLUMNS_TTL_MS = 60_000;
-let ordersCreatedAtTypeCache = null;
-let ordersCreatedAtCheckedAt = 0;
-const ORDER_COLUMNS_TTL_MS = 60_000;
-
 async function getBoxesColumns(connection) {
     const now = Date.now();
     if (boxesColumnsCache && (now - boxesColumnsCheckedAt) < BOX_COLUMNS_TTL_MS) {
@@ -68,8 +61,22 @@ function formatDateOnly(date) {
     return `${year}-${month}-${day}`;
 }
 
-async function update_new_customer_data(customer_data, order_data) {
+let boxesColumnsCache = null;
+let boxesColumnsCheckedAt = 0;
+const BOX_COLUMNS_TTL_MS = 60_000;
+let ordersCreatedAtTypeCache = null;
+let ordersCreatedAtCheckedAt = 0;
+const ORDER_COLUMNS_TTL_MS = 60_000;
+
+// Helper function to get connection with timezone set
+async function getConnectionWithTimezone() {
     const connection = await pool.getConnection();
+    await connection.query("SET time_zone = 'Europe/Helsinki'");
+    return connection;
+}
+
+async function update_new_customer_data(customer_data, order_data) {
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -116,7 +123,7 @@ async function update_new_customer_data(customer_data, order_data) {
             estimatedPouches, // pouches_count
             estimatedPouches, // actual_pouches - same as estimated initially
             order_data.Notes,
-            logic.formatDateToSQL(customer_data.entryDate)       
+            new Date() // Use current server timestamp instead of frontend date     
         ]);
 
         // Record initial status in history
@@ -133,7 +140,7 @@ async function update_new_customer_data(customer_data, order_data) {
                 newCrateId,
                 customerID,
                 "Created",
-                logic.formatDateToSQL(customer_data.entryDate),
+                new Date(), // Use current server timestamp
                 `${i}/${order_data.No_of_Crates}` //crate_order      
             ])
         }
@@ -152,7 +159,7 @@ async function update_new_customer_data(customer_data, order_data) {
 
 
 async function get_crate_data(crate_id) {
-    const connection = await pool.getConnection()
+    const connection = await getConnectionWithTimezone()
 
     try{
         const CustomerData = `
@@ -197,7 +204,7 @@ async function get_crate_data(crate_id) {
 }
 
 async function update_crates_status(crateIds, newStatus) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         if (!Array.isArray(crateIds) || crateIds.length === 0) {
@@ -248,7 +255,7 @@ async function update_crates_status(crateIds, newStatus) {
 }
 
 async function update_order_status(customer_id, new_status) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -290,7 +297,7 @@ async function update_order_status(customer_id, new_status) {
 }
 
 async function getCustomers(customerName, page, limit) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const parsedPage = page != null ? parseInt(page, 10) : 1;
@@ -382,7 +389,7 @@ async function getCustomers(customerName, page, limit) {
 }
 
 async function delete_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     try {
         const query = `
             UPDATE Customers
@@ -400,7 +407,7 @@ async function delete_customer(customer_id) {
 }
 
 async function get_deleted_customers() {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     try {
         const query = `
             SELECT 
@@ -461,7 +468,7 @@ async function get_deleted_customers() {
 }
 
 async function restore_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     try {
         const query = `
             UPDATE Customers
@@ -480,7 +487,7 @@ async function restore_customer(customer_id) {
 
 
 async function force_delete_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -521,7 +528,7 @@ async function insertCratesForCustomer(connection, customer_id, crateCount, upda
 }
 
 async function updateCustomerData(customer_id, customerInfoChange, orderInfoChange) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         await connection.beginTransaction();
@@ -670,7 +677,7 @@ async function updateCustomerData(customer_id, customerInfoChange, orderInfoChan
 }
 
 async function get_crates_by_customer(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const query = `
@@ -793,7 +800,7 @@ async function getOrdersByStatusPaged(status, page = 1, limit = 20) {
 }
 
 async function getPalletsByLocation(location, page, limit) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const parsedPage = page != null ? parseInt(page, 10) : 1;
@@ -838,7 +845,7 @@ async function getPalletsByLocation(location, page, limit) {
 
 
 async function deletePallet(pallet_id) {
-  const connection = await pool.getConnection();
+  const connection = await getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
 
@@ -868,7 +875,7 @@ async function deletePallet(pallet_id) {
 
 
 async function updatePalletCapacity(pallete_id, newCapacity) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
 
     try {
         const parsedCapacity = parseInt(newCapacity, 10);
@@ -912,7 +919,7 @@ async function updatePalletCapacity(pallete_id, newCapacity) {
     }
 }
 async function markOrderAsReady(order_id) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   try {
     await conn.beginTransaction();
     
@@ -953,7 +960,7 @@ async function markOrderAsReady(order_id) {
 }
 
   async function markOrderAsDone(order_id, comment = "") {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   try {
     await conn.beginTransaction();
 
@@ -1028,7 +1035,7 @@ async function markOrderAsReady(order_id) {
     
    
 async function updateOrderInfo(order_id, data = {}) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   try {
     await conn.beginTransaction();
 
@@ -1180,7 +1187,7 @@ async function updateOrderInfo(order_id, data = {}) {
       }
 
       async function force_delete_order(order_id) {
-        const connection = await pool.getConnection();
+        const connection = await getConnectionWithTimezone();
         try {
           await connection.beginTransaction();
           const pattern = `BOX_${order_id}%`;
@@ -1215,7 +1222,7 @@ async function updateOrderInfo(order_id, data = {}) {
       }
       
       async function createPallet(location, capacity, palletName = null) {
-        const connection = await pool.getConnection();
+        const connection = await getConnectionWithTimezone();
         try {
           // Auto-number within the same location if no name given
           const [[{ cnt }]] = await connection.query(
@@ -1263,7 +1270,7 @@ async function updateOrderInfo(order_id, data = {}) {
      // Holding-safe
 // Holding-safe + robust ID normalization
 async function assignBoxToPallet(box_id_raw, pallet_id) {
-  const connection = await pool.getConnection();
+  const connection = await getConnectionWithTimezone();
   try {
     await connection.beginTransaction();
 
@@ -1385,7 +1392,7 @@ async function updatePalletHolding(pallet_id, connOrPool = pool) {
       
       
       async function markOrderAsPickedUp(order_id) {
-        const conn = await pool.getConnection();
+        const conn = await getConnectionWithTimezone();
         try {
           await conn.beginTransaction();
           
@@ -1480,7 +1487,7 @@ async function searchOrdersWithShelfInfo(query) {
       }
 
       async function getAllShelfLocations() {
-        const connection = await pool.getConnection();
+        const connection = await getConnectionWithTimezone();
         try {
             const [rows] = await connection.query('SELECT DISTINCT location FROM Shelves');
             return rows;
@@ -1494,7 +1501,7 @@ async function searchOrdersWithShelfInfo(query) {
     
 
     async function createShelf(location, capacity = 4, shelfName = null) {
-      const connection = await pool.getConnection();
+      const connection = await getConnectionWithTimezone();
       try {
         if (!location || capacity == null) throw new Error("Missing required parameters");
     
@@ -1542,7 +1549,7 @@ async function getShelvesByLocation(location) {
 
 
 async function getBoxesByPalletId(pallet_id) {
-  const connection = await pool.getConnection();
+  const connection = await getConnectionWithTimezone();
   try {
     const [rows] = await connection.query(
       `
@@ -1572,7 +1579,7 @@ async function getBoxesByPalletId(pallet_id) {
 }
 
   async function assignPalletToShelf(palletId, shelfId) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
   
     try {
       await connection.beginTransaction();
@@ -1859,7 +1866,7 @@ async function getScanInfoByBoxId(box_id_raw) {
 }
 
 async function assignBoxesToPallet(pallet_id, box_ids = []) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
 
   try {
     await conn.beginTransaction();
@@ -3624,7 +3631,7 @@ async function deleteLiability(liabilityId) {
 }
 
 async function getOrderStatusHistory(customer_id) {
-    const connection = await pool.getConnection();
+    const connection = await getConnectionWithTimezone();
     
     try {
         const [columns] = await connection.query("SHOW COLUMNS FROM order_status_history");
@@ -3652,6 +3659,301 @@ async function getOrderStatusHistory(customer_id) {
     } finally {
         connection.release();
     }
+}
+
+// ===== CONTAINER TRACKING & MOVEMENT =====
+
+/**
+ * Get container inventory for all cities
+ * @returns {Promise<Array>} List of cities with container counts
+ */
+async function getContainerInventory() {
+  try {
+    const [rows] = await pool.query(
+      `SELECT city_id, name, containers_total, containers_in_use,
+              (containers_total - containers_in_use) as containers_available
+       FROM Cities
+       ORDER BY name ASC`
+    );
+    return rows;
+  } catch (error) {
+    console.error('getContainerInventory error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update container totals for a city
+ * @param {string} cityName - City name
+ * @param {number} total - New total containers
+ * @param {number} inUse - New in-use containers
+ * @returns {Promise<Object>} Result
+ */
+async function updateCityContainers(cityName, total, inUse) {
+  try {
+    const [result] = await pool.query(
+      `UPDATE Cities 
+       SET containers_total = ?, containers_in_use = ?
+       WHERE name = ?`,
+      [total, inUse, cityName]
+    );
+    
+    if (result.affectedRows === 0) {
+      return { success: false, message: 'City not found' };
+    }
+    
+    return { success: true, message: 'Container inventory updated' };
+  } catch (error) {
+    console.error('updateCityContainers error:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+/**
+ * Create a container movement record
+ * @param {Object} movement - Movement details
+ * @returns {Promise<Object>} Result with movement_id
+ */
+async function createContainerMovement(movement) {
+  const conn = await getConnectionWithTimezone();
+  
+  try {
+    await conn.beginTransaction();
+    
+    const movementId = generateUUID();
+    const { from_city, to_city, quantity, created_by, created_by_name, notes } = movement;
+    
+    // Insert movement record
+    await conn.query(
+      `INSERT INTO ContainerMovements 
+       (movement_id, from_city, to_city, quantity, status, created_by, created_by_name, notes)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      [movementId, from_city, to_city, quantity, created_by, created_by_name, notes]
+    );
+    
+    // Deduct from source city's available containers (increase in_use)
+    await conn.query(
+      `UPDATE Cities 
+       SET containers_in_use = containers_in_use + ?
+       WHERE name = ?`,
+      [quantity, from_city]
+    );
+    
+    await conn.commit();
+    
+    return {
+      success: true,
+      movement_id: movementId,
+      message: `Movement created: ${quantity} containers from ${from_city} to ${to_city}`
+    };
+    
+  } catch (error) {
+    await conn.rollback();
+    console.error('createContainerMovement error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Confirm receipt of a container movement
+ * @param {string} movementId - Movement ID
+ * @param {string} confirmedBy - Employee ID confirming
+ * @param {string} confirmedByName - Employee name confirming
+ * @returns {Promise<Object>} Result
+ */
+async function confirmContainerMovement(movementId, confirmedBy, confirmedByName) {
+  const conn = await getConnectionWithTimezone();
+  
+  try {
+    await conn.beginTransaction();
+    
+    // Get movement details
+    const [[movement]] = await conn.query(
+      `SELECT * FROM ContainerMovements WHERE movement_id = ?`,
+      [movementId]
+    );
+    
+    if (!movement) {
+      throw new Error('Movement not found');
+    }
+    
+    if (movement.status !== 'pending') {
+      throw new Error(`Movement already ${movement.status}`);
+    }
+    
+    // Update movement status
+    await conn.query(
+      `UPDATE ContainerMovements 
+       SET status = 'confirmed', 
+           confirmed_by = ?,
+           confirmed_by_name = ?,
+           confirmed_at = NOW()
+       WHERE movement_id = ?`,
+      [confirmedBy, confirmedByName, movementId]
+    );
+    
+    // Update source city: reduce in_use, reduce total
+    await conn.query(
+      `UPDATE Cities 
+       SET containers_total = containers_total - ?,
+           containers_in_use = containers_in_use - ?
+       WHERE name = ?`,
+      [movement.quantity, movement.quantity, movement.from_city]
+    );
+    
+    // Update destination city: increase total
+    await conn.query(
+      `UPDATE Cities 
+       SET containers_total = containers_total + ?
+       WHERE name = ?`,
+      [movement.quantity, movement.to_city]
+    );
+    
+    await conn.commit();
+    
+    return {
+      success: true,
+      message: `Movement confirmed: ${movement.quantity} containers received in ${movement.to_city}`
+    };
+    
+  } catch (error) {
+    await conn.rollback();
+    console.error('confirmContainerMovement error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Cancel a container movement
+ * @param {string} movementId - Movement ID
+ * @returns {Promise<Object>} Result
+ */
+async function cancelContainerMovement(movementId) {
+  const conn = await getConnectionWithTimezone();
+  
+  try {
+    await conn.beginTransaction();
+    
+    // Get movement details
+    const [[movement]] = await conn.query(
+      `SELECT * FROM ContainerMovements WHERE movement_id = ?`,
+      [movementId]
+    );
+    
+    if (!movement) {
+      throw new Error('Movement not found');
+    }
+    
+    if (movement.status !== 'pending') {
+      throw new Error(`Cannot cancel: movement already ${movement.status}`);
+    }
+    
+    // Update movement status
+    await conn.query(
+      `UPDATE ContainerMovements SET status = 'cancelled' WHERE movement_id = ?`,
+      [movementId]
+    );
+    
+    // Return containers to source city (reduce in_use)
+    await conn.query(
+      `UPDATE Cities 
+       SET containers_in_use = containers_in_use - ?
+       WHERE name = ?`,
+      [movement.quantity, movement.from_city]
+    );
+    
+    await conn.commit();
+    
+    return {
+      success: true,
+      message: `Movement cancelled: ${movement.quantity} containers returned to ${movement.from_city}`
+    };
+    
+  } catch (error) {
+    await conn.rollback();
+    console.error('cancelContainerMovement error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Get all container movements with optional status filter
+ * @param {string} status - Optional status filter (pending, confirmed, cancelled)
+ * @returns {Promise<Array>} List of movements
+ */
+async function getContainerMovements(status = null) {
+  try {
+    let query = `
+      SELECT movement_id, from_city, to_city, quantity, status,
+             created_by, created_by_name, confirmed_by, confirmed_by_name,
+             notes, created_at, confirmed_at
+      FROM ContainerMovements
+    `;
+    
+    const params = [];
+    if (status) {
+      query += ' WHERE status = ?';
+      params.push(status);
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    const [rows] = await pool.query(query, params);
+    return rows;
+  } catch (error) {
+    console.error('getContainerMovements error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get container movement by ID
+ * @param {string} movementId - Movement ID
+ * @returns {Promise<Object|null>} Movement details or null
+ */
+async function getContainerMovementById(movementId) {
+  try {
+    const [[movement]] = await pool.query(
+      `SELECT * FROM ContainerMovements WHERE movement_id = ?`,
+      [movementId]
+    );
+    return movement || null;
+  } catch (error) {
+    console.error('getContainerMovementById error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a container movement record (admin only)
+ * @param {string} movementId - Movement ID
+ * @returns {Promise<Object>} Result
+ */
+async function deleteContainerMovement(movementId) {
+  try {
+    const [result] = await pool.query(
+      `DELETE FROM ContainerMovements WHERE movement_id = ?`,
+      [movementId]
+    );
+    
+    if (result.affectedRows === 0) {
+      return { success: false, message: 'Movement not found' };
+    }
+    
+    return {
+      success: true,
+      message: 'Movement record deleted successfully'
+    };
+  } catch (error) {
+    console.error('deleteContainerMovement error:', error);
+    return { success: false, message: error.message };
+  }
 }
 
 module.exports = {
@@ -3769,7 +4071,16 @@ assignBoxesToPallet,
     archiveSeasonData,
     getHistoricalReport,
     compareSeasons,
-    recordReportExport
+    recordReportExport,
+    // Container tracking
+    getContainerInventory,
+    updateCityContainers,
+    createContainerMovement,
+    confirmContainerMovement,
+    cancelContainerMovement,
+    getContainerMovements,
+    getContainerMovementById,
+    deleteContainerMovement
 }
 
 // ===== AUTOMATIC INVENTORY DEDUCTION (Pouch Usage) =====
@@ -3799,7 +4110,7 @@ async function getAutoInventoryTransactionByOrder(orderId) {
  * @returns {Promise<Object>} { success, inventoryTxId, costEntryId, message }
  */
 async function createAutoInventoryDeduction(orderId, pouchCount, unitCost = 0.5) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   
   try {
     await conn.beginTransaction();
@@ -4025,7 +4336,7 @@ async function listReportSnapshots(filters = {}) {
  * Moves data to archive tables while preserving for historical analysis
  */
 async function archiveSeasonData(seasonName, periodStart, periodEnd) {
-  const conn = await pool.getConnection();
+  const conn = await getConnectionWithTimezone();
   
   try {
     await conn.beginTransaction();
@@ -4279,3 +4590,4 @@ async function recordReportExport(exportType, reportType, periodStart, periodEnd
 }
 
 module.exports.pool = pool;
+module.exports.getConnectionWithTimezone = getConnectionWithTimezone;

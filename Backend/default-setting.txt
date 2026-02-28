@@ -7,3 +7,4 @@ reservation_system_locked:false
 reservation_time_slot_minutes:30
 reservation_hours_start:8
 reservation_hours_end:20
+reservation_advance_booking_days:14

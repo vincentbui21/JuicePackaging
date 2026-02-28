@@ -35,6 +35,7 @@ import DiscountManagement from "./pages/DiscountManagement.jsx";
 import ReservationManagement from "./pages/ReservationManagement.jsx";
 
 import DeleteBinPage from "./pages/DeleteBinPage.jsx";
+import ContainerTrackingPage from "./pages/ContainerTrackingPage.jsx";
 
 /** Helper to wrap a page with the dashboard layout */
 const wrap = (Content, { icon, title, subtitle, badge }) => (
@@ -95,6 +96,9 @@ const router = createBrowserRouter([
   )},
   { path: "/unified-management", element: (
     <ProtectedRoute>{wrap(UnifiedManagement, { icon: UserCog, title: "Unified Management" })}</ProtectedRoute>
+  )},
+  { path: "/container-tracking", element: (
+    <ProtectedRoute>{wrap(ContainerTrackingPage, { icon: Package, title: "Container Tracking", subtitle: "Track physical containers moving between cities" })}</ProtectedRoute>
   )},
 
   // Redirects for merged pages
