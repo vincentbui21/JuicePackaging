@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manual Images - Current Status</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #3b82f6;
+      padding-bottom: 10px;
+    }
+    .summary {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .summary h2 {
+      margin-top: 0;
+      color: #333;
+    }
+    .stats {
+      display: flex;
+      gap: 30px;
+      margin: 20px 0;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+    .stat-value {
+      font-size: 48px;
+      font-weight: bold;
+    }
+    .stat-value.found { color: #10b981; }
+    .stat-value.missing { color: #ef4444; }
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+      margin-top: 5px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 30px;
+      background: #e2e8f0;
+      border-radius: 15px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #3b82f6);
+      transition: width 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .section h3 {
+      margin-top: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .image-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+    .image-item {
+      padding: 12px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+    }
+    .image-item.found {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .image-item.missing {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .icon {
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .cleanup {
+      background: #fff7ed;
+      border: 2px solid #fb923c;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .cleanup h3 {
+      margin-top: 0;
+      color: #c2410c;
+    }
+    .file-list {
+      background: #fef3c7;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    .file-list div {
+      padding: 4px 0;
+    }
+    .action-button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    .action-button:hover {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>🖼️ Admin Reports Manual - Image Status</h1>
+  
+  <div class="summary">
+    <h2>📊 Overall Progress</h2>
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-value found">10</span>
+        <span class="stat-label">✅ Images Found</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value missing">7</span>
+        <span class="stat-label">❌ Images Missing</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" style="color: #3b82f6;">17</span>
+        <span class="stat-label">📦 Total Required</span>
+      </div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" style="width: 59%">59% Complete</div>
+    </div>
+    <p style="color: #666; margin-top: 15px;">
+      <strong>Good news!</strong> Most of your manual sections will work. The missing images are only for Costs (entries), Inventory, and Statements tabs.
+    </p>
+  </div>
+
+  <div class="section">
+    <h3>
+      <span style="color: #10b981; font-size: 24px;">✅</span>
+      Working Sections (10 images found)
+    </h3>
+    <div class="image-list">
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>sidebar-access.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>page-header.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>filters-card.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>historical-card.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>date-filters.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>export-buttons.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>historical-mode.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>overview-kpis.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>overview-charts.png</span>
+      </div>
+      <div class="image-item found">
+        <span class="icon">✓</span>
+        <span>cost-centers.png</span>
+      </div>
+    </div>
+    <p style="margin-top: 15px; color: #065f46; font-size: 14px;">
+      ✨ These sections will display perfectly: Access, Layout, Filters, Header Actions, Historical Mode, Overview Tab, and part of Costs Tab
+    </p>
+  </div>
+
+  <div class="section">
+    <h3>
+      <span style="color: #ef4444; font-size: 24px;">⚠️</span>
+      Sections with Missing Images (7 images)
+    </h3>
+    <div class="image-list">
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>cost-entries.png</span>
+      </div>
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>inventory-summary.png</span>
+      </div>
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>inventory-items.png</span>
+      </div>
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>inventory-transactions.png</span>
+      </div>
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>auto-transactions.png</span>
+      </div>
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>income-statement.png</span>
+      </div>
+      <div class="image-item missing">
+        <span class="icon">✗</span>
+        <span>balance-sheet.png</span>
+      </div>
+    </div>
+    <p style="margin-top: 15px; color: #991b1b; font-size: 14px;">
+      ⚠️ These sections will show placeholder text: Cost Entries, Inventory Tab (all 4 sections), and Statements Tab (2 sections)
+    </p>
+  </div>
+
+  <div class="cleanup">
+    <h3>🧹 Cleanup Recommended</h3>
+    <p>Your manual-images folder contains extra files that aren't needed:</p>
+    <div class="file-list">
+      <div><strong>Duplicate images (with suffixes):</strong></div>
+      <div>• *-copy.png files (10 duplicates)</div>
+      <div>• * (1).png files (10 duplicates)</div>
+      <div style="margin-top: 10px;"><strong>Unrelated files:</strong></div>
+      <div>• Avatar1.jpg</div>
+      <div>• Avatar2.PNG</div>
+      <div>• Codex.dmg</div>
+      <div>• IMG_1788.png</div>
+      <div>• export-0x0e4c16887fbb00d490faca2018956df118145978.csv</div>
+    </div>
+    <p style="margin-top: 15px; font-size: 14px;">
+      <strong>Recommendation:</strong> Keep only the files without suffixes (e.g., keep "sidebar-access.png", delete "sidebar-access (1).png" and "sidebar-access copy.png"). Delete the Avatar, Codex, IMG, and CSV files.
+    </p>
+  </div>
+
+  <div class="summary">
+    <h2>🎯 Next Steps</h2>
+    <ol style="line-height: 1.8;">
+      <li><strong>Test the Manual</strong>: Open your app and navigate to Admin Reports → User Manual to see it working with the 10 images you have</li>
+      <li><strong>Optional - Generate Missing Images</strong>: If you want complete coverage, regenerate all 17 images using <code>generate-images.html</code></li>
+      <li><strong>Clean Up Folder</strong>: Remove duplicate and unrelated files to keep the folder organized</li>
+      <li><strong>Replace with Real Screenshots</strong>: When ready, take actual screenshots from your app to replace the mockups</li>
+    </ol>
+  </div>
+
+  <div class="summary" style="background: #dbeafe; border: 2px solid #3b82f6;">
+    <h2 style="color: #1e40af;">✅ Manual Status: Mostly Ready!</h2>
+    <p style="font-size: 16px; color: #1e3a8a; margin: 0;">
+      <strong>59% of images are present.</strong> Your manual is functional for the most important sections (Overview, Filters, Navigation). 
+      The missing images only affect detail views in Costs, Inventory, and Statements tabs.
+    </p>
+  </div>
+
+</body>
+</html>

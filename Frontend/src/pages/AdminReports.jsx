@@ -34,8 +34,9 @@ import {
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, ResponsiveContainer } from "recharts";
-import { Download, FileText, Save } from "lucide-react";
+import { Download, FileText, Save, BookOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import ThemeModeToggle from "../components/ThemeModeToggle";
 import api from "../services/axios";
 import { buildAdminReport } from "../utils/adminReport";
@@ -151,6 +152,7 @@ const TabPanel = ({ value, tab, children }) => (
 export default function AdminReports() {
   const theme = useTheme();
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const chartColors = useMemo(() => ({
     kilos: theme.palette.primary.main,
     pouches: theme.palette.warning.main,
@@ -1476,6 +1478,14 @@ export default function AdminReports() {
           <Typography variant="body2" color="text.secondary">{t("admin_reports.subtitle")}</Typography>
         </Box>
         <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+          <Button 
+            variant="outlined" 
+            startIcon={<BookOpen size={16} />} 
+            onClick={() => navigate("/admin/user-manual")}
+            size="small"
+          >
+            {t("admin_reports.actions.user_manual", "User Manual")}
+          </Button>
           <ThemeModeToggle />
           <Button variant="outlined" startIcon={<Download size={16} />} onClick={handleExportCsv}>
             {t("admin_reports.actions.export_csv")}

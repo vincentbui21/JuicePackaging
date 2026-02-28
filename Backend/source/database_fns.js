@@ -2357,15 +2357,11 @@ async function checkPassword(id, inputPassword) {
 // ...existing connection setup + helpers...
 
 async function ping() {
-  // use whatever low-level call you already use internally
-  if (typeof query === 'function') {
-    await query('SELECT 1');
-  } else if (pool?.query) {
-    await pool.query('SELECT 1');
-  } else if (conn?.query) {
-    await conn.query('SELECT 1');
-  } else {
-    throw new Error('No underlying query function available for ping()');
+  // Use the pool directly to test database connectivity
+  try {
+    await pool.query('SELECT 1 AS ok');
+  } catch (error) {
+    throw new Error(`Database ping failed: ${error.message}`);
   }
 }
 

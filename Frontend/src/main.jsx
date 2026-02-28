@@ -30,6 +30,7 @@ import PalletToShelfHandlePage from "./pages/PalletToShelfHandlePage.jsx";
 import PickupPage from "./pages/PickupPage.jsx";
 import SettingPage from "./pages/settingPage.jsx";
 import AdminReports from "./pages/AdminReports.jsx";
+import UserManualPage from "./pages/UserManualPage.jsx";
 import DiscountManagement from "./pages/DiscountManagement.jsx";
 import ReservationManagement from "./pages/ReservationManagement.jsx";
 
@@ -111,6 +112,12 @@ const router = createBrowserRouter([
   { path: "/admin/reports", element: (
     <AdminRoute requirePermission="can_view_reports">
       <AdminReportsLayout><AdminReports /></AdminReportsLayout>
+    </AdminRoute>
+  )},
+  
+  { path: "/admin/user-manual", element: (
+    <AdminRoute requirePermission="can_view_reports">
+      <DashboardLayout><UserManualPage /></DashboardLayout>
     </AdminRoute>
   )},
 ]);
