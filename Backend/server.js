@@ -469,6 +469,28 @@ app.post('/new-entry', async (req, res) => {
       return res.status(400).send('something wrong');
     }
 
+    // Container tracking: update container usage based on city
+    try {
+      const city = customer_datas?.city || '';
+      const crateCount = parseInt(order_datas?.No_of_Crates) || 0;
+      const orderId = update.order_id;
+
+      if (city && crateCount > 0 && orderId) {
+        if (city.toLowerCase() === 'kuopio') {
+          // Kuopio customer: mark containers as in use when order is taken in
+          await database.handleKuopioOrderTakeIn(orderId, crateCount);
+          console.log(`[Containers] Kuopio order ${orderId}: ${crateCount} container(s) marked in use`);
+        } else {
+          // Non-Kuopio customer: create an order arrival movement from source city to Kuopio
+          const mvResult = await database.createOrderContainerMovement(orderId, city, crateCount);
+          console.log(`[Containers] ${city} → Kuopio movement: ${mvResult.message}`);
+        }
+      }
+    } catch (containerErr) {
+      // Don't fail the order creation if container tracking fails
+      console.warn('[Containers] Failed to update container tracking:', containerErr.message);
+    }
+
     // SUCCESS — emit the live notification before responding
     emitActivity(
       'customer',
@@ -482,7 +504,9 @@ app.post('/new-entry', async (req, res) => {
     // (optional) still broadcast any existing events your UI listens for
     io.emit('order-status-updated');
 
-    return res.status(200).send(update);
+    // Return crate IDs array for backward compatibility with frontend
+    const responseData = update.crateIDs || update;
+    return res.status(200).send(responseData);
   } catch (err) {
     console.error('new-entry error', err);
     return res.status(500).send('server error');
@@ -710,9 +734,23 @@ const markDoneHandler = async (req, res) => {
 
     // Get the updated order to determine actual status (for reservations it's "Ready for pickup")
     const [[updatedOrder]] = await database.pool.query(
-      `SELECT status, is_from_reservation FROM Orders WHERE order_id = ?`,
+      `SELECT o.status, o.is_from_reservation, o.boxes_count, o.crate_count, c.city
+       FROM Orders o JOIN Customers c ON o.customer_id = c.customer_id
+       WHERE o.order_id = ?`,
       [order_id]
     );
+
+    // CONTAINER TRACKING: When processing is complete, switch from crates to boxes
+    try {
+      const boxCount = updatedOrder?.boxes_count || result?.boxes_count || 0;
+      const sourceCity = updatedOrder?.city || '';
+      if (boxCount > 0 || sourceCity) {
+        const containerResult = await database.handleProcessingCompleteContainers(order_id, boxCount, sourceCity);
+        console.log(`[Containers] Processing complete: ${containerResult.message}`);
+      }
+    } catch (containerErr) {
+      console.warn(`[Containers] Failed to update containers for ${order_id}:`, containerErr.message);
+    }
 
     // AUTO-DEDUCT INVENTORY: When order is marked done
     // Automatically reduce pouch inventory and create COGS entry
@@ -896,7 +934,25 @@ app.post('/orders/:order_id/ready', async (req, res) => {
     const { order_id } = req.params;
   
     try {
+      // Get order info before marking as picked up (for container tracking)
+      const orderInfo = await database.getOrderById(order_id);
+
       await database.markOrderAsPickedUp(order_id);
+
+      // CONTAINER TRACKING: Update containers when order is picked up
+      try {
+        const city = orderInfo?.city || '';
+        if (city.toLowerCase() === 'kuopio' || !city) {
+          // Kuopio customer: release containers from Kuopio's in_use
+          await database.handleKuopioOrderPickup(order_id);
+          console.log(`[Containers] Kuopio pickup: containers released for order ${order_id}`);
+        }
+        // For non-Kuopio orders picked up at Kuopio: 
+        // The return movement handles the transfer. Boxes are sent back separately.
+        // When boxes are finally picked up from the source city, handleSourceCityPickup is called.
+      } catch (containerErr) {
+        console.warn(`[Containers] Failed to update containers on pickup for ${order_id}:`, containerErr.message);
+      }
   
       io.emit("order-status-updated");
       emitActivity('pickup', `Order ${order_id} picked up`, { order_id });
@@ -1295,11 +1351,60 @@ app.delete('/cities', async (req, res) => {
 
 // ===== CONTAINER TRACKING ROUTES =====
 
+async function getContainerAccessContext(userId) {
+  if (!userId) {
+    return { role: null, allowedCities: [], hasFullAccess: true };
+  }
+
+  const [accounts] = await pool.query(
+    'SELECT allowed_cities, role FROM Accounts WHERE id = ? LIMIT 1',
+    [userId]
+  );
+
+  if (accounts.length === 0) {
+    return { role: null, allowedCities: [], hasFullAccess: false, notFound: true };
+  }
+
+  const account = accounts[0];
+  let allowedCities = [];
+  try {
+    allowedCities = account.allowed_cities ? JSON.parse(account.allowed_cities) : [];
+  } catch (e) {
+    allowedCities = [];
+  }
+
+  const hasFullAccess = account.role === 'admin' || allowedCities.length === 0;
+  return { role: account.role, allowedCities, hasFullAccess };
+}
+
+function canAccessMovementByCity(movement, allowedCities) {
+  if (!movement) return false;
+  return allowedCities.includes(movement.from_city) || allowedCities.includes(movement.to_city);
+}
+
+function filterMovementsByCities(movements, allowedCities) {
+  return movements.filter((m) => canAccessMovementByCity(m, allowedCities));
+}
+
+function filterInventoryByCities(inventory, allowedCities) {
+  return inventory.filter((c) => allowedCities.includes(c.name));
+}
+
 // Get container inventory for all cities
 app.get('/containers/inventory', async (req, res) => {
     try {
+    const userId = req.query.userId || null;
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
         const inventory = await database.getContainerInventory();
-        res.json(inventory);
+    if (access.hasFullAccess) {
+      return res.json(inventory);
+    }
+
+    return res.json(filterInventoryByCities(inventory, access.allowedCities));
     } catch (err) {
         console.error('Error fetching container inventory:', err);
         res.status(500).json({ error: 'Server error' });
@@ -1311,6 +1416,15 @@ app.put('/containers/inventory/:cityName', async (req, res) => {
     try {
         const { cityName } = req.params;
         const { containers_total, containers_in_use } = req.body;
+    const userId = req.body.userId || null;
+
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+    if (!access.hasFullAccess && !access.allowedCities.includes(cityName)) {
+      return res.status(403).json({ error: `You do not have permission to edit ${cityName} container inventory` });
+    }
         
         if (containers_total === undefined || containers_in_use === undefined) {
             return res.status(400).json({ error: 'Both containers_total and containers_in_use are required' });
@@ -1395,8 +1509,18 @@ app.post('/containers/movements', async (req, res) => {
 app.get('/containers/movements', async (req, res) => {
     try {
         const { status } = req.query;
+    const userId = req.query.userId || null;
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
         const movements = await database.getContainerMovements(status || null);
-        res.json(movements);
+    if (access.hasFullAccess) {
+      return res.json(movements);
+    }
+
+    return res.json(filterMovementsByCities(movements, access.allowedCities));
     } catch (err) {
         console.error('Error fetching container movements:', err);
         res.status(500).json({ error: 'Server error' });
@@ -1407,10 +1531,19 @@ app.get('/containers/movements', async (req, res) => {
 app.get('/containers/movements/:movementId', async (req, res) => {
     try {
         const { movementId } = req.params;
+    const userId = req.query.userId || null;
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
         const movement = await database.getContainerMovementById(movementId);
         
         if (movement) {
-            res.json(movement);
+      if (!access.hasFullAccess && !canAccessMovementByCity(movement, access.allowedCities)) {
+        return res.status(403).json({ error: 'You do not have permission to view this movement' });
+      }
+      res.json(movement);
         } else {
             res.status(404).json({ error: 'Movement not found' });
         }
@@ -1428,6 +1561,18 @@ app.post('/containers/movements/:movementId/confirm', async (req, res) => {
         // Get employee info from auth header/session (placeholder for now)
         const confirmed_by = req.body.confirmed_by || 'employee';
         const confirmed_by_name = req.body.confirmed_by_name || 'Employee';
+
+        const access = await getContainerAccessContext(confirmed_by);
+        if (access.notFound) {
+          return res.status(401).json({ error: 'User authentication required' });
+        }
+
+        if (!access.hasFullAccess) {
+          const movement = await database.getContainerMovementById(movementId);
+          if (!movement || !canAccessMovementByCity(movement, access.allowedCities)) {
+            return res.status(403).json({ error: 'You do not have permission to confirm this movement' });
+          }
+        }
         
         const result = await database.confirmContainerMovement(
             movementId,
@@ -1450,6 +1595,19 @@ app.post('/containers/movements/:movementId/confirm', async (req, res) => {
 app.post('/containers/movements/:movementId/cancel', async (req, res) => {
     try {
         const { movementId } = req.params;
+    const userId = req.body.userId || null;
+
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    if (!access.hasFullAccess) {
+      const movement = await database.getContainerMovementById(movementId);
+      if (!movement || !canAccessMovementByCity(movement, access.allowedCities)) {
+        return res.status(403).json({ error: 'You do not have permission to cancel this movement' });
+      }
+    }
         
         const result = await database.cancelContainerMovement(movementId);
         
@@ -1495,6 +1653,136 @@ app.delete('/containers/movements/:movementId', async (req, res) => {
         }
     } catch (err) {
         console.error('Error deleting container movement:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ===== CONTAINER-ORDER INTEGRATION ROUTES =====
+
+// Confirm order arrival at Kuopio (verifies container movement for incoming orders)
+app.post('/containers/orders/:orderId/confirm-arrival', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const confirmed_by = req.body.confirmed_by || null;
+        const confirmed_by_name = req.body.confirmed_by_name || 'Employee';
+
+    const access = await getContainerAccessContext(confirmed_by);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    if (!access.hasFullAccess) {
+      const orderMovements = await database.getContainerMovementsByOrder(orderId);
+      const arrivalMovement = orderMovements.find(m => m.movement_type === 'order_arrival' && m.status === 'pending');
+      if (!arrivalMovement || !canAccessMovementByCity(arrivalMovement, access.allowedCities)) {
+        return res.status(403).json({ error: 'You do not have permission to confirm arrival for this order' });
+      }
+    }
+
+        const result = await database.confirmOrderArrival(orderId, confirmed_by, confirmed_by_name);
+        
+        if (result.success) {
+            io.emit('container-inventory-updated');
+            io.emit('order-status-updated');
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error confirming order arrival:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Confirm return of boxes to source city (when boxes arrive back at source city)
+app.post('/containers/orders/:orderId/confirm-return', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const confirmed_by = req.body.confirmed_by || null;
+        const confirmed_by_name = req.body.confirmed_by_name || 'Employee';
+
+    const access = await getContainerAccessContext(confirmed_by);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+        // Find the pending return movement for this order
+        const movements = await database.getContainerMovementsByOrder(orderId);
+        const returnMovement = movements.find(m => m.movement_type === 'order_return' && m.status === 'pending');
+
+    if (!access.hasFullAccess && (!returnMovement || !canAccessMovementByCity(returnMovement, access.allowedCities))) {
+      return res.status(403).json({ error: 'You do not have permission to confirm return for this order' });
+    }
+
+        if (!returnMovement) {
+            return res.status(404).json({ error: 'No pending return movement found for this order' });
+        }
+
+        const result = await database.confirmOrderReturn(returnMovement.movement_id, confirmed_by, confirmed_by_name);
+        
+        if (result.success) {
+            io.emit('container-inventory-updated');
+            io.emit('order-status-updated');
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error confirming order return:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Mark boxes as picked up from source city (final customer pickup at origin city)
+app.post('/containers/orders/:orderId/source-pickup', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+    const userId = req.body.userId || null;
+
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    if (!access.hasFullAccess) {
+      const movements = await database.getContainerMovementsByOrder(orderId);
+      const returnMovement = movements.find(m => m.movement_type === 'order_return');
+      if (!returnMovement || !canAccessMovementByCity(returnMovement, access.allowedCities)) {
+        return res.status(403).json({ error: 'You do not have permission to process source pickup for this order' });
+      }
+    }
+
+        const result = await database.handleSourceCityPickup(orderId);
+        
+        if (result.success) {
+            io.emit('container-inventory-updated');
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (err) {
+        console.error('Error processing source city pickup:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get container movements linked to a specific order
+app.get('/containers/orders/:orderId/movements', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+    const userId = req.query.userId || null;
+    const access = await getContainerAccessContext(userId);
+    if (access.notFound) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+        const movements = await database.getContainerMovementsByOrder(orderId);
+    if (access.hasFullAccess) {
+      return res.json(movements);
+    }
+    return res.json(filterMovementsByCities(movements, access.allowedCities));
+    } catch (err) {
+        console.error('Error fetching order container movements:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
@@ -3195,6 +3483,17 @@ app.post('/api/reservations/:id/check-in', async (req, res) => {
     }
 
     await connection.commit();
+
+    // CONTAINER TRACKING: Reservation check-ins are treated as Kuopio orders
+    // (Customer portal bookings are for Kuopio processing)
+    // Note: Reservations don't have crate counts, so we estimate from weight
+    try {
+      const estimatedCrates = Math.max(1, Math.ceil(safeWeight / 20)); // ~20kg per crate
+      await database.handleKuopioOrderTakeIn(order_id, estimatedCrates);
+      console.log(`[Containers] Reservation check-in ${order_id}: ${estimatedCrates} container(s) marked in use at Kuopio`);
+    } catch (containerErr) {
+      console.warn(`[Containers] Failed to update containers for reservation ${order_id}:`, containerErr.message);
+    }
 
     // Emit socket event
     const io = req.app.get('io');

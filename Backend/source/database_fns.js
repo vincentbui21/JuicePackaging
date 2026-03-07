@@ -147,7 +147,7 @@ async function update_new_customer_data(customer_data, order_data) {
 
         await connection.commit();
         connection.release()
-        return crateID
+        return { crateIDs: crateID, order_id: orderID, customer_id: customerID, city: customer_data.city, crate_count: parseInt(order_data.No_of_Crates) }
     } catch (error) {
         await connection.rollback();
         console.error('Transaction error:', error);
@@ -3892,7 +3892,8 @@ async function getContainerMovements(status = null) {
     let query = `
       SELECT movement_id, from_city, to_city, quantity, status,
              created_by, created_by_name, confirmed_by, confirmed_by_name,
-             notes, created_at, confirmed_at
+             notes, order_id, movement_type, container_count_type,
+             created_at, confirmed_at
       FROM ContainerMovements
     `;
     
@@ -3953,6 +3954,439 @@ async function deleteContainerMovement(movementId) {
   } catch (error) {
     console.error('deleteContainerMovement error:', error);
     return { success: false, message: error.message };
+  }
+}
+
+// ===== CONTAINER-ORDER INTEGRATION =====
+
+/**
+ * When a non-Kuopio order is registered, mark the source city's containers as "in use"
+ * (crates are physically loaded and sent to Kuopio for processing).
+ * Creates an automatic 'order_arrival' container movement from source city to Kuopio.
+ * @param {string} orderId - The order ID
+ * @param {string} sourceCity - The city the order originates from
+ * @param {number} crateCount - Number of crates (containers) being sent
+ * @returns {Promise<Object>} Result with movement_id
+ */
+async function createOrderContainerMovement(orderId, sourceCity, crateCount) {
+  if (!sourceCity || sourceCity.toLowerCase() === 'kuopio' || !crateCount || crateCount <= 0) {
+    return { success: false, message: 'No container movement needed for Kuopio orders or zero crates' };
+  }
+
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    const movementId = generateUUID();
+
+    // Insert order-linked movement
+    await conn.query(
+      `INSERT INTO ContainerMovements 
+       (movement_id, from_city, to_city, quantity, status, created_by_name, notes, order_id, movement_type, container_count_type)
+       VALUES (?, ?, 'Kuopio', ?, 'pending', 'System', ?, ?, 'order_arrival', 'crates')`,
+      [movementId, sourceCity, crateCount, `Auto-created: ${crateCount} crate(s) arriving with order`, orderId]
+    );
+
+    // Mark containers as in_use at the source city
+    await conn.query(
+      `UPDATE Cities SET containers_in_use = containers_in_use + ? WHERE name = ?`,
+      [crateCount, sourceCity]
+    );
+
+    await conn.commit();
+    return {
+      success: true,
+      movement_id: movementId,
+      message: `Container movement created: ${crateCount} crate(s) from ${sourceCity} to Kuopio for order ${orderId}`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('createOrderContainerMovement error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Confirm arrival of an order's containers in Kuopio.
+ * Transfers containers from source city to Kuopio.
+ * @param {string} orderId - The order ID
+ * @param {string} confirmedBy - Employee ID confirming
+ * @param {string} confirmedByName - Employee name confirming
+ * @returns {Promise<Object>} Result
+ */
+async function confirmOrderArrival(orderId, confirmedBy, confirmedByName) {
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    // Find the pending order_arrival movement for this order
+    const [[movement]] = await conn.query(
+      `SELECT * FROM ContainerMovements 
+       WHERE order_id = ? AND movement_type = 'order_arrival' AND status = 'pending'
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (!movement) {
+      await conn.commit();
+      return { success: false, message: 'No pending arrival movement found for this order' };
+    }
+
+    // Confirm the movement
+    await conn.query(
+      `UPDATE ContainerMovements 
+       SET status = 'confirmed', confirmed_by = ?, confirmed_by_name = ?, confirmed_at = NOW()
+       WHERE movement_id = ?`,
+      [confirmedBy, confirmedByName, movement.movement_id]
+    );
+
+    // Transfer containers: reduce source city total & in_use, increase Kuopio total
+    await conn.query(
+      `UPDATE Cities 
+       SET containers_total = containers_total - ?, containers_in_use = containers_in_use - ?
+       WHERE name = ?`,
+      [movement.quantity, movement.quantity, movement.from_city]
+    );
+
+    await conn.query(
+      `UPDATE Cities SET containers_total = containers_total + ? WHERE name = ?`,
+      [movement.quantity, 'Kuopio']
+    );
+
+    // Also increase Kuopio's in_use (containers are now being used for processing)
+    await conn.query(
+      `UPDATE Cities SET containers_in_use = containers_in_use + ? WHERE name = ?`,
+      [movement.quantity, 'Kuopio']
+    );
+
+    await conn.commit();
+    return {
+      success: true,
+      message: `Order ${orderId} arrival confirmed: ${movement.quantity} containers transferred from ${movement.from_city} to Kuopio`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('confirmOrderArrival error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * When an order reaches "Processing complete", switch container tracking from crates to boxes.
+ * Creates a return movement (order_return) for the boxes that need to go back to the source city.
+ * For Kuopio orders, just updates Kuopio's in_use count.
+ * @param {string} orderId - The order ID
+ * @param {number} boxCount - Number of boxes produced
+ * @param {string} sourceCity - The city the order came from
+ * @returns {Promise<Object>} Result
+ */
+async function handleProcessingCompleteContainers(orderId, boxCount, sourceCity) {
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    const isKuopio = !sourceCity || sourceCity.toLowerCase() === 'kuopio';
+
+    if (isKuopio) {
+      // For Kuopio orders: the crates were already tracked when the order was taken in
+      // Now release the crate containers from in_use (processing is done)
+      // and add box containers to in_use (boxes are now occupying container space)
+      // Net effect: update in_use from crate count to box count
+      const [[order]] = await conn.query(
+        `SELECT crate_count FROM Orders WHERE order_id = ?`, [orderId]
+      );
+      const crateCount = order?.crate_count || 0;
+
+      if (crateCount > 0) {
+        // Release crate containers
+        await conn.query(
+          `UPDATE Cities SET containers_in_use = GREATEST(containers_in_use - ?, 0) WHERE name = 'Kuopio'`,
+          [crateCount]
+        );
+      }
+      // Boxes will be accounted for when they are placed on shelves / ready for pickup
+      // No return movement needed for Kuopio customers
+
+      await conn.commit();
+      return {
+        success: true,
+        message: `Kuopio order ${orderId}: released ${crateCount} crate containers, ${boxCount} boxes produced`
+      };
+    }
+
+    // For non-Kuopio orders:
+    // 1. Release Kuopio's in_use from the crate count (arrival was confirmed earlier)
+    const [[order]] = await conn.query(
+      `SELECT crate_count FROM Orders WHERE order_id = ?`, [orderId]
+    );
+    const crateCount = order?.crate_count || 0;
+
+    if (crateCount > 0) {
+      await conn.query(
+        `UPDATE Cities SET containers_in_use = GREATEST(containers_in_use - ?, 0) WHERE name = 'Kuopio'`,
+        [crateCount]
+      );
+    }
+
+    // 2. Create a return movement for the boxes going back to the source city
+    if (boxCount > 0) {
+      const returnMovementId = generateUUID();
+      await conn.query(
+        `INSERT INTO ContainerMovements 
+         (movement_id, from_city, to_city, quantity, status, created_by_name, notes, order_id, movement_type, container_count_type)
+         VALUES (?, 'Kuopio', ?, ?, 'pending', 'System', ?, ?, 'order_return', 'boxes')`,
+        [returnMovementId, sourceCity, boxCount,
+         `Auto-created: ${boxCount} box(es) to return to ${sourceCity} for order`,
+         orderId]
+      );
+
+      // Mark boxes as in_use at Kuopio (they are occupying Kuopio's containers until sent back)
+      await conn.query(
+        `UPDATE Cities SET containers_in_use = containers_in_use + ? WHERE name = 'Kuopio'`,
+        [boxCount]
+      );
+    }
+
+    await conn.commit();
+    return {
+      success: true,
+      message: `Order ${orderId}: processing complete, ${boxCount} box(es) pending return to ${sourceCity}`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('handleProcessingCompleteContainers error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * When Kuopio order is taken in (registered), mark containers as in_use.
+ * @param {string} orderId - The order ID
+ * @param {number} crateCount - Number of crates
+ * @returns {Promise<Object>} Result
+ */
+async function handleKuopioOrderTakeIn(orderId, crateCount) {
+  if (!crateCount || crateCount <= 0) {
+    return { success: true, message: 'No containers to track' };
+  }
+  
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    // Increase Kuopio's in_use count when order is taken in
+    await conn.query(
+      `UPDATE Cities SET containers_in_use = containers_in_use + ? WHERE name = 'Kuopio'`,
+      [crateCount]
+    );
+
+    await conn.commit();
+    return {
+      success: true,
+      message: `Kuopio order ${orderId}: ${crateCount} container(s) marked as in use`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('handleKuopioOrderTakeIn error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * When an order is picked up from Kuopio (for Kuopio customers),
+ * release the containers from Kuopio's in_use.
+ * @param {string} orderId - The order ID
+ * @returns {Promise<Object>} Result
+ */
+async function handleKuopioOrderPickup(orderId) {
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    // Get the order's box count (what the customer picks up)
+    const [[order]] = await conn.query(
+      `SELECT o.boxes_count, c.city FROM Orders o
+       JOIN Customers c ON o.customer_id = c.customer_id
+       WHERE o.order_id = ?`,
+      [orderId]
+    );
+
+    if (!order) {
+      await conn.commit();
+      return { success: false, message: 'Order not found' };
+    }
+
+    const boxCount = order.boxes_count || 0;
+    const isKuopio = !order.city || order.city.toLowerCase() === 'kuopio';
+
+    if (isKuopio && boxCount > 0) {
+      // Kuopio customer picking up: release boxes from Kuopio's in_use
+      await conn.query(
+        `UPDATE Cities SET containers_in_use = GREATEST(containers_in_use - ?, 0) WHERE name = 'Kuopio'`,
+        [boxCount]
+      );
+    }
+
+    await conn.commit();
+    return {
+      success: true,
+      message: `Order ${orderId} picked up: ${boxCount} container(s) released from Kuopio`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('handleKuopioOrderPickup error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * When a return movement is confirmed (boxes picked up from source city),
+ * update the source city's container counts.
+ * This is called when the order_return movement is confirmed at the source city.
+ * @param {string} movementId - The movement ID
+ * @param {string} confirmedBy - Employee ID confirming
+ * @param {string} confirmedByName - Employee name confirming
+ * @returns {Promise<Object>} Result
+ */
+async function confirmOrderReturn(movementId, confirmedBy, confirmedByName) {
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    const [[movement]] = await conn.query(
+      `SELECT * FROM ContainerMovements WHERE movement_id = ? AND status = 'pending'`,
+      [movementId]
+    );
+
+    if (!movement) {
+      await conn.commit();
+      return { success: false, message: 'Movement not found or already processed' };
+    }
+
+    // Confirm the return movement
+    await conn.query(
+      `UPDATE ContainerMovements 
+       SET status = 'confirmed', confirmed_by = ?, confirmed_by_name = ?, confirmed_at = NOW()
+       WHERE movement_id = ?`,
+      [confirmedBy, confirmedByName, movementId]
+    );
+
+    // Release from Kuopio (source of return): reduce total and in_use
+    await conn.query(
+      `UPDATE Cities 
+       SET containers_total = GREATEST(containers_total - ?, 0),
+           containers_in_use = GREATEST(containers_in_use - ?, 0)
+       WHERE name = ?`,
+      [movement.quantity, movement.quantity, movement.from_city]
+    );
+
+    // Add to destination city (source city of original order): increase total
+    await conn.query(
+      `UPDATE Cities SET containers_total = containers_total + ? WHERE name = ?`,
+      [movement.quantity, movement.to_city]
+    );
+
+    await conn.commit();
+    return {
+      success: true,
+      message: `Return confirmed: ${movement.quantity} box(es) received in ${movement.to_city}`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('confirmOrderReturn error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Get container movements linked to a specific order
+ * @param {string} orderId - The order ID
+ * @returns {Promise<Array>} List of movements for this order
+ */
+async function getContainerMovementsByOrder(orderId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT movement_id, from_city, to_city, quantity, status,
+              created_by, created_by_name, confirmed_by, confirmed_by_name,
+              notes, order_id, movement_type, container_count_type,
+              created_at, confirmed_at
+       FROM ContainerMovements
+       WHERE order_id = ?
+       ORDER BY created_at ASC`,
+      [orderId]
+    );
+    return rows;
+  } catch (error) {
+    console.error('getContainerMovementsByOrder error:', error);
+    return [];
+  }
+}
+
+/**
+ * When an order from source city is finally picked up by the customer at the source city,
+ * update that city's containers. This happens when the return movement boxes are collected.
+ * @param {string} orderId - The order ID
+ * @returns {Promise<Object>} Result
+ */
+async function handleSourceCityPickup(orderId) {
+  const conn = await getConnectionWithTimezone();
+  try {
+    await conn.beginTransaction();
+
+    // Get the order's city and check for a confirmed return movement
+    const [[order]] = await conn.query(
+      `SELECT o.boxes_count, c.city FROM Orders o
+       JOIN Customers c ON o.customer_id = c.customer_id
+       WHERE o.order_id = ?`,
+      [orderId]
+    );
+
+    if (!order || !order.city || order.city.toLowerCase() === 'kuopio') {
+      await conn.commit();
+      return { success: true, message: 'No source city container update needed' };
+    }
+
+    // Check for confirmed order_return movement
+    const [[returnMovement]] = await conn.query(
+      `SELECT * FROM ContainerMovements 
+       WHERE order_id = ? AND movement_type = 'order_return' AND status = 'confirmed'
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (returnMovement) {
+      // Boxes have been returned and confirmed; customer picking up releases them
+      // The containers are no longer in use at the source city
+      // (They were added to total when return was confirmed, now they go to customer)
+      await conn.query(
+        `UPDATE Cities SET containers_total = GREATEST(containers_total - ?, 0) WHERE name = ?`,
+        [returnMovement.quantity, order.city]
+      );
+    }
+
+    await conn.commit();
+    return {
+      success: true,
+      message: `Source city pickup for order ${orderId}: containers updated in ${order.city}`
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error('handleSourceCityPickup error:', error);
+    return { success: false, message: error.message };
+  } finally {
+    conn.release();
   }
 }
 
@@ -4080,7 +4514,16 @@ assignBoxesToPallet,
     cancelContainerMovement,
     getContainerMovements,
     getContainerMovementById,
-    deleteContainerMovement
+    deleteContainerMovement,
+    // Container-order integration
+    createOrderContainerMovement,
+    confirmOrderArrival,
+    handleProcessingCompleteContainers,
+    handleKuopioOrderTakeIn,
+    handleKuopioOrderPickup,
+    confirmOrderReturn,
+    getContainerMovementsByOrder,
+    handleSourceCityPickup
 }
 
 // ===== AUTOMATIC INVENTORY DEDUCTION (Pouch Usage) =====
