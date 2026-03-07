@@ -1,8 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  // baseURL: "https://api.mehustaja.fi/", // <-- your production backend
-  baseURL: "http://localhost:5001", // <-- your local backend
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5001",
   withCredentials: false,
 });
 

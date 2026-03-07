@@ -35,7 +35,7 @@ function CrateHandling() {
       
         const fetchDatFunction = async () => {
           try {
-            const res = await api.get(`https://api.mehustaja.fi/crates/${scanResult}`);
+            const res = await api.get(`/crates/${scanResult}`);
             return res.data; 
           } catch (error) {
             console.log(error);

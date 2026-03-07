@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { socket } from '../lib/socket';
 import {
   Container,
   Paper,
@@ -29,7 +30,9 @@ import {
   Snackbar,
   Alert,
   IconButton,
-  Tooltip
+  Tooltip,
+  Divider,
+  Stack
 } from '@mui/material';
 import {
   Package,
@@ -41,7 +44,9 @@ import {
   ArrowRight,
   Plus,
   RefreshCw,
-  Trash2
+  Trash2,
+  Truck,
+  RotateCcw
 } from 'lucide-react';
 import api from '../services/axios';
 import DrawerComponent from '../components/drawer';
@@ -82,6 +87,8 @@ export default function ContainerTrackingPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [movementToDelete, setMovementToDelete] = useState(null);
 
+  const getCurrentUserId = () => localStorage.getItem('userId') || null;
+
   useEffect(() => {
     // Get user's allowed cities and role from localStorage
     try {
@@ -101,12 +108,13 @@ export default function ContainerTrackingPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const userId = getCurrentUserId();
       const [invRes, movRes, citiesRes] = await Promise.all([
-        api.get('/containers/inventory'),
-        api.get('/containers/movements'),
+        api.get('/containers/inventory', { params: { userId } }),
+        api.get('/containers/movements', { params: { userId } }),
         api.get('/cities')
       ]);
       
@@ -119,7 +127,21 @@ export default function ContainerTrackingPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Listen for real-time socket events so the page auto-refreshes
+  useEffect(() => {
+    const onContainerUpdate = () => fetchData();
+    const onOrderStatusUpdate = () => fetchData();
+
+    socket.on('container-inventory-updated', onContainerUpdate);
+    socket.on('order-status-updated', onOrderStatusUpdate);
+
+    return () => {
+      socket.off('container-inventory-updated', onContainerUpdate);
+      socket.off('order-status-updated', onOrderStatusUpdate);
+    };
+  }, [fetchData]);
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
@@ -207,7 +229,8 @@ export default function ContainerTrackingPage() {
 
   const handleCancelMovement = async (movementId) => {
     try {
-      await api.post(`/containers/movements/${movementId}/cancel`);
+      const userId = getCurrentUserId();
+      await api.post(`/containers/movements/${movementId}/cancel`, { userId });
       showSnackbar('Movement cancelled successfully', 'success');
       fetchData();
     } catch (err) {
@@ -252,9 +275,11 @@ export default function ContainerTrackingPage() {
     if (!editingCity) return;
 
     try {
+      const userId = getCurrentUserId();
       await api.put(`/containers/inventory/${editingCity.name}`, {
         containers_total: Number(editValues.containers_total),
-        containers_in_use: Number(editValues.containers_in_use)
+        containers_in_use: Number(editValues.containers_in_use),
+        userId
       });
       
       showSnackbar('Inventory updated successfully', 'success');
@@ -287,6 +312,87 @@ export default function ContainerTrackingPage() {
   const pendingMovements = movements.filter(m => m.status === 'pending');
   const completedMovements = movements.filter(m => m.status !== 'pending');
 
+  // Separate order-linked pending movements from manual ones
+  const pendingOrderArrivals = pendingMovements.filter(m => m.movement_type === 'order_arrival');
+  const pendingOrderReturns = pendingMovements.filter(m => m.movement_type === 'order_return');
+  const pendingManual = pendingMovements.filter(m => !m.movement_type || m.movement_type === 'manual');
+
+  const handleConfirmOrderArrival = async (orderId) => {
+    try {
+      const userId = localStorage.getItem('userId') || null;
+      let userName = 'Employee';
+      try {
+        const userPerms = localStorage.getItem('userPermissions');
+        if (userPerms) {
+          const perms = JSON.parse(userPerms);
+          userName = perms.full_name || perms.id || 'Employee';
+        }
+      } catch (e) {
+        console.error('Failed to parse user permissions:', e);
+      }
+
+      await api.post(`/containers/orders/${orderId}/confirm-arrival`, {
+        confirmed_by: userId,
+        confirmed_by_name: userName
+      });
+      showSnackbar('Order arrival confirmed - containers transferred', 'success');
+      fetchData();
+    } catch (err) {
+      console.error('Error confirming order arrival:', err);
+      showSnackbar(err.response?.data?.error || 'Failed to confirm arrival', 'error');
+    }
+  };
+
+  const handleConfirmOrderReturn = async (orderId) => {
+    try {
+      const userId = localStorage.getItem('userId') || null;
+      let userName = 'Employee';
+      try {
+        const userPerms = localStorage.getItem('userPermissions');
+        if (userPerms) {
+          const perms = JSON.parse(userPerms);
+          userName = perms.full_name || perms.id || 'Employee';
+        }
+      } catch (e) {
+        console.error('Failed to parse user permissions:', e);
+      }
+
+      await api.post(`/containers/orders/${orderId}/confirm-return`, {
+        confirmed_by: userId,
+        confirmed_by_name: userName
+      });
+      showSnackbar('Box return confirmed - containers updated', 'success');
+      fetchData();
+    } catch (err) {
+      console.error('Error confirming order return:', err);
+      showSnackbar(err.response?.data?.error || 'Failed to confirm return', 'error');
+    }
+  };
+
+  const getMovementTypeLabel = (type) => {
+    switch (type) {
+      case 'order_arrival': return 'Order Arrival';
+      case 'order_return': return 'Box Return';
+      default: return 'Manual';
+    }
+  };
+
+  const getMovementTypeColor = (type) => {
+    switch (type) {
+      case 'order_arrival': return 'info';
+      case 'order_return': return 'secondary';
+      default: return 'default';
+    }
+  };
+
+  const getContainerTypeLabel = (type) => {
+    switch (type) {
+      case 'boxes': return '📦 Boxes';
+      case 'crates': return '🧺 Crates';
+      default: return type || 'Containers';
+    }
+  };
+
   return (
     <>
       <DrawerComponent />
@@ -305,9 +411,11 @@ export default function ContainerTrackingPage() {
             </Box>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Tooltip title="Refresh data">
-                <IconButton onClick={fetchData} disabled={loading}>
-                  <RefreshCw />
-                </IconButton>
+                <span>
+                  <IconButton onClick={fetchData} disabled={loading}>
+                    <RefreshCw />
+                  </IconButton>
+                </span>
               </Tooltip>
               <Button
                 variant="contained"
@@ -322,7 +430,8 @@ export default function ContainerTrackingPage() {
           {/* Tabs */}
           <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
             <Tab label="Inventory Overview" />
-            <Tab label={`Pending Movements (${pendingMovements.length})`} />
+            <Tab label={`Order Movements (${pendingOrderArrivals.length + pendingOrderReturns.length})`} />
+            <Tab label={`Manual Movements (${pendingManual.length})`} />
             <Tab label="Movement History" />
           </Tabs>
 
@@ -336,7 +445,7 @@ export default function ContainerTrackingPage() {
                   : 0;
 
                 return (
-                  <Grid item xs={12} sm={6} md={4} key={city.city_id}>
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key={city.city_id}>
                     <Card variant="outlined">
                       <CardContent>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -401,11 +510,162 @@ export default function ContainerTrackingPage() {
             </Grid>
           </TabPanel>
 
-          {/* Tab 2: Pending Movements */}
+          {/* Tab 2: Order-Linked Movements (arrivals + returns) */}
           <TabPanel value={tabValue} index={1}>
-            {pendingMovements.length === 0 ? (
+            {/* Order Arrivals Section */}
+            <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Truck size={20} /> Incoming Orders (Awaiting Arrival Confirmation)
+            </Typography>
+            {pendingOrderArrivals.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 2, mb: 3 }}>
+                <Typography color="text.secondary">No pending order arrivals</Typography>
+              </Box>
+            ) : (
+              <TableContainer sx={{ mb: 4 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Type</TableCell>
+                      <TableCell>From</TableCell>
+                      <TableCell>To</TableCell>
+                      <TableCell align="right">Qty</TableCell>
+                      <TableCell>Container</TableCell>
+                      <TableCell>Created At</TableCell>
+                      <TableCell>Notes</TableCell>
+                      <TableCell align="center">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pendingOrderArrivals.map((movement) => (
+                      <TableRow key={movement.movement_id} sx={{ bgcolor: 'info.50' }}>
+                        <TableCell>
+                          <Chip label="Order Arrival" color="info" size="small" icon={<Truck size={14} />} />
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={movement.from_city} size="small" />
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <ArrowRight size={16} />
+                            <Chip label={movement.to_city} size="small" color="primary" />
+                          </Box>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" fontWeight="bold">{movement.quantity}</Typography>
+                        </TableCell>
+                        <TableCell>{getContainerTypeLabel(movement.container_count_type)}</TableCell>
+                        <TableCell>{new Date(movement.created_at).toLocaleString()}</TableCell>
+                        <TableCell>{movement.notes || '-'}</TableCell>
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="success"
+                              startIcon={<CheckCircle size={16} />}
+                              onClick={() => handleConfirmOrderArrival(movement.order_id)}
+                            >
+                              Confirm Arrival
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              startIcon={<XCircle size={16} />}
+                              onClick={() => handleCancelMovement(movement.movement_id)}
+                            >
+                              Cancel
+                            </Button>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+
+            <Divider sx={{ my: 3 }} />
+
+            {/* Box Returns Section */}
+            <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <RotateCcw size={20} /> Box Returns (Awaiting Pickup Confirmation)
+            </Typography>
+            {pendingOrderReturns.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 2 }}>
+                <Typography color="text.secondary">No pending box returns</Typography>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Type</TableCell>
+                      <TableCell>From</TableCell>
+                      <TableCell>To</TableCell>
+                      <TableCell align="right">Qty</TableCell>
+                      <TableCell>Container</TableCell>
+                      <TableCell>Created At</TableCell>
+                      <TableCell>Notes</TableCell>
+                      <TableCell align="center">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pendingOrderReturns.map((movement) => (
+                      <TableRow key={movement.movement_id} sx={{ bgcolor: 'secondary.50' }}>
+                        <TableCell>
+                          <Chip label="Box Return" color="secondary" size="small" icon={<RotateCcw size={14} />} />
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={movement.from_city} size="small" />
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <ArrowRight size={16} />
+                            <Chip label={movement.to_city} size="small" color="primary" />
+                          </Box>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" fontWeight="bold">{movement.quantity}</Typography>
+                        </TableCell>
+                        <TableCell>{getContainerTypeLabel(movement.container_count_type)}</TableCell>
+                        <TableCell>{new Date(movement.created_at).toLocaleString()}</TableCell>
+                        <TableCell>{movement.notes || '-'}</TableCell>
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="success"
+                              startIcon={<CheckCircle size={16} />}
+                              onClick={() => handleConfirmOrderReturn(movement.order_id)}
+                            >
+                              Confirm Return
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              startIcon={<XCircle size={16} />}
+                              onClick={() => handleCancelMovement(movement.movement_id)}
+                            >
+                              Cancel
+                            </Button>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </TabPanel>
+
+          {/* Tab 3: Manual Pending Movements */}
+          <TabPanel value={tabValue} index={2}>
+            {pendingManual.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography color="text.secondary">No pending movements</Typography>
+                <Typography color="text.secondary">No pending manual movements</Typography>
               </Box>
             ) : (
               <TableContainer>
@@ -422,7 +682,7 @@ export default function ContainerTrackingPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {pendingMovements.map((movement) => (
+                    {pendingManual.map((movement) => (
                       <TableRow key={movement.movement_id}>
                         <TableCell>
                           <Chip label={movement.from_city} size="small" />
@@ -473,16 +733,18 @@ export default function ContainerTrackingPage() {
             )}
           </TabPanel>
 
-          {/* Tab 3: Movement History */}
-          <TabPanel value={tabValue} index={2}>
+          {/* Tab 4: Movement History */}
+          <TabPanel value={tabValue} index={3}>
             <TableContainer>
               <Table>
                 <TableHead>
                   <TableRow>
                     <TableCell>Status</TableCell>
+                    <TableCell>Type</TableCell>
                     <TableCell>From</TableCell>
                     <TableCell>To</TableCell>
                     <TableCell align="right">Quantity</TableCell>
+                    <TableCell>Container</TableCell>
                     <TableCell>Created By</TableCell>
                     <TableCell>Created At</TableCell>
                     <TableCell>Confirmed By</TableCell>
@@ -502,9 +764,18 @@ export default function ContainerTrackingPage() {
                           icon={getStatusIcon(movement.status)}
                         />
                       </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={getMovementTypeLabel(movement.movement_type)}
+                          color={getMovementTypeColor(movement.movement_type)}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </TableCell>
                       <TableCell>{movement.from_city}</TableCell>
                       <TableCell>{movement.to_city}</TableCell>
                       <TableCell align="right">{movement.quantity}</TableCell>
+                      <TableCell>{getContainerTypeLabel(movement.container_count_type)}</TableCell>
                       <TableCell>{movement.created_by_name || movement.created_by}</TableCell>
                       <TableCell>
                         {new Date(movement.created_at).toLocaleString()}

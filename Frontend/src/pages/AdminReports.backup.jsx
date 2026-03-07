@@ -40,9 +40,6 @@ import { useNavigate } from "react-router-dom";
 import ThemeModeToggle from "../components/ThemeModeToggle";
 import api from "../services/axios";
 import { buildAdminReport } from "../utils/adminReport";
-import CostsSection from "./AdminReports/CostsSection";
-import InventorySection from "./AdminReports/InventorySection";
-import StatementsSection from "./AdminReports/StatementsSection";
 
 const presets = [
   { key: "today", labelKey: "admin_reports.presets.today" },
@@ -1925,67 +1922,694 @@ export default function AdminReports() {
           </TabPanel>
 
           <TabPanel value={activeTab} tab="costs">
-            <CostsSection
-              t={t}
-              costCenters={costCenters}
-              costEntries={costEntries}
-              costTotals={costTotals}
-              onAddCenter={handleSaveCenter}
-              onEditCenter={handleEditCenter}
-              onDeleteCenter={handleDeleteCenter}
-              onAddEntry={handleSaveEntry}
-              onEditEntry={handleEditEntry}
-              onDeleteEntry={handleDeleteEntry}
-              formatCurrency={formatCurrency}
-              resolveCategoryLabel={resolveCategoryLabel}
-              costCenterCategoryMap={costCenterMap}
-            />
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.costs.description")}
+              </Typography>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      alignItems={{ xs: "flex-start", sm: "center" }}
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        {t("admin_reports.costs.title")}
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.costs.direct_label", { value: formatCurrency(costTotals.direct) })}
+                        />
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.costs.overhead_label", { value: formatCurrency(costTotals.overhead) })}
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={t("admin_reports.costs.total_label", { value: formatCurrency(costTotals.total) })}
+                        />
+                      </Stack>
+                    </Stack>
+
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} lg={5}>
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.costs.centers_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openCenterDialog}>
+                              {t("admin_reports.costs.add_center")}
+                            </Button>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.costs.center_help")}
+                          </Typography>
+                          <Divider />
+                          {costCenters.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              {t("admin_reports.costs.no_centers")}
+                            </Typography>
+                          ) : (
+                            <Stack spacing={1}>
+                              {costCenters.map((center) => (
+                                <Stack
+                                  key={center.center_id}
+                                  direction="row"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+                                >
+                                  <Stack spacing={0.5}>
+                                    <Typography variant="body2" fontWeight={600}>
+                                      {center.name}
+                                    </Typography>
+                                    <Chip
+                                      size="small"
+                                      label={center.category === "overhead"
+                                        ? t("admin_reports.costs.center_overhead_expense")
+                                        : t("admin_reports.costs.center_direct_cost")}
+                                    />
+                                  </Stack>
+                                  <Stack direction="row" spacing={0.5}>
+                                    <Tooltip title={t("common.edit")}>
+                                      <IconButton size="small" onClick={() => handleEditCenter(center)}>
+                                        <EditIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title={t("common.delete")}>
+                                      <IconButton size="small" onClick={() => handleDeleteCenter(center.center_id)}>
+                                        <DeleteIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Stack>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Grid>
+                      <Grid item xs={12} lg={7}>
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Box>
+                              <Typography variant="subtitle2" fontWeight={700}>
+                                {t("admin_reports.costs.entries_title")}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {t("admin_reports.costs.entries_help")}
+                              </Typography>
+                            </Box>
+                            <Button
+                              variant="contained"
+                              size="small"
+                              onClick={openEntryDialog}
+                              disabled={!costCenters.length}
+                            >
+                              {t("admin_reports.costs.add_entry")}
+                            </Button>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.costs.entries_note")}
+                          </Typography>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell sx={{ width: 110 }}>{t("admin_reports.costs.table.date")}</TableCell>
+                                <TableCell sx={{ width: 170 }}>{t("admin_reports.costs.table.center")}</TableCell>
+                                <TableCell sx={{ width: 130 }}>{t("admin_reports.costs.table.category")}</TableCell>
+                                <TableCell align="right" sx={{ width: 110 }}>{t("admin_reports.costs.table.amount")}</TableCell>
+                                <TableCell>{t("admin_reports.costs.table.notes")}</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>{t("admin_reports.costs.table.actions")}</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {costEntries.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={6} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      {t("admin_reports.costs.no_entries")}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                costEntries.map((entry) => (
+                                  <TableRow key={entry.entry_id}>
+                                    <TableCell>{entry.incurred_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.center_name}</TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        size="small"
+                                        label={entry.center_category === "overhead"
+                                          ? t("admin_reports.costs.entry_overhead")
+                                          : t("admin_reports.costs.entry_direct")}
+                                      />
+                                    </TableCell>
+                                    <TableCell align="right">{formatCurrency(entry.amount)}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{entry.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title={t("common.edit")}>
+                                        <IconButton size="small" onClick={() => handleEditEntry(entry)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title={t("common.delete")}>
+                                        <IconButton size="small" onClick={() => handleDeleteEntry(entry.entry_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
           </TabPanel>
 
           <TabPanel value={activeTab} tab="inventory">
-            <InventorySection
-              t={t}
-              inventoryItems={inventoryItems}
-              inventoryTransactions={inventoryTransactions}
-              inventoryTotals={inventoryTotals}
-              onAddItem={handleSaveItem}
-              onEditItem={handleEditItem}
-              onDeleteItem={handleDeleteItem}
-              onAddTransaction={handleSaveTx}
-              onEditTransaction={handleEditTx}
-              onDeleteTransaction={handleDeleteTx}
-              formatCurrency={formatCurrency}
-              formatNumber={formatNumber}
-              resolveUnitLabel={resolveUnitLabel}
-              resolveCategoryLabel={resolveCategoryLabel}
-              resolveTxTypeLabel={resolveTxTypeLabel}
-              inventoryCategoryMap={inventoryCategoryMap}
-              costCenters={costCenters}
-            />
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.inventory.description")}
+              </Typography>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      alignItems={{ xs: "flex-start", sm: "center" }}
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        {t("admin_reports.inventory.title")}
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.inventory.on_hand", { value: formatNumber(inventoryTotals.onHandCount) })}
+                        />
+                        <Chip
+                          size="small"
+                          label={t("admin_reports.inventory.inventory_value", {
+                            value: formatCurrency(inventoryTotals.inventoryValue),
+                          })}
+                        />
+                      </Stack>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("admin_reports.inventory.summary_help")}
+                    </Typography>
+                    <Table size="small" sx={{ tableLayout: "fixed" }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>{t("admin_reports.inventory.summary_table.item")}</TableCell>
+                          <TableCell align="right">{t("admin_reports.inventory.summary_table.on_hand")}</TableCell>
+                          <TableCell>{t("admin_reports.inventory.summary_table.unit")}</TableCell>
+                          <TableCell align="right">{t("admin_reports.inventory.summary_table.last_unit_cost")}</TableCell>
+                          <TableCell align="right">{t("admin_reports.inventory.summary_table.inventory_value")}</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {inventorySummary.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} align="center">
+                              <Typography variant="body2" color="text.secondary">
+                                {t("admin_reports.inventory.no_inventory")}
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          inventorySummary.map((item) => (
+                            <TableRow key={item.item_id}>
+                              <TableCell>{item.name}</TableCell>
+                              <TableCell align="right">{formatNumber(item.on_hand)}</TableCell>
+                              <TableCell>{resolveUnitLabel(item.unit)}</TableCell>
+                              <TableCell align="right">
+                                {item.last_unit_cost != null ? formatCurrency(item.last_unit_cost) : "—"}
+                              </TableCell>
+                              <TableCell align="right">{formatCurrency(item.inventory_value)}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} lg={5}>
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.inventory.items_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openItemDialog}>
+                              {t("admin_reports.inventory.add_item")}
+                            </Button>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.inventory.items_help")}
+                          </Typography>
+                          <Divider />
+                          {inventoryItems.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              {t("admin_reports.inventory.no_items")}
+                            </Typography>
+                          ) : (
+                            <Stack spacing={1}>
+                              {inventoryItems.map((item) => {
+                                const center = costCenterMap.get(item.cost_center_id);
+                                return (
+                                  <Stack
+                                    key={item.item_id}
+                                    direction="row"
+                                    alignItems="center"
+                                    justifyContent="space-between"
+                                    sx={{ p: 1, border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+                                  >
+                                    <Stack spacing={0.5}>
+                                      <Typography variant="body2" fontWeight={600}>
+                                        {item.name}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        {t("admin_reports.inventory.item_meta", {
+                                          unit: resolveUnitLabel(item.unit || "unit"),
+                                          category: resolveCategoryLabel(inventoryCategoryMap, item.category),
+                                          center: center?.name || "—",
+                                        })}
+                                      </Typography>
+                                    </Stack>
+                                    <Stack direction="row" spacing={0.5}>
+                                      <Tooltip title={t("common.edit")}>
+                                        <IconButton size="small" onClick={() => handleEditItem(item)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title={t("common.delete")}>
+                                        <IconButton size="small" onClick={() => handleDeleteItem(item.item_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </Stack>
+                                  </Stack>
+                                );
+                              })}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Grid>
+                      <Grid item xs={12} lg={7}>
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Box>
+                              <Typography variant="subtitle2" fontWeight={700}>
+                                {t("admin_reports.inventory.transactions_title")}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {t("admin_reports.inventory.transactions_help")}
+                              </Typography>
+                            </Box>
+                            <Button
+                              variant="contained"
+                              size="small"
+                              onClick={openTxDialog}
+                              disabled={!inventoryItems.length}
+                            >
+                              {t("admin_reports.inventory.add_transaction")}
+                            </Button>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.inventory.transactions_note")}
+                          </Typography>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell sx={{ width: 100 }}>{t("admin_reports.inventory.transactions_table.date")}</TableCell>
+                                <TableCell sx={{ width: 140 }}>{t("admin_reports.inventory.transactions_table.item")}</TableCell>
+                                <TableCell sx={{ width: 110 }}>{t("admin_reports.inventory.transactions_table.type")}</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>{t("admin_reports.inventory.transactions_table.qty")}</TableCell>
+                                <TableCell align="right" sx={{ width: 110 }}>{t("admin_reports.inventory.transactions_table.unit_cost")}</TableCell>
+                                <TableCell align="right" sx={{ width: 120 }}>{t("admin_reports.inventory.transactions_table.total")}</TableCell>
+                                <TableCell>{t("admin_reports.inventory.transactions_table.notes")}</TableCell>
+                                <TableCell align="right" sx={{ width: 90 }}>{t("admin_reports.inventory.transactions_table.actions")}</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {inventoryTransactions.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      {t("admin_reports.inventory.no_transactions")}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                inventoryTransactions.map((tx) => (
+                                  <TableRow key={tx.tx_id}>
+                                    <TableCell>{tx.tx_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
+                                    <TableCell>{resolveTxTypeLabel(tx.tx_type)}</TableCell>
+                                    <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
+                                    <TableCell align="right">
+                                      {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {tx.total_cost != null ? formatCurrency(tx.total_cost) : "—"}
+                                    </TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title={t("common.edit")}>
+                                        <IconButton size="small" onClick={() => handleEditTx(tx)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title={t("common.delete")}>
+                                        <IconButton size="small" onClick={() => handleDeleteTx(tx.tx_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+
+                          {/* NEW: Auto-Generated Transactions Section */}
+                          <Divider sx={{ my: 3 }} />
+                          <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2 }}>
+                            {t("admin_reports.inventory.auto_title")}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
+                            {t("admin_reports.inventory.auto_help")}
+                          </Typography>
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow sx={{ backgroundColor: theme.palette.action.hover }}>
+                                <TableCell sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.date")}</TableCell>
+                                <TableCell sx={{ width: 120 }}>{t("admin_reports.inventory.auto_table.item")}</TableCell>
+                                <TableCell sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.type")}</TableCell>
+                                <TableCell align="right" sx={{ width: 80 }}>{t("admin_reports.inventory.auto_table.qty")}</TableCell>
+                                <TableCell align="right" sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.unit_cost")}</TableCell>
+                                <TableCell align="right" sx={{ width: 100 }}>{t("admin_reports.inventory.auto_table.total")}</TableCell>
+                                <TableCell sx={{ width: 120 }}>{t("admin_reports.inventory.auto_table.order_id")}</TableCell>
+                                <TableCell>{t("admin_reports.inventory.auto_table.notes")}</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {!inventoryTransactions || inventoryTransactions.filter(tx => tx.is_auto_generated === 1).length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      {t("admin_reports.inventory.auto_no_transactions")}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                inventoryTransactions
+                                  .filter(tx => tx.is_auto_generated === 1)
+                                  .map((tx) => (
+                                    <TableRow key={tx.tx_id} sx={{ backgroundColor: theme.palette.action.selected }}>
+                                      <TableCell>{tx.tx_date}</TableCell>
+                                      <TableCell sx={{ overflowWrap: "anywhere" }}>{tx.item_name}</TableCell>
+                                      <TableCell>
+                                        <Chip 
+                                          label={resolveTxTypeLabel(tx.tx_type)} 
+                                          size="small" 
+                                          color="primary" 
+                                          variant="outlined"
+                                        />
+                                      </TableCell>
+                                      <TableCell align="right">{formatNumber(tx.quantity)}</TableCell>
+                                      <TableCell align="right">
+                                        {tx.unit_cost != null ? formatCurrency(tx.unit_cost) : "—"}
+                                      </TableCell>
+                                      <TableCell align="right" sx={{ fontWeight: 600 }}>
+                                        {tx.total_cost != null ? formatCurrency(tx.total_cost) : "—"}
+                                      </TableCell>
+                                      <TableCell sx={{ fontFamily: "monospace", fontSize: "0.85em" }}>
+                                        {tx.related_order_id ? tx.related_order_id.substring(0, 8) + "..." : "—"}
+                                      </TableCell>
+                                      <TableCell sx={{ overflowWrap: "anywhere", fontSize: "0.85em" }}>{tx.notes || "—"}</TableCell>
+                                    </TableRow>
+                                  ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
           </TabPanel>
 
           <TabPanel value={activeTab} tab="statements">
-            <StatementsSection
-              t={t}
-              incomeStatement={incomeStatement}
-              balanceSheet={balanceSheet}
-              assets={assets}
-              liabilities={liabilities}
-              onAddAsset={handleSaveAsset}
-              onEditAsset={handleEditAsset}
-              onDeleteAsset={handleDeleteAsset}
-              onAddLiability={handleSaveLiability}
-              onEditLiability={handleEditLiability}
-              onDeleteLiability={handleDeleteLiability}
-              onExportIncomeStatement={handleExportIncomeStatement}
-              onExportBalanceSheet={handleExportBalanceSheet}
-              formatCurrency={formatCurrency}
-              resolveCategoryLabel={resolveCategoryLabel}
-              assetCategoryMap={assetCategoryMap}
-              liabilityCategoryMap={liabilityCategoryMap}
-              assetCategoryOptions={assetCategoryOptions}
-              liabilityCategoryOptions={liabilityCategoryOptions}
-            />
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t("admin_reports.statements.description")}
+              </Typography>
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between">
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        {t("admin_reports.statements.income_statement")}
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FileText size={16} />}
+                        onClick={handleExportIncomeStatement}
+                      >
+                        {t("admin_reports.statements.export_statement")}
+                      </Button>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("admin_reports.statements.statement_help")}
+                    </Typography>
+                    <Table size="small">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>{t("admin_reports.statements.revenue")}</TableCell>
+                          <TableCell align="right">{formatCurrency(incomeStatement.revenue)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>{t("admin_reports.statements.direct_costs")}</TableCell>
+                          <TableCell align="right">{formatCurrency(incomeStatement.directCosts)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>{t("admin_reports.statements.gross_profit")}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>
+                            {formatCurrency(incomeStatement.grossProfit)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>{t("admin_reports.statements.overhead_expenses")}</TableCell>
+                          <TableCell align="right">{formatCurrency(incomeStatement.overheadCosts)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>{t("admin_reports.statements.net_profit")}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>
+                            {formatCurrency(incomeStatement.netProfit)}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between">
+                      <Typography variant="subtitle1" fontWeight={800}>
+                        {t("admin_reports.statements.balance_sheet")}
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FileText size={16} />}
+                        onClick={handleExportBalanceSheet}
+                      >
+                        {t("admin_reports.statements.export_statement")}
+                      </Button>
+                    </Stack>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap">
+                      <Chip
+                        size="small"
+                        label={t("admin_reports.statements.total_assets", { value: formatCurrency(balanceSheet.totalAssets) })}
+                      />
+                      <Chip
+                        size="small"
+                        label={t("admin_reports.statements.total_liabilities", {
+                          value: formatCurrency(balanceSheet.totalLiabilities),
+                        })}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={t("admin_reports.statements.equity", { value: formatCurrency(balanceSheet.equity) })}
+                      />
+                    </Stack>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} lg={6}>
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.statements.assets_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openAssetDialog}>
+                              {t("admin_reports.statements.add_asset")}
+                            </Button>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.statements.assets_help")}
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap">
+                            <Chip
+                              size="small"
+                              label={t("admin_reports.statements.inventory_value", {
+                                value: formatCurrency(balanceSheet.inventoryValue),
+                              })}
+                            />
+                            <Chip
+                              size="small"
+                              label={t("admin_reports.statements.fixed_assets", {
+                                value: formatCurrency(balanceSheet.fixedAssets),
+                              })}
+                            />
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.statements.assets_note")}
+                          </Typography>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>{t("admin_reports.statements.asset_table.asset")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.category")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.asset_table.value")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.date")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.asset_table.notes")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.asset_table.actions")}</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {assets.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={6} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      {t("admin_reports.statements.no_assets")}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                assets.map((asset) => (
+                                  <TableRow key={asset.asset_id}>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.name}</TableCell>
+                                    <TableCell>{resolveCategoryLabel(assetCategoryMap, asset.category)}</TableCell>
+                                    <TableCell align="right">{formatCurrency(asset.value)}</TableCell>
+                                    <TableCell>{asset.acquired_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{asset.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title={t("common.edit")}>
+                                        <IconButton size="small" onClick={() => handleEditAsset(asset)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title={t("common.delete")}>
+                                        <IconButton size="small" onClick={() => handleDeleteAsset(asset.asset_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                      <Grid item xs={12} lg={6}>
+                        <Stack spacing={1.5}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              {t("admin_reports.statements.liabilities_title")}
+                            </Typography>
+                            <Button variant="contained" size="small" onClick={openLiabilityDialog}>
+                              {t("admin_reports.statements.add_liability")}
+                            </Button>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {t("admin_reports.statements.liabilities_help")}
+                          </Typography>
+                          <Divider />
+                          <Table size="small" sx={{ tableLayout: "fixed" }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>{t("admin_reports.statements.liability_table.liability")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.category")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.liability_table.value")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.date")}</TableCell>
+                                <TableCell>{t("admin_reports.statements.liability_table.notes")}</TableCell>
+                                <TableCell align="right">{t("admin_reports.statements.liability_table.actions")}</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {liabilities.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={6} align="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                      {t("admin_reports.statements.no_liabilities")}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                liabilities.map((liability) => (
+                                  <TableRow key={liability.liability_id}>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.name}</TableCell>
+                                    <TableCell>{resolveCategoryLabel(liabilityCategoryMap, liability.category)}</TableCell>
+                                    <TableCell align="right">{formatCurrency(liability.value)}</TableCell>
+                                    <TableCell>{liability.as_of_date}</TableCell>
+                                    <TableCell sx={{ overflowWrap: "anywhere" }}>{liability.notes || "—"}</TableCell>
+                                    <TableCell align="right">
+                                      <Tooltip title={t("common.edit")}>
+                                        <IconButton size="small" onClick={() => handleEditLiability(liability)}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title={t("common.delete")}>
+                                        <IconButton size="small" onClick={() => handleDeleteLiability(liability.liability_id)}>
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
           </TabPanel>
 
         </>
